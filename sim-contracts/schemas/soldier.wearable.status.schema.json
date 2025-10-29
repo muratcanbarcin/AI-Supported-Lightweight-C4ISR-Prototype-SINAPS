@@ -1,0 +1,228 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Soldier Wearable Status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "soldier_id",
+    "unit_id",
+    "collected_at",
+    "vitals",
+    "device"
+  ],
+  "properties": {
+    "soldier_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "unit_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "role": {
+      "type": "string"
+    },
+    "collected_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "alt_m": {
+          "type": "number"
+        },
+        "accuracy_m": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "vitals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hr_bpm"
+      ],
+      "properties": {
+        "hr_bpm": {
+          "type": "integer",
+          "minimum": 20,
+          "maximum": 240
+        },
+        "hrv_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 300
+        },
+        "spo2_pct": {
+          "type": "number",
+          "minimum": 50,
+          "maximum": 100
+        },
+        "skin_temp_c": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 45
+        },
+        "resp_bpm": {
+          "type": "number",
+          "minimum": 4,
+          "maximum": 60
+        },
+        "stress_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "fatigue_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "hydration_level": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "activity": {
+          "type": "string",
+          "enum": [
+            "REST",
+            "WALK",
+            "RUN",
+            "SPRINT",
+            "UNKNOWN"
+          ]
+        },
+        "steps_1min": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "calories_1min": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "motion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "posture": {
+          "type": "string",
+          "enum": [
+            "STANDING",
+            "SITTING",
+            "PRONE",
+            "SUPINE",
+            "KNEELING",
+            "UNKNOWN"
+          ]
+        },
+        "fall_detected": {
+          "type": "boolean"
+        },
+        "immobility_s": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accel_rms_g": {
+          "type": "number",
+          "minimum": 0
+        },
+        "gyro_rms_dps": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "alerts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "panic_button": {
+          "type": "boolean"
+        },
+        "med_high_hr": {
+          "type": "boolean"
+        },
+        "med_low_spo2": {
+          "type": "boolean"
+        },
+        "heat_stress": {
+          "type": "boolean"
+        }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "device_id",
+        "model",
+        "battery_pct"
+      ],
+      "properties": {
+        "device_id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "fw_version": {
+          "type": "string"
+        },
+        "battery_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "rssi_dbm": {
+          "type": "number"
+        },
+        "last_sync": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "gateway": {
+          "type": "string"
+        }
+      }
+    },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "medical_opt_in": {
+          "type": "boolean"
+        },
+        "location_opt_in": {
+          "type": "boolean"
+        },
+        "policy_version": {
+          "type": "string"
+        }
+      }
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 2000
+    }
+  }
+}

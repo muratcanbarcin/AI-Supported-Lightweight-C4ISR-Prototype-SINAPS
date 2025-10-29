@@ -1,0 +1,11 @@
+{
+  "alert_id": "al-4477",
+  "severity": "CRITICAL",
+  "category": "C-UAS",
+  "title": "Mock İHA Tespiti",
+  "description": "Kuzey perimetrede düşük RCS mock UAV",
+  "related": {
+    "track_id": "t-9812",
+    "inject_id": "inj-001"
+  }
+}

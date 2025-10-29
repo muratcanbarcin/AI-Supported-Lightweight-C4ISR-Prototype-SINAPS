@@ -1,0 +1,23 @@
+{
+  "inject_id": "inj-001",
+  "kind": "UAS",
+  "truth": {
+    "start": {
+      "lat": 39.926,
+      "lon": 32.842,
+      "alt_m": 300
+    },
+    "trajectory": "loiter_to_base",
+    "speed_mps": 18.0,
+    "rcs_dbsm": -20.0
+  },
+  "visibility": {
+    "eo_ir": 0.9,
+    "radar": 0.4,
+    "rf": 0.7
+  },
+  "labels": [
+    "HOSTILE",
+    "RECON"
+  ]
+}

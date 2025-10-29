@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sim Threat Injection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "inject_id",
+    "kind",
+    "truth",
+    "visibility",
+    "labels"
+  ],
+  "properties": {
+    "inject_id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "UAS",
+        "GROUND",
+        "VEHICLE"
+      ]
+    },
+    "truth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "trajectory",
+        "speed_mps"
+      ],
+      "properties": {
+        "start": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lat",
+            "lon"
+          ],
+          "properties": {
+            "lat": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            },
+            "lon": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            },
+            "alt_m": {
+              "type": "number"
+            },
+            "accuracy_m": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        },
+        "trajectory": {
+          "type": "string"
+        },
+        "speed_mps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rcs_dbsm": {
+          "type": "number"
+        }
+      }
+    },
+    "visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eo_ir": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "radar": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rf": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

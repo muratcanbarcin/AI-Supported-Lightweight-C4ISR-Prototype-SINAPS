@@ -1,0 +1,19 @@
+{
+  "context": {
+    "scenario": "CUAS",
+    "track_id": "t-9812"
+  },
+  "options": [
+    {
+      "action": "CUE_SENSOR",
+      "target": "radar-02",
+      "score": 0.91
+    },
+    {
+      "action": "PREP_INTERCEPT",
+      "target": "interceptor-01",
+      "score": 0.72
+    }
+  ],
+  "explanation": "Mock risk yüksek; radar cue + görsel doğrulama"
+}

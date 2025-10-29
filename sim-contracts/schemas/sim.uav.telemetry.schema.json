@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sim UAV Telemetry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "unit",
+    "lat",
+    "lon",
+    "alt_m",
+    "ground_speed_mps",
+    "mode",
+    "battery"
+  ],
+  "properties": {
+    "unit": {
+      "type": "string"
+    },
+    "lat": {
+      "type": "number",
+      "minimum": -90,
+      "maximum": 90
+    },
+    "lon": {
+      "type": "number",
+      "minimum": -180,
+      "maximum": 180
+    },
+    "alt_m": {
+      "type": "number"
+    },
+    "yaw_deg": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 360
+    },
+    "pitch_deg": {
+      "type": "number"
+    },
+    "roll_deg": {
+      "type": "number"
+    },
+    "ground_speed_mps": {
+      "type": "number",
+      "minimum": 0
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "MANUAL",
+        "AUTO",
+        "RTL",
+        "HOLD",
+        "LOITER",
+        "GUIDED"
+      ]
+    },
+    "battery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "soc_pct"
+      ],
+      "properties": {
+        "soc_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    }
+  }
+}

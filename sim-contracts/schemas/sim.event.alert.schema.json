@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sim Event Alert",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "alert_id",
+    "severity",
+    "category",
+    "title"
+  ],
+  "properties": {
+    "alert_id": {
+      "type": "string"
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "INFO",
+        "WARNING",
+        "MAJOR",
+        "CRITICAL"
+      ]
+    },
+    "category": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "related": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sim Autonomy Action Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action_id",
+    "action",
+    "target",
+    "status"
+  ],
+  "properties": {
+    "action_id": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "QUEUED",
+        "EXECUTED",
+        "FAILED"
+      ]
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "soldier_id": "S-ALPHA-07",
+  "unit_id": "alpha-2",
+  "role": "rifleman",
+  "collected_at": "2025-10-29T11:22:33Z",
+  "position": {
+    "lat": 39.9221,
+    "lon": 32.8403,
+    "alt_m": 934,
+    "accuracy_m": 6.2
+  },
+  "vitals": {
+    "hr_bpm": 112,
+    "hrv_ms": 38.5,
+    "spo2_pct": 97,
+    "skin_temp_c": 34.2,
+    "resp_bpm": 20,
+    "stress_score": 0.62,
+    "fatigue_score": 0.35,
+    "activity": "RUN",
+    "steps_1min": 168,
+    "calories_1min": 12.4
+  },
+  "motion": {
+    "posture": "STANDING",
+    "fall_detected": false,
+    "immobility_s": 0,
+    "accel_rms_g": 0.21,
+    "gyro_rms_dps": 18.3
+  },
+  "alerts": {
+    "panic_button": false,
+    "med_high_hr": false,
+    "med_low_spo2": false,
+    "heat_stress": false
+  },
+  "device": {
+    "device_id": "c9a2b2a4-0d7e-4b42-9e6a-0b4f9a2e1f90",
+    "model": "Tactix-7",
+    "fw_version": "3.1.2",
+    "battery_pct": 78.5,
+    "rssi_dbm": -62,
+    "last_sync": "2025-10-29T11:22:30Z",
+    "gateway": "phone-S-ALPHA-07"
+  },
+  "consent": {
+    "medical_opt_in": true,
+    "location_opt_in": true,
+    "policy_version": "2025.1"
+  },
+  "notes": "Koşu halinde; görev rotası kuzey sektörü."
+}

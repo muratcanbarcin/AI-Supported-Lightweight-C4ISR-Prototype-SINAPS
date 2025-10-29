@@ -1,0 +1,13 @@
+{
+  "window": {
+    "frame_start": 100,
+    "frame_end": 140
+  },
+  "metrics": {
+    "pd": 0.93,
+    "far": 0.07,
+    "latency_ms_avg": 210,
+    "track_purity": 0.88
+  },
+  "notes": "Gaussian heading jitter 0.5° eklendi"
+}

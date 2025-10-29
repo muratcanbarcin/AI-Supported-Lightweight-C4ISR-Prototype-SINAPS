@@ -1,0 +1,11 @@
+{
+  "track_id": "t-9812",
+  "classification": "HOSTILE",
+  "risk_score": 0.77,
+  "intent": "RECON",
+  "eta_to_perimeter_s": 320,
+  "features": {
+    "range_km": 3.2,
+    "closing_rate_mps": 6.1
+  }
+}

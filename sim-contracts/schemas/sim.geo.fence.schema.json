@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sim Geo Fence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "geofence_id",
+    "policy",
+    "geometry",
+    "alt_min_m",
+    "alt_max_m"
+  ],
+  "properties": {
+    "geofence_id": {
+      "type": "string"
+    },
+    "policy": {
+      "type": "string",
+      "enum": [
+        "NO_FLY",
+        "RESTRICTED",
+        "INFO"
+      ]
+    },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "coordinates"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "Polygon"
+          ]
+        },
+        "coordinates": {
+          "type": "array"
+        }
+      }
+    },
+    "alt_min_m": {
+      "type": "number"
+    },
+    "alt_max_m": {
+      "type": "number"
+    }
+  }
+}

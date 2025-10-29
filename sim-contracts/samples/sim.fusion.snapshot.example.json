@@ -1,0 +1,22 @@
+{
+  "tracks": [
+    {
+      "track_id": "t-9812",
+      "type": "UAS",
+      "state": {
+        "lat": 39.9261,
+        "lon": 32.842,
+        "alt_m": 306
+      }
+    }
+  ],
+  "associations": [
+    {
+      "track_id": "t-9812",
+      "detections": [
+        "d-0001",
+        "d-0004"
+      ]
+    }
+  ]
+}
