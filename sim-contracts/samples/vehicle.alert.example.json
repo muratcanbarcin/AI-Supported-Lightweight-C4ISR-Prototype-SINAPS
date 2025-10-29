@@ -1,0 +1,12 @@
+{
+  "alert_id": "al-vh-3003",
+  "time": "2025-10-29T12:10:18Z",
+  "severity": "WARNING",
+  "title": "Güzergâhta engel",
+  "category": "ROUTE",
+  "description": "Ön yüzde 25 m ileride obje tespit edildi",
+  "related": {
+    "vehicle_id": "veh-12",
+    "detection_kind": "OBSTACLE"
+  }
+}

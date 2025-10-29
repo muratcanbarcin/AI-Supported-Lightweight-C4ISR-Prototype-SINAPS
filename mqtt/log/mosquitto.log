@@ -1,0 +1,82 @@
+1761778248: mosquitto version 2.0.22 starting
+1761778248: Config loaded from /mosquitto/config/mosquitto.conf.
+1761778248: Opening ipv4 listen socket on port 1883.
+1761778248: Opening ipv6 listen socket on port 1883.
+1761778248: Opening websockets listen socket on port 9001.
+1761778248: mosquitto version 2.0.22 running
+1761778283: New connection from ::1:48264 on port 1883.
+1761778283: New client connected from ::1:48264 as auto-617A1FED-1B78-BEB6-0EA6-1A21B49DE3BA (p2, c1, k60).
+1761778311: New connection from ::1:39912 on port 1883.
+1761778311: New client connected from ::1:39912 as auto-F1CEAF36-0237-4D03-2A67-83C9E60C0B27 (p2, c1, k60).
+1761778311: Client auto-F1CEAF36-0237-4D03-2A67-83C9E60C0B27 disconnected.
+1761778317: New connection from ::1:39916 on port 1883.
+1761778317: New client connected from ::1:39916 as auto-C31E7D7A-A618-A96A-AF12-D558BB6B67EA (p2, c1, k60).
+1761778317: Client auto-C31E7D7A-A618-A96A-AF12-D558BB6B67EA disconnected.
+1761778323: New connection from ::1:55804 on port 1883.
+1761778323: New client connected from ::1:55804 as auto-54A25B8B-7E4F-95A4-CD42-798388C6C48E (p2, c1, k60).
+1761778323: Client auto-54A25B8B-7E4F-95A4-CD42-798388C6C48E disconnected.
+1761778723: mosquitto version 2.0.22 terminating
+1761778723: Saving in-memory database to /mosquitto/data//mosquitto.db.
+1761779280: mosquitto version 2.0.22 starting
+1761779280: Config loaded from /mosquitto/config/mosquitto.conf.
+1761779280: Opening ipv4 listen socket on port 1883.
+1761779280: Opening ipv6 listen socket on port 1883.
+1761779280: Opening websockets listen socket on port 9001.
+1761779280: mosquitto version 2.0.22 running
+1761779310: New connection from ::1:47858 on port 1883.
+1761779310: New client connected from ::1:47858 as auto-8556E63B-0D5B-F252-5BE3-EF6468547F5D (p2, c1, k60).
+1761779324: New connection from ::1:41906 on port 1883.
+1761779324: New client connected from ::1:41906 as auto-D8546299-8507-200A-C159-1FE95BB050EB (p2, c1, k60).
+1761779324: Client auto-D8546299-8507-200A-C159-1FE95BB050EB disconnected.
+1761779327: New connection from ::1:41910 on port 1883.
+1761779327: New client connected from ::1:41910 as auto-B2418BF2-5C4B-F501-2E96-C99DE85DA792 (p2, c1, k60).
+1761779327: Client auto-B2418BF2-5C4B-F501-2E96-C99DE85DA792 disconnected.
+1761779350: mosquitto version 2.0.22 terminating
+1761779350: Saving in-memory database to /mosquitto/data//mosquitto.db.
+1761779351: mosquitto version 2.0.22 starting
+1761779351: Config loaded from /mosquitto/config/mosquitto.conf.
+1761779351: Opening ipv4 listen socket on port 1883.
+1761779351: Opening ipv6 listen socket on port 1883.
+1761779351: Opening websockets listen socket on port 9001.
+1761779351: mosquitto version 2.0.22 running
+1761779359: mosquitto version 2.0.22 terminating
+1761779359: Saving in-memory database to /mosquitto/data//mosquitto.db.
+1761779361: mosquitto version 2.0.22 starting
+1761779361: Config loaded from /mosquitto/config/mosquitto.conf.
+1761779361: Opening ipv4 listen socket on port 1883.
+1761779361: Opening ipv6 listen socket on port 1883.
+1761779361: Opening websockets listen socket on port 9001.
+1761779361: mosquitto version 2.0.22 running
+1761779428: mosquitto version 2.0.22 terminating
+1761779428: Saving in-memory database to /mosquitto/data//mosquitto.db.
+1761779430: mosquitto version 2.0.22 starting
+1761779430: Config loaded from /mosquitto/config/mosquitto.conf.
+1761779430: Opening ipv4 listen socket on port 1883.
+1761779430: Opening ipv6 listen socket on port 1883.
+1761779430: Opening websockets listen socket on port 9001.
+1761779430: mosquitto version 2.0.22 running
+1761779505: mosquitto version 2.0.22 terminating
+1761779505: Saving in-memory database to /mosquitto/data//mosquitto.db.
+1761779506: mosquitto version 2.0.22 starting
+1761779506: Config loaded from /mosquitto/config/mosquitto.conf.
+1761779506: Warning: File /mosquitto/config/aclfile has world readable permissions. Future versions will refuse to load this file.
+To fix this, use `chmod 0700 /mosquitto/config/aclfile`.
+1761779506: Opening ipv4 listen socket on port 1883.
+1761779506: Opening ipv6 listen socket on port 1883.
+1761779506: mosquitto version 2.0.22 running
+1761779545: New connection from ::1:47806 on port 1883.
+1761779545: Client auto-23458660-D980-9201-3C80-79B6BC780A52 disconnected, not authorised.
+1761779567: New connection from ::1:53548 on port 1883.
+1761779567: New client connected from ::1:53548 as auto-719EBA61-E97F-75F3-7D7E-A6AA94E63595 (p2, c1, k60, u'emiran').
+1761779579: New connection from ::1:54888 on port 1883.
+1761779579: Client auto-43A856AF-61B0-933F-63BA-5F0B15CFBB1E disconnected, not authorised.
+1761779590: New connection from ::1:51380 on port 1883.
+1761779590: New client connected from ::1:51380 as auto-72C2CAA3-1061-01CB-03A3-27647F5689F1 (p2, c1, k60, u'emiran').
+1761779590: Client auto-72C2CAA3-1061-01CB-03A3-27647F5689F1 disconnected.
+1761780237: New connection from ::1:42978 on port 1883.
+1761780237: New client connected from ::1:42978 as auto-37D3B27E-F02F-C572-62A1-DA1D877CD9E5 (p2, c1, k60, u'emiran').
+1761780237: Client auto-37D3B27E-F02F-C572-62A1-DA1D877CD9E5 disconnected.
+1761780354: New connection from ::1:55812 on port 1883.
+1761780354: Client auto-DECEC241-44C2-28A1-0ABE-EA4D76FA2584 disconnected, not authorised.
+1761780360: New connection from ::1:55826 on port 1883.
+1761780360: Client auto-4B9766A3-150D-2A03-BB4B-993A4FA52F5D disconnected, not authorised.

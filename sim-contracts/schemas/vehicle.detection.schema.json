@@ -1,35 +1,39 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Sim Track State",
+  "title": "Vehicle Detection",
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "track_id",
-    "state",
+    "sensor_id",
+    "time",
+    "kind",
+    "position",
     "confidence_pct"
   ],
   "properties": {
-    "track_id": {
+    "sensor_id": {
       "type": "string"
     },
-    "source_ids": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
+    "time": {
+      "type": "string",
+      "format": "date-time"
     },
-    "filter": {
-      "type": "string"
+    "kind": {
+      "type": "string",
+      "enum": [
+        "OBSTACLE",
+        "AMBUSH",
+        "MINE",
+        "HOSTILE_VEHICLE",
+        "UNKNOWN"
+      ]
     },
-    "state": {
+    "position": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "lat",
-        "lon",
-        "alt_m",
-        "speed_mps",
-        "heading_deg"
+        "lon"
       ],
       "properties": {
         "lat": {
@@ -44,28 +48,17 @@
         },
         "alt_m": {
           "type": "number"
-        },
-        "speed_mps": {
-          "type": "number",
-          "minimum": 0
-        },
-        "heading_deg": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 360
         }
-      }
-    },
-    "covariance": {
-      "type": "array",
-      "items": {
-        "type": "number"
       }
     },
     "confidence_pct": {
       "type": "number",
       "minimum": 0,
       "maximum": 1
+    },
+    "details": {
+      "type": "object",
+      "additionalProperties": true
     }
   }
 }

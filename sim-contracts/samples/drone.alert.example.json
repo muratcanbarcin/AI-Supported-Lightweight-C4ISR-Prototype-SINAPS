@@ -1,0 +1,12 @@
+{
+  "alert_id": "al-dr-1001",
+  "time": "2025-10-29T12:10:07Z",
+  "severity": "CRITICAL",
+  "title": "Düşman İHA tespiti",
+  "category": "C-UAS",
+  "description": "Perimetre kuzey sektöründe düşük RCS hedef",
+  "related": {
+    "track_id": "t-9812",
+    "sensor_id": "drone1-eo"
+  }
+}
