@@ -80,3 +80,60 @@ To fix this, use `chmod 0700 /mosquitto/config/aclfile`.
 1761780354: Client auto-DECEC241-44C2-28A1-0ABE-EA4D76FA2584 disconnected, not authorised.
 1761780360: New connection from ::1:55826 on port 1883.
 1761780360: Client auto-4B9766A3-150D-2A03-BB4B-993A4FA52F5D disconnected, not authorised.
+1761780892: New connection from ::1:54656 on port 1883.
+1761780892: Client auto-4D6887E9-5CC6-BB06-2A1D-B37CCAE3C8F2 disconnected, not authorised.
+1761780904: New connection from ::1:40306 on port 1883.
+1761780904: New client connected from ::1:40306 as auto-55DE4321-474C-CB20-9939-0B051ABE746F (p2, c1, k60, u'emiran').
+1761781023: New connection from ::1:42552 on port 1883.
+1761781023: Client auto-D1DC15CB-4B0E-FAA2-7E7A-FB1A5E9CC9B7 disconnected, not authorised.
+1761781040: New connection from ::1:51734 on port 1883.
+1761781040: New client connected from ::1:51734 as auto-74E98051-F432-18FF-2CF9-31E1C50F05D9 (p2, c1, k60, u'emiran').
+1761781050: New connection from 172.18.0.1:39010 on port 1883.
+1761781050: Client sim-drone1 disconnected, not authorised.
+1761781166: New connection from ::1:36126 on port 1883.
+1761781166: New client connected from ::1:36126 as auto-0569E5FA-585D-DE5A-78F6-0DC59D9C9744 (p2, c1, k60, u'emiran').
+1761781189: New connection from 172.18.0.1:46746 on port 1883.
+1761781189: Client sim-drone1 disconnected, not authorised.
+1761781269: Reloading config.
+1761781269: Error: Unable to open pwfile "/mosquitto/config/passwd".
+1761781269: Error opening password file "/mosquitto/config/passwd".
+1761781269: Client auto-719EBA61-E97F-75F3-7D7E-A6AA94E63595 disconnected.
+1761781269: Client auto-55DE4321-474C-CB20-9939-0B051ABE746F disconnected.
+1761781269: Client auto-74E98051-F432-18FF-2CF9-31E1C50F05D9 disconnected.
+1761781269: Client auto-0569E5FA-585D-DE5A-78F6-0DC59D9C9744 disconnected.
+1761781270: New connection from ::1:48834 on port 1883.
+1761781270: Client 239590B4-FB45-E52A-9CF6-6945A9EA131B disconnected, not authorised.
+1761781270: New connection from ::1:48846 on port 1883.
+1761781270: New connection from ::1:48858 on port 1883.
+1761781270: New connection from ::1:48868 on port 1883.
+1761781270: Client 74635D73-D632-AC70-403F-18B6FC4A0208 disconnected, not authorised.
+1761781270: Client 6F0D4899-E097-4CBF-51F6-D30BC10DE5C9 disconnected, not authorised.
+1761781270: Client 9C9E4A13-6BE7-59FC-021A-8C3A2062C0C8 disconnected, not authorised.
+1761781298: New connection from ::1:43736 on port 1883.
+1761781298: Client 8B5D2B3D-1800-58CB-557E-6135892E4CE7 disconnected, not authorised.
+1761781305: New connection from ::1:43748 on port 1883.
+1761781305: Client 939A3B4D-341D-02ED-7F90-D9EFDA9967D1 disconnected, not authorised.
+1761781311: New connection from ::1:45518 on port 1883.
+1761781311: Client 7CE6241E-4CFB-21C6-83C9-A2F292EC5E0A disconnected, not authorised.
+1761781313: Saving in-memory database to /mosquitto/data//mosquitto.db.
+1761781347: New connection from ::1:39472 on port 1883.
+1761781347: Client 79FCF6E7-4E62-A562-2B10-B509FE8D8C53 disconnected, not authorised.
+1761781421: New connection from ::1:36036 on port 1883.
+1761781421: Client 77A07A06-66B0-8037-A9CE-49AA8A072FC0 disconnected, not authorised.
+1761781439: Reloading config.
+1761781439: Error: Unable to open pwfile "/mosquitto/config/passwd".
+1761781439: Error opening password file "/mosquitto/config/passwd".
+1761781444: Reloading config.
+1761781444: Error: Unable to open pwfile "/mosquitto/config/passwd".
+1761781444: Error opening password file "/mosquitto/config/passwd".
+1761781472: New connection from ::1:46018 on port 1883.
+1761781472: Client C3C4DEAF-B2B9-0E73-0909-F2A924103E4E disconnected, not authorised.
+1761782713: New connection from ::1:35958 on port 1883.
+1761782713: Client 42B77BC1-EF2C-7CCC-BC3E-E2B98D607966 disconnected, not authorised.
+1761782778: New connection from ::1:46510 on port 1883.
+1761782778: Client 4E22D52F-74B7-29DF-2210-46C7BF8FE2AD disconnected, not authorised.
+1761782782: New connection from ::1:46518 on port 1883.
+1761782782: Client FE8C90D9-2232-1F80-8848-CA35C10410E9 disconnected, not authorised.
+1761782786: New connection from ::1:51016 on port 1883.
+1761782786: Client 20A35F3D-7EE2-1DF4-1AAF-7D7755D75C33 disconnected, not authorised.
+1761782850: Reloading config.
