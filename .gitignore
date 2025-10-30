@@ -1,0 +1,10 @@
+# Sanal ortamları (venv) ve önbellekleri yükleme
+venv/
+__pycache__/
+*.pyc
+
+# VS Code ayarlarını yükleme
+.vscode/
+
+# Gizli bilgileri ve şifreleri (çok önemli)
+.env
