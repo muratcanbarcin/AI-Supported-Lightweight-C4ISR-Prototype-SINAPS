@@ -1,0 +1,11 @@
+{
+  "soldier_id": "S-ALPHA-07",
+  "time": "2025-10-29T12:10:10Z",
+  "kind": "HIGH_HEART_RATE",
+  "score": 0.81,
+  "details": {
+    "hr_bpm": 136,
+    "baseline_hr_bpm": 82,
+    "duration_s": 45
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Vehicle Telemetry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "time",
+    "type",
+    "position",
+    "speed_kph",
+    "engine",
+    "fuel_pct"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "APC",
+        "TRUCK",
+        "JEEP",
+        "TANK",
+        "OTHER"
+      ]
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "alt_m": {
+          "type": "number"
+        }
+      }
+    },
+    "heading_deg": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 360
+    },
+    "speed_kph": {
+      "type": "number",
+      "minimum": 0
+    },
+    "engine": {
+      "type": "string",
+      "enum": [
+        "OFF",
+        "IDLE",
+        "RUN"
+      ]
+    },
+    "fuel_pct": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "health_pct": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    }
+  }
+}

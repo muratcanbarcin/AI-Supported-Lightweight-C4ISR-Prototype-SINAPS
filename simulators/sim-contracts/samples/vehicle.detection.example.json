@@ -1,0 +1,19 @@
+{
+  "sensor_id": "veh-12-cam",
+  "time": "2025-10-29T12:10:15Z",
+  "kind": "OBSTACLE",
+  "position": {
+    "lat": 39.9195,
+    "lon": 32.862,
+    "alt_m": 871
+  },
+  "confidence_pct": 0.76,
+  "details": {
+    "bbox": "[412,210,120,80]",
+    "size_m": [
+      1.8,
+      0.6,
+      0.6
+    ]
+  }
+}

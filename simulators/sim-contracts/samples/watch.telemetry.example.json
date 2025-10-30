@@ -1,0 +1,22 @@
+{
+  "soldier_id": "S-ALPHA-07",
+  "unit_id": "alpha-2",
+  "collected_at": "2025-10-29T12:10:08Z",
+  "position": {
+    "lat": 39.9222,
+    "lon": 32.8401,
+    "alt_m": 936
+  },
+  "vitals": {
+    "hr_bpm": 116,
+    "spo2_pct": 97,
+    "resp_bpm": 20,
+    "skin_temp_c": 34.1,
+    "stress_score": 0.58
+  },
+  "device": {
+    "device_id": "c9a2b2a4-0d7e-4b42-9e6a-0b4f9a2e1f90",
+    "model": "Tactix-7",
+    "battery_pct": 79.0
+  }
+}

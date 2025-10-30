@@ -1,0 +1,12 @@
+{
+  "alert_id": "al-sw-2002",
+  "time": "2025-10-29T12:10:12Z",
+  "severity": "MAJOR",
+  "title": "Yüksek nabız uyarısı",
+  "category": "MEDICAL",
+  "description": "HR>130 bpm 45 sn boyunca",
+  "related": {
+    "soldier_id": "S-ALPHA-07",
+    "detection": "HIGH_HEART_RATE"
+  }
+}
