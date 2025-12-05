@@ -1,0 +1,22 @@
+broker:
+  host: ${MQTT_HOST}
+  port: ${MQTT_PORT}
+  tls: true
+  cafile: ${MQTT_CAFILE}
+  client_cert: ${MQTT_CLIENT_CERT}
+  client_key: ${MQTT_CLIENT_KEY}
+
+uav:
+  id: ${MQTT_CLIENT_ID}
+  rate_hz: 2.0
+  start_lat: 39.9260
+  start_lon: 32.8420
+  start_alt_m: 300.0
+  speed_mps: 14.0
+
+topics:
+  telemetry: "drone/${MQTT_CLIENT_ID}/telemetry"
+  detection: "drone/${MQTT_CLIENT_ID}/detection"
+  link16_j32: "link16/j3.2"
+
+scenario_file: "simulators/sim-producers/scenarios/cuad_demo.yaml"

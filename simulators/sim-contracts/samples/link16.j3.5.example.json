@@ -1,0 +1,15 @@
+{
+  "msg_type": "J3.5",
+  "ts": "2025-10-31T12:01:00Z",
+  "track": {
+    "track_number": "L-220",
+    "pri": 2
+  },
+  "pos": {
+    "lat": 39.92,
+    "lon": 32.85,
+    "hae": 890
+  },
+  "identity": "UNKNOWN",
+  "source": "drone1"
+}

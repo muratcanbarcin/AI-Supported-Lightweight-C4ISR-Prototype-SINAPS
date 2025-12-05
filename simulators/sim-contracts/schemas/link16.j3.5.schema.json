@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sinaps/schemas/link16.j3.5.schema.json",
+  "title": "Link-16 J3.5 Land Track",
+  "type": "object",
+  "required": [
+    "msg_type",
+    "ts",
+    "track",
+    "pos",
+    "identity",
+    "source"
+  ],
+  "properties": {
+    "msg_type": {
+      "const": "J3.5"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "track": {
+      "type": "object",
+      "required": [
+        "track_number",
+        "pri"
+      ],
+      "properties": {
+        "track_number": {
+          "type": "string",
+          "pattern": "^L-\\d{1,5}$"
+        },
+        "pri": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        }
+      },
+      "additionalProperties": false
+    },
+    "pos": {
+      "type": "object",
+      "required": [
+        "lat",
+        "lon",
+        "hae"
+      ],
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "hae": {
+          "type": "number",
+          "minimum": -500,
+          "maximum": 8848
+        }
+      },
+      "additionalProperties": false
+    },
+    "identity": {
+      "type": "string",
+      "enum": [
+        "HOSTILE",
+        "FRIEND",
+        "NEUTRAL",
+        "UNKNOWN",
+        "SUSPECT"
+      ]
+    },
+    "source": {
+      "type": "string"
+    },
+    "remarks": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

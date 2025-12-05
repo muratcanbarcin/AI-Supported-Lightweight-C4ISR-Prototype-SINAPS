@@ -1,0 +1,20 @@
+{
+  "msg_type": "J3.2",
+  "ts": "2025-10-31T12:00:00Z",
+  "track": {
+    "track_number": "T-101",
+    "tn": 101,
+    "pri": 3
+  },
+  "pos": {
+    "lat": 39.9274,
+    "lon": 32.8422,
+    "alt_msl": 120
+  },
+  "vel": {
+    "track_heading_deg": 90.0,
+    "gs_mps": 12.0
+  },
+  "identity": "HOSTILE",
+  "source": "drone1"
+}

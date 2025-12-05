@@ -1,10 +1,7 @@
-# Sanal ortamları (venv) ve önbellekleri yükleme
-venv/
-__pycache__/
-*.pyc
-
-# VS Code ayarlarını yükleme
-.vscode/
-
-# Gizli bilgileri ve şifreleri (çok önemli)
+simulators/mqtt/conf/passwd
+simulators/mqtt/conf/certs/*
 .env
+**/__pycache__/
+**/*.pyc
+simulators/mqtt/log/*
+simulators/mqtt/data/*

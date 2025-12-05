@@ -1,2 +1,10 @@
-user emiran
-topic readwrite #
+# drone1 için okuma+yazma ve link16 okuma yetkisi
+user drone1
+topic readwrite drone/drone1/#
+topic read      link16/#
+
+
+# yeni cihaz eklerken:
+# user drone2
+# topic readwrite drone/drone2/#
+# topic read      link16/#

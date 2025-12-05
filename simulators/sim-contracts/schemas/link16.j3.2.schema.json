@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sinaps/schemas/link16.j3.2.schema.json",
+  "title": "Link-16 J3.2 Air Track",
+  "type": "object",
+  "required": [
+    "msg_type",
+    "ts",
+    "track",
+    "pos",
+    "identity",
+    "source"
+  ],
+  "properties": {
+    "msg_type": {
+      "const": "J3.2"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "track": {
+      "type": "object",
+      "required": [
+        "track_number",
+        "tn",
+        "pri"
+      ],
+      "properties": {
+        "track_number": {
+          "type": "string",
+          "pattern": "^T-\\d{1,5}$"
+        },
+        "tn": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 77777
+        },
+        "pri": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        }
+      },
+      "additionalProperties": false
+    },
+    "pos": {
+      "type": "object",
+      "required": [
+        "lat",
+        "lon",
+        "alt_msl"
+      ],
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "alt_msl": {
+          "type": "number",
+          "minimum": -500,
+          "maximum": 60000
+        }
+      },
+      "additionalProperties": false
+    },
+    "vel": {
+      "type": "object",
+      "properties": {
+        "track_heading_deg": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 360
+        },
+        "gs_mps": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1200
+        }
+      },
+      "additionalProperties": false
+    },
+    "identity": {
+      "type": "string",
+      "enum": [
+        "HOSTILE",
+        "FRIEND",
+        "NEUTRAL",
+        "UNKNOWN",
+        "SUSPECT"
+      ]
+    },
+    "source": {
+      "type": "string"
+    },
+    "remarks": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,27 @@
+bbroker:
+  host: ${MQTT_HOST}
+  port: ${MQTT_PORT}
+  tls: true
+  cafile: ${MQTT_CAFILE}
+  client_cert: ${MQTT_CLIENT_CERT}
+  client_key: ${MQTT_CLIENT_KEY}
+
+
+unit:
+  ids: ["soldier-01"]   # birden fazla için ["soldier-01","soldier-02",...]
+  rate_hz: 1.0
+  start_lat: 39.9265
+  start_lon: 32.8423
+  start_alt_m: 950.0
+  topic: "watch/events"
+
+thresholds:
+  tachy_bpm: 120
+  brady_bpm: 45
+  low_spo2_pct: 92
+  high_temp_c: 38.5
+  fall_g: 2.2
+  battery_low_pct: 15
+schemas:
+  telemetry: "simulators/schemas/watch.telemetry.schema.json"
+  alert:     "simulators/schemas/watch.alert.schema.json"

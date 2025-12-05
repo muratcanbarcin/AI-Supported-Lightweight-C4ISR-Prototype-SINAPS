@@ -1,0 +1,31 @@
+uav_id: ${MQTT_CLIENT_ID}
+rate_hz: 2.0
+
+route:
+  - { lat: 39.9255, lon: 32.8415, alt: 300 }
+  - { lat: 39.9270, lon: 32.8430, alt: 300 }
+  - { lat: 39.9280, lon: 32.8410, alt: 300 }
+  - { lat: 39.9260, lon: 32.8420, alt: 300 }
+
+timeline:
+  - t: 00:00
+    action: "patrol"
+  - t: 00:30
+    action: "intrusion_inject"
+    intrusion:
+      id: "T-101"
+      lat: 39.9274
+      lon: 32.8422
+      alt: 120
+      identity: "HOSTILE"
+  - t: 00:31
+    action: "detect"
+  - t: 00:31
+    action: "publish_detection"
+    mqtt_topic: "drone/${MQTT_CLIENT_ID}/detection"
+  - t: 00:32
+    action: "publish_link16"
+    mqtt_topic: "link16/j3.2"
+  - t: 00:33
+    action: "track_follow"
+    follow_id: "T-101"

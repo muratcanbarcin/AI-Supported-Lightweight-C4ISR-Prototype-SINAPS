@@ -3,10 +3,13 @@ services:
     image: eclipse-mosquitto:2
     container_name: mosquitto
     ports:
-      - "1883:1883"   # MQTT TCP (dev/test)
-      - "9001:9001"   # WebSocket (opsiyonel)
+      - "8883:8883"
     volumes:
       - ./conf:/mosquitto/config
+      - ./conf/certs:/mosquitto/config/certs:ro
       - ./data:/mosquitto/data
       - ./log:/mosquitto/log
+    command: >
+      sh -c "chmod 0700 /mosquitto/config/aclfile &&
+             mosquitto -c /mosquitto/config/mosquitto.conf"
     restart: unless-stopped
