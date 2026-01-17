@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgis/postgis:latest
+    container_name: c4isr-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: c4isr_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - c4isr-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d c4isr_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: c4isr-mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - c4isr-network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: c4isr-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - c4isr-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  c4isr-network:
+    driver: bridge
+    name: c4isr-network
+
+volumes:
+  postgres_data:
+    name: c4isr-postgres-data
+  mosquitto_data:
+    name: c4isr-mosquitto-data
+  mosquitto_log:
+    name: c4isr-mosquitto-log
+  pgadmin_data:
+    name: c4isr-pgadmin-data

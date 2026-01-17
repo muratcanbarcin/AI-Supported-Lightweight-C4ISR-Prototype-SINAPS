@@ -1,5 +1,6 @@
 package com.sinaps.c4isr_backend.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sinaps.c4isr_backend.model.AssetType;
@@ -12,87 +13,218 @@ import org.locationtech.jts.geom.PrecisionModel;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
+/**
+ * Service for processing and managing telemetry data.
+ * 
+ * Handles:
+ * - Incoming MQTT telemetry messages
+ * - Geospatial queries using PostGIS
+ * - Telemetry persistence and retrieval
+ */
 @Service
 public class TelemetryService {
 
     private final TelemetryRepository repository;
-    private final ObjectMapper objectMapper; // JSON dönüşümü için
-    private final GeometryFactory geometryFactory; // PostGIS Point oluşturmak için
+    private final ObjectMapper objectMapper;
+    private final GeometryFactory geometryFactory;
 
-    // Constructor Injection (En sağlıklı yöntem)
+    // Constructor Injection
     public TelemetryService(TelemetryRepository repository) {
         this.repository = repository;
         this.objectMapper = new ObjectMapper();
-        // SRID 4326: GPS Koordinat sistemi (WGS84)
+        // SRID 4326: WGS84 GPS Coordinate System
         this.geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
     }
 
     /**
-     * SIN-10: Gelen MQTT mesajını işler ve kaydeder.
-     * Class Diagram: processIncomingData [cite: 41]
+     * Process incoming MQTT telemetry message and persist to database.
+     * 
+     * Expected JSON format:
+     * {
+     *   "source_id": "drone-001",
+     *   "source_type": "DRONE",
+     *   "lat": 39.9334,
+     *   "lon": 32.8597,
+     *   "alt": 150.0,
+     *   "speed": 25.5,
+     *   "battery": 85,
+     *   "heading": 45.0,
+     *   "timestamp": "2024-01-15T10:30:00"
+     * }
+     * 
+     * @param jsonPayload Raw JSON string from MQTT
      */
     public void processIncomingData(String jsonPayload) {
         try {
-            // 1. JSON'ı oku
+            // 1. Parse JSON
             JsonNode node = objectMapper.readTree(jsonPayload);
 
-            // 2. Entity nesnesini oluştur
-            Telemetry telemetry = new Telemetry();
-
-            // JSON içindeki alanları Entity'ye eşle
-            // Not: Simülatörden gelen veri yapısına göre buraları güncelleyebiliriz.
-            // Örnek JSON: {"source_id": "drone1", "lat": 39.9, "lon": 32.8, "type": "DRONE"}
-            if (node.has("source_id")) {
-                telemetry.setSourceId(node.get("source_id").asText());
-            } else {
-                // ID yoksa işlem yapma veya logla
-                System.err.println("Hata: source_id eksik -> " + jsonPayload);
+            // 2. Validate required field
+            if (!node.has("source_id") || node.get("source_id").asText().isEmpty()) {
+                System.err.println("Error: source_id is missing -> " + jsonPayload);
                 return;
             }
 
-            // Asset Type belirleme (Enum)
-            String typeStr = node.has("source_type") ? node.get("source_type").asText() : "UNKNOWN";
-            try {
-                telemetry.setSourceType(AssetType.valueOf(typeStr.toUpperCase()));
-            } catch (IllegalArgumentException e) {
-                // Enum'da yoksa varsayılan olarak SENSOR atayabiliriz veya null bırakabiliriz
-                telemetry.setSourceType(AssetType.SENSOR);
-            }
-
-            // Sayısal veriler
+            // 3. Extract coordinates
             double lat = node.has("lat") ? node.get("lat").asDouble() : 0.0;
             double lon = node.has("lon") ? node.get("lon").asDouble() : 0.0;
 
-            telemetry.setLatitude(lat);
-            telemetry.setLongitude(lon);
-            telemetry.setAltitude(node.has("alt") ? node.get("alt").asDouble() : 0.0);
-            telemetry.setSpeed(node.has("speed") ? node.get("speed").asDouble() : 0.0);
-            telemetry.setBatteryLevel(node.has("battery") ? node.get("battery").asInt() : 0);
+            // 4. Create PostGIS Point (Note: Point takes longitude, latitude order)
+            Point location = geometryFactory.createPoint(new Coordinate(lon, lat));
 
-            // 3. PostGIS Noktasını Oluştur (Harita sorguları için kritik)
-            // Dikkat: Point(x, y) -> Point(Longitude, Latitude) sırasıyla alır.
-            Point point = geometryFactory.createPoint(new Coordinate(lon, lat));
-            telemetry.setLocation(point);
+            // 5. Parse timestamp or use current time
+            LocalDateTime timestamp = LocalDateTime.now();
+            if (node.has("timestamp")) {
+                try {
+                    timestamp = LocalDateTime.parse(node.get("timestamp").asText());
+                } catch (Exception e) {
+                    // Use server time if parsing fails
+                }
+            }
 
-            // 4. Zaman ve Ham Veri
-            telemetry.setTimestamp(LocalDateTime.now()); // Simülatörden timestamp gelirse onu da parse edebiliriz
-            telemetry.setPayload(jsonPayload); // Ham veriyi kaybetmemek için
+            // 6. Parse asset type
+            AssetType sourceType = AssetType.SENSOR; // Default
+            if (node.has("source_type")) {
+                try {
+                    sourceType = AssetType.valueOf(node.get("source_type").asText().toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    // Keep default
+                }
+            }
 
-            // 5. Veritabanına Kaydet
+            // 7. Build payload map (store all extra fields)
+            Map<String, Object> payload = buildPayloadMap(node, jsonPayload);
+
+            // 8. Build and save telemetry entity
+            Telemetry telemetry = Telemetry.builder()
+                    .sourceId(node.get("source_id").asText())
+                    .sourceType(sourceType)
+                    .timestamp(timestamp)
+                    .location(location)
+                    .altitude(node.has("alt") ? node.get("alt").asDouble() : null)
+                    .speed(node.has("speed") ? node.get("speed").asDouble() : null)
+                    .batteryLevel(node.has("battery") ? node.get("battery").asInt() : null)
+                    .payload(payload)
+                    .build();
+
             repository.save(telemetry);
 
-            System.out.println(">> Veri Kaydedildi: " + telemetry.getSourceId() + " | Konum: " + lat + ", " + lon);
+            System.out.println(">> Data Saved: " + telemetry.getSourceId() + 
+                    " | Location: " + lat + ", " + lon);
 
         } catch (Exception e) {
-            System.err.println("JSON Parse Hatası: " + e.getMessage());
+            System.err.println("JSON Parse Error: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    // SIN-11 için kullanılacak (Sonraki adımda Controller burayı çağıracak)
+    /**
+     * Build a payload map containing all extra fields and raw data.
+     */
+    private Map<String, Object> buildPayloadMap(JsonNode node, String rawJson) {
+        Map<String, Object> payload = new HashMap<>();
+        
+        // Add common extra fields if present
+        if (node.has("heading")) {
+            payload.put("heading", node.get("heading").asDouble());
+        }
+        if (node.has("signal_strength")) {
+            payload.put("signalStrength", node.get("signal_strength").asInt());
+        }
+        if (node.has("sensors")) {
+            try {
+                Map<String, Object> sensors = objectMapper.convertValue(
+                        node.get("sensors"), 
+                        new TypeReference<Map<String, Object>>() {}
+                );
+                payload.put("sensors", sensors);
+            } catch (Exception e) {
+                // Ignore conversion errors
+            }
+        }
+        
+        // Store raw JSON for debugging/audit
+        payload.put("_raw", rawJson);
+        
+        return payload;
+    }
+
+    // ========================================
+    // Query Methods
+    // ========================================
+
+    /**
+     * Get the latest telemetry for each unique source.
+     * Used for displaying current positions on the map.
+     */
     public List<Telemetry> getLatestTelemetry() {
         return repository.findLatestTelemetryBySource();
+    }
+
+    /**
+     * Get the most recent telemetry for a specific source.
+     */
+    public Optional<Telemetry> getLatestBySourceId(String sourceId) {
+        return repository.findTopBySourceIdOrderByTimestampDesc(sourceId);
+    }
+
+    /**
+     * Find all telemetry within a radius from a center point.
+     * 
+     * @param latitude Center latitude
+     * @param longitude Center longitude
+     * @param radiusMeters Radius in meters
+     * @return List of telemetry records within the radius
+     */
+    public List<Telemetry> findWithinRadius(double latitude, double longitude, double radiusMeters) {
+        Point center = geometryFactory.createPoint(new Coordinate(longitude, latitude));
+        return repository.findWithinRadius(center, radiusMeters);
+    }
+
+    /**
+     * Find the latest telemetry for each source within a radius.
+     * 
+     * @param latitude Center latitude
+     * @param longitude Center longitude
+     * @param radiusMeters Radius in meters
+     * @return Latest telemetry for each source within radius
+     */
+    public List<Telemetry> findLatestWithinRadius(double latitude, double longitude, double radiusMeters) {
+        Point center = geometryFactory.createPoint(new Coordinate(longitude, latitude));
+        return repository.findLatestWithinRadius(center, radiusMeters);
+    }
+
+    /**
+     * Find telemetry within a bounding box (map viewport).
+     */
+    public List<Telemetry> findWithinBoundingBox(double minLon, double minLat, 
+                                                   double maxLon, double maxLat) {
+        return repository.findWithinBoundingBox(minLon, minLat, maxLon, maxLat);
+    }
+
+    /**
+     * Get telemetry history for a source within a time range.
+     */
+    public List<Telemetry> getHistory(String sourceId, LocalDateTime start, LocalDateTime end) {
+        return repository.findBySourceIdAndTimestampBetweenOrderByTimestampDesc(sourceId, start, end);
+    }
+
+    /**
+     * Save a telemetry record.
+     */
+    public Telemetry save(Telemetry telemetry) {
+        return repository.save(telemetry);
+    }
+
+    /**
+     * Get all telemetry records.
+     */
+    public List<Telemetry> findAll() {
+        return repository.findAll();
     }
 }
