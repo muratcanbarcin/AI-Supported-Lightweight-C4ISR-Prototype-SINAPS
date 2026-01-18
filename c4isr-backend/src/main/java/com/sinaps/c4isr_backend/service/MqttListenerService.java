@@ -1,92 +1,129 @@
 package com.sinaps.c4isr_backend.service;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.eclipse.paho.client.mqttv3.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 public class MqttListenerService implements MqttCallback {
 
-    // Adım 3'te yazdığımız servisi buraya çağırıyoruz (Dependency Injection)
+    private static final Logger log = LoggerFactory.getLogger(MqttListenerService.class);
+
+    // Dependency injection for TelemetryService
     private final TelemetryService telemetryService;
 
-    // Paho MQTT Client nesnesi
+    // Paho MQTT Client
     private MqttClient client;
 
-    // application.properties'den okunan değer
+    // Read from application.properties
     @Value("${mqtt.broker.url}")
     private String brokerUrl;
 
-    // Class Diagram'daki Topic Yapısı [cite: 26]
-    // "c4isr/+/telemetry" -> "+" işareti wildcard'dır.
-    // Yani: c4isr/drone1/telemetry, c4isr/soldierA/telemetry hepsini dinler.
-    private static final String TOPIC_PATTERN = "c4isr/+/telemetry";
+    // Topic patterns
+    // Original topic pattern for C4ISR telemetry (c4isr/drone1/telemetry, c4isr/soldierA/telemetry, etc.)
+    private static final String TOPIC_C4ISR_TELEMETRY = "c4isr/+/telemetry";
+    
+    // UAV Simulator topic (drone/events)
+    private static final String TOPIC_DRONE_EVENTS = "drone/events";
 
     public MqttListenerService(TelemetryService telemetryService) {
         this.telemetryService = telemetryService;
     }
 
     /**
-     * Uygulama ayağa kalkar kalkmaz bu metod çalışır (@PostConstruct)
-     * ve Broker'a bağlanır.
+     * Connect to MQTT broker on application startup.
      */
     @PostConstruct
     public void connect() {
         try {
-            System.out.println("MQTT Broker'a bağlanılıyor: " + brokerUrl);
+            log.info("Connecting to MQTT Broker: {}", brokerUrl);
 
-            // Her bağlantı için benzersiz bir ID oluşturur
+            // Generate unique client ID for each connection
             String clientId = MqttClient.generateClientId();
             client = new MqttClient(brokerUrl, clientId);
 
-            // Bağlantı seçenekleri
+            // Connection options
             MqttConnectOptions options = new MqttConnectOptions();
-            options.setCleanSession(true); // Her bağlandığında temiz sayfa aç
-            options.setAutomaticReconnect(true); // Koparsa tekrar bağlanmayı dene
+            options.setCleanSession(true);
+            options.setAutomaticReconnect(true);
             options.setConnectionTimeout(10);
+            options.setKeepAliveInterval(30);
 
             client.connect(options);
-            client.setCallback(this); // Olayları (mesaj geldi, koptu vs.) bu sınıfta dinle
+            client.setCallback(this);
 
-            // Belirlenen kanala abone ol (Subscribe)
-            client.subscribe(TOPIC_PATTERN);
+            // Subscribe to both topic patterns
+            client.subscribe(TOPIC_C4ISR_TELEMETRY);
+            log.info("Subscribed to topic: {}", TOPIC_C4ISR_TELEMETRY);
+            
+            client.subscribe(TOPIC_DRONE_EVENTS);
+            log.info("Subscribed to topic: {}", TOPIC_DRONE_EVENTS);
 
-            System.out.println("MQTT Bağlantısı Başarılı! Dinlenen Topic: " + TOPIC_PATTERN);
+            log.info("MQTT Connection Successful! Listening for telemetry data...");
 
         } catch (MqttException e) {
-            System.err.println("MQTT Bağlantı Hatası: " + e.getMessage());
-            System.err.println("NOT: MQTT Broker (Mosquitto) çalışıyor mu kontrol edin.");
+            log.error("MQTT Connection Error: {}", e.getMessage());
+            log.error("NOTE: Make sure MQTT Broker (Mosquitto) is running.");
         }
     }
 
     /**
-     * Bağlantı koptuğunda tetiklenir [cite: 29]
+     * Disconnect from MQTT broker on application shutdown.
      */
-    @Override
-    public void connectionLost(Throwable cause) {
-        System.err.println("MQTT Bağlantısı Koptu! Sebep: " + cause.getMessage());
+    @PreDestroy
+    public void disconnect() {
+        try {
+            if (client != null && client.isConnected()) {
+                client.disconnect();
+                log.info("Disconnected from MQTT Broker.");
+            }
+        } catch (MqttException e) {
+            log.error("Error disconnecting from MQTT: {}", e.getMessage());
+        }
     }
 
     /**
-     * YENİ MESAJ GELDİĞİNDE tetiklenir [cite: 29]
-     * Burası sistemin giriş kapısıdır.
+     * Called when connection to broker is lost.
+     */
+    @Override
+    public void connectionLost(Throwable cause) {
+        log.error("MQTT Connection Lost! Cause: {}", cause.getMessage());
+    }
+
+    /**
+     * Called when a new message arrives on a subscribed topic.
+     * Routes messages to appropriate handler based on topic.
      */
     @Override
     public void messageArrived(String topic, MqttMessage message) throws Exception {
         String payload = new String(message.getPayload());
 
-        System.out.println("MQTT Mesajı Geldi [" + topic + "]: " + payload);
+        log.debug("MQTT Message Received [{}]: {}", topic, payload);
 
-        // Gelen veriyi işlemesi için TelemetryService'e gönderiyoruz
-        telemetryService.processIncomingData(payload);
+        // Route message based on topic
+        if (topic.equals(TOPIC_DRONE_EVENTS)) {
+            // UAV Simulator messages -> processSimulatorMessage
+            log.debug("Routing to Simulator Message Processor");
+            telemetryService.processSimulatorMessage(payload);
+        } else if (topic.matches("c4isr/.+/telemetry")) {
+            // Original C4ISR telemetry format -> processIncomingData
+            log.debug("Routing to C4ISR Message Processor");
+            telemetryService.processIncomingData(payload);
+        } else {
+            log.warn("Unknown topic: {} - message not processed", topic);
+        }
     }
 
     /**
-     * Mesaj gönderimi tamamlandığında tetiklenir (Şu an sadece dinliyoruz, boş kalabilir)
+     * Called when a message delivery is complete (for publisher).
+     * We are only subscribing, so this is not used.
      */
     @Override
     public void deliveryComplete(IMqttDeliveryToken token) {
-        // Biz şu an sadece Subscriber'ız (Dinleyici), Publisher değiliz.
+        // We are a subscriber, not a publisher
     }
 }
