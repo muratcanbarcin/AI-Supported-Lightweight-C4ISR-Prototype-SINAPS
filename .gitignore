@@ -8,3 +8,18 @@ __pycache__/
 
 # Gizli bilgileri ve şifreleri (çok önemli)
 .env
+
+# Paho MQTT Client Temporary Files
+paho*
+*.lck
+
+# Logs
+*.log
+
+# Maven / Java Build Artifacts
+target/
+*.class
+
+# IDEs
+.idea/
+*.iml

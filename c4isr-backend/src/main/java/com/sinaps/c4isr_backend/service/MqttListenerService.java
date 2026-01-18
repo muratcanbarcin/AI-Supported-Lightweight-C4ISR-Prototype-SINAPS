@@ -24,9 +24,10 @@ public class MqttListenerService implements MqttCallback {
     private String brokerUrl;
 
     // Topic patterns
-    // Original topic pattern for C4ISR telemetry (c4isr/drone1/telemetry, c4isr/soldierA/telemetry, etc.)
+    // Original topic pattern for C4ISR telemetry (c4isr/drone1/telemetry,
+    // c4isr/soldierA/telemetry, etc.)
     private static final String TOPIC_C4ISR_TELEMETRY = "c4isr/+/telemetry";
-    
+
     // UAV Simulator topic (drone/events)
     private static final String TOPIC_DRONE_EVENTS = "drone/events";
 
@@ -59,9 +60,18 @@ public class MqttListenerService implements MqttCallback {
             // Subscribe to both topic patterns
             client.subscribe(TOPIC_C4ISR_TELEMETRY);
             log.info("Subscribed to topic: {}", TOPIC_C4ISR_TELEMETRY);
-            
+
             client.subscribe(TOPIC_DRONE_EVENTS);
             log.info("Subscribed to topic: {}", TOPIC_DRONE_EVENTS);
+
+            client.subscribe("vehicle/events");
+            log.info("Subscribed to topic: vehicle/events");
+
+            client.subscribe("soldier/events");
+            log.info("Subscribed to topic: soldier/events");
+
+            client.subscribe("watch/events"); // Correct topic for Soldier/Watch simulator
+            log.info("Subscribed to topic: watch/events");
 
             log.info("MQTT Connection Successful! Listening for telemetry data...");
 
@@ -98,23 +108,35 @@ public class MqttListenerService implements MqttCallback {
      * Called when a new message arrives on a subscribed topic.
      * Routes messages to appropriate handler based on topic.
      */
+
     @Override
     public void messageArrived(String topic, MqttMessage message) throws Exception {
         String payload = new String(message.getPayload());
 
-        log.debug("MQTT Message Received [{}]: {}", topic, payload);
+        // DEBUG LOGGING START
+        // log.info(">>> MQTT MESSAGE ARRIVED <<<");
+        // log.info("Topic: {}", topic);
+        // log.info("Payload: {}", payload);
+        // DEBUG LOGGING END
 
-        // Route message based on topic
-        if (topic.equals(TOPIC_DRONE_EVENTS)) {
-            // UAV Simulator messages -> processSimulatorMessage
-            log.debug("Routing to Simulator Message Processor");
-            telemetryService.processSimulatorMessage(payload);
-        } else if (topic.matches("c4isr/.+/telemetry")) {
-            // Original C4ISR telemetry format -> processIncomingData
-            log.debug("Routing to C4ISR Message Processor");
-            telemetryService.processIncomingData(payload);
-        } else {
-            log.warn("Unknown topic: {} - message not processed", topic);
+        try {
+            // Route message based on topic
+            if (topic.equals(TOPIC_DRONE_EVENTS) || topic.equals("vehicle/events") || topic.equals("soldier/events")
+                    || topic.equals("watch/events")) {
+                // Simulator messages -> processSimulatorMessage
+                if (!topic.equals(TOPIC_DRONE_EVENTS)) {
+                    log.info("Routing from {} to Simulator Message Processor...", topic);
+                }
+                telemetryService.processSimulatorMessage(payload);
+            } else if (topic.matches("c4isr/.+/telemetry")) {
+                // Original C4ISR telemetry format -> processIncomingData
+                // log.info("Routing to C4ISR Message Processor...");
+                telemetryService.processIncomingData(payload);
+            } else {
+                log.warn("Unknown topic: {} - message not processed", topic);
+            }
+        } catch (Exception e) {
+            log.error("CRITICAL ERROR PROCESSING MQTT MESSAGE: {}", e.getMessage(), e);
         }
     }
 

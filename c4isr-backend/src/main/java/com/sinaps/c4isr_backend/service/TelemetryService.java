@@ -57,15 +57,15 @@ public class TelemetryService {
      * 
      * Expected JSON format:
      * {
-     *   "source_id": "drone-001",
-     *   "source_type": "DRONE",
-     *   "lat": 39.9334,
-     *   "lon": 32.8597,
-     *   "alt": 150.0,
-     *   "speed": 25.5,
-     *   "battery": 85,
-     *   "heading": 45.0,
-     *   "timestamp": "2024-01-15T10:30:00"
+     * "source_id": "drone-001",
+     * "source_type": "DRONE",
+     * "lat": 39.9334,
+     * "lon": 32.8597,
+     * "alt": 150.0,
+     * "speed": 25.5,
+     * "battery": 85,
+     * "heading": 45.0,
+     * "timestamp": "2024-01-15T10:30:00"
      * }
      * 
      * @param jsonPayload Raw JSON string from MQTT
@@ -125,7 +125,7 @@ public class TelemetryService {
 
             repository.save(telemetry);
 
-            System.out.println(">> Data Saved: " + telemetry.getSourceId() + 
+            System.out.println(">> Data Saved: " + telemetry.getSourceId() +
                     " | Location: " + lat + ", " + lon);
 
         } catch (Exception e) {
@@ -139,7 +139,7 @@ public class TelemetryService {
      */
     private Map<String, Object> buildPayloadMap(JsonNode node, String rawJson) {
         Map<String, Object> payload = new HashMap<>();
-        
+
         // Add common extra fields if present
         if (node.has("heading")) {
             payload.put("heading", node.get("heading").asDouble());
@@ -150,18 +150,18 @@ public class TelemetryService {
         if (node.has("sensors")) {
             try {
                 Map<String, Object> sensors = objectMapper.convertValue(
-                        node.get("sensors"), 
-                        new TypeReference<Map<String, Object>>() {}
-                );
+                        node.get("sensors"),
+                        new TypeReference<Map<String, Object>>() {
+                        });
                 payload.put("sensors", sensors);
             } catch (Exception e) {
                 // Ignore conversion errors
             }
         }
-        
+
         // Store raw JSON for debugging/audit
         payload.put("_raw", rawJson);
-        
+
         return payload;
     }
 
@@ -174,17 +174,17 @@ public class TelemetryService {
      * 
      * Expected JSON format from simulator:
      * {
-     *   "domain": "drone",
-     *   "type": "telemetry",
-     *   "id": "drone1",
-     *   "time": "2025-01-18T10:00:00.123Z",
-     *   "payload": {
-     *     "position": { "lat": 38.4237, "lon": 27.1428, "alt_m": 120.5 },
-     *     "yaw_deg": 266.2,
-     *     "ground_speed_mps": 13.4,
-     *     "mode": "AUTO",
-     *     "battery": { "soc_pct": 74.2 }
-     *   }
+     * "domain": "drone",
+     * "type": "telemetry",
+     * "id": "drone1",
+     * "time": "2025-01-18T10:00:00.123Z",
+     * "payload": {
+     * "position": { "lat": 38.4237, "lon": 27.1428, "alt_m": 120.5 },
+     * "yaw_deg": 266.2,
+     * "ground_speed_mps": 13.4,
+     * "mode": "AUTO",
+     * "battery": { "soc_pct": 74.2 }
+     * }
      * }
      * 
      * Field Mapping:
@@ -198,14 +198,17 @@ public class TelemetryService {
      * 
      * @param jsonPayload Raw JSON string from MQTT drone/events topic
      */
+
     public void processSimulatorMessage(String jsonPayload) {
+        log.info("Processing Simulator Message: {}", jsonPayload);
         try {
             // 1. Parse JSON into DTO
             SimMessageDTO message = objectMapper.readValue(jsonPayload, SimMessageDTO.class);
+            log.info("Parsed DTO: {}", message);
 
             // 2. Only process telemetry type messages
-            if (!"telemetry".equalsIgnoreCase(message.type())) {
-                log.debug("Ignoring non-telemetry message type: {} from {}", message.type(), message.id());
+            if (message.type() == null || !"telemetry".equalsIgnoreCase(message.type())) {
+                log.warn("Ignoring non-telemetry message type: {} from {}", message.type(), message.id());
                 return;
             }
 
@@ -217,12 +220,13 @@ public class TelemetryService {
 
             SimPayloadDTO payloadDto = message.payload();
             if (payloadDto == null || payloadDto.position() == null) {
-                log.error("Error: payload or position is missing in simulator message -> {}", jsonPayload);
+                log.error("Error: payload or position is missing in simulator message. Payload: {}", payloadDto);
                 return;
             }
 
-            // 4. Parse ISO 8601 timestamp with timezone (handles "Z" suffix)
+            // 4. Parse ISO 8601 timestamp with timezone
             LocalDateTime timestamp = parseIsoTimestamp(message.time());
+            log.info("Parsed Timestamp: {}", timestamp);
 
             // 5. Extract position and create PostGIS Point
             double lat = payloadDto.position().lat();
@@ -232,34 +236,58 @@ public class TelemetryService {
             // 6. Determine asset type based on domain
             AssetType sourceType = determineAssetType(message.domain());
 
-            // 7. Build payload map for JSONB storage (store entire payload object)
-            Map<String, Object> payloadMap = objectMapper.convertValue(
-                    payloadDto, 
-                    new TypeReference<Map<String, Object>>() {}
-            );
+            // 7. Determine Speed (mps or kph -> mps)
+            Double speed = payloadDto.groundSpeedMps();
+            if (speed == null && payloadDto.speedKph() != null) {
+                speed = payloadDto.speedKph() / 3.6; // Convert kph to mps
+            }
 
-            // 8. Build and save telemetry entity
+            // 8. Determine Battery/Fuel/Device Battery
+            Integer batteryLevel = null;
+            if (payloadDto.battery() != null) {
+                batteryLevel = (int) Math.round(payloadDto.battery().socPct());
+            } else if (payloadDto.fuelPct() != null) {
+                batteryLevel = (int) Math.round(payloadDto.fuelPct()); // Reuse battery field for fuel
+            } else if (payloadDto.device() != null) {
+                // Try to extract battery from device map if possible, or skip
+                // Since device is Object, we might need manual casting or just skip for now to
+                // avoid complexity errors
+                // Simple approach: if it's a Map, try reading battery_pct
+                try {
+                    Map<String, Object> devMap = objectMapper.convertValue(payloadDto.device(),
+                            new TypeReference<Map<String, Object>>() {
+                            });
+                    if (devMap.containsKey("battery_pct")) {
+                        batteryLevel = ((Number) devMap.get("battery_pct")).intValue();
+                    }
+                } catch (Exception e) {
+                    /* ignore */ }
+            }
+
+            // 9. Build payload map for JSONB storage
+            Map<String, Object> payloadMap = objectMapper.convertValue(
+                    payloadDto,
+                    new TypeReference<Map<String, Object>>() {
+                    });
+
+            // 10. Build and save telemetry entity
             Telemetry telemetry = Telemetry.builder()
                     .sourceId(message.id())
                     .sourceType(sourceType)
                     .timestamp(timestamp)
                     .location(location)
                     .altitude(payloadDto.position().altM())
-                    .speed(payloadDto.groundSpeedMps())
-                    .batteryLevel(payloadDto.battery() != null 
-                            ? (int) Math.round(payloadDto.battery().socPct()) 
-                            : null)
+                    .speed(speed)
+                    .batteryLevel(batteryLevel)
                     .payload(payloadMap)
                     .build();
 
-            repository.save(telemetry);
-
-            log.info(">> Simulator Data Saved: {} | Location: {}, {} | Alt: {}m | Speed: {} m/s | Battery: {}%",
-                    telemetry.getSourceId(), lat, lon, 
-                    telemetry.getAltitude(), telemetry.getSpeed(), telemetry.getBatteryLevel());
+            log.info("Saving Telemetry Entity: {}", telemetry);
+            Telemetry saved = repository.save(telemetry);
+            log.info(">> Simulator Data Saved! ID: {} | Source: {}", saved.getId(), saved.getSourceId());
 
         } catch (Exception e) {
-            log.error("Simulator JSON Parse Error: {}", e.getMessage());
+            log.error("Simulator JSON Parse/Save Error: {}", e.getMessage(), e);
             e.printStackTrace();
         }
     }
@@ -304,12 +332,15 @@ public class TelemetryService {
         if (domain == null) {
             return AssetType.SENSOR; // Default
         }
-        return switch (domain.toLowerCase()) {
-            case "drone", "uav" -> AssetType.DRONE;
-            case "soldier", "infantry" -> AssetType.SOLDIER;
-            case "vehicle", "tank", "apc" -> AssetType.VEHICLE;
-            default -> AssetType.SENSOR;
-        };
+        String d = domain.toLowerCase();
+        if (d.contains("drone") || d.contains("uav"))
+            return AssetType.DRONE;
+        if (d.contains("vehicle") || d.contains("tank") || d.contains("apc") || d.contains("ground"))
+            return AssetType.VEHICLE;
+        if (d.contains("soldier") || d.contains("infantry") || d.contains("watch"))
+            return AssetType.SOLDIER;
+
+        return AssetType.SENSOR;
     }
 
     // ========================================
@@ -334,8 +365,8 @@ public class TelemetryService {
     /**
      * Find all telemetry within a radius from a center point.
      * 
-     * @param latitude Center latitude
-     * @param longitude Center longitude
+     * @param latitude     Center latitude
+     * @param longitude    Center longitude
      * @param radiusMeters Radius in meters
      * @return List of telemetry records within the radius
      */
@@ -347,8 +378,8 @@ public class TelemetryService {
     /**
      * Find the latest telemetry for each source within a radius.
      * 
-     * @param latitude Center latitude
-     * @param longitude Center longitude
+     * @param latitude     Center latitude
+     * @param longitude    Center longitude
      * @param radiusMeters Radius in meters
      * @return Latest telemetry for each source within radius
      */
@@ -360,8 +391,8 @@ public class TelemetryService {
     /**
      * Find telemetry within a bounding box (map viewport).
      */
-    public List<Telemetry> findWithinBoundingBox(double minLon, double minLat, 
-                                                   double maxLon, double maxLat) {
+    public List<Telemetry> findWithinBoundingBox(double minLon, double minLat,
+            double maxLon, double maxLat) {
         return repository.findWithinBoundingBox(minLon, minLat, maxLon, maxLat);
     }
 

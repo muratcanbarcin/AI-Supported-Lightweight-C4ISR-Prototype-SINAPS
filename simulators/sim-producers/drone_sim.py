@@ -61,7 +61,9 @@ class UAVSim:
                 "yaw_deg":round(self.heading%360,1),
                 "ground_speed_mps":round(self.speed,2),
                 "mode":self.mode,
-                "battery":{"soc_pct":round(self.soc_pct,1)}
+                "battery":{"soc_pct":round(self.soc_pct,1)},
+                "alignment": "FRIEND" if "alpha" in self.id or "1" in self.id or "3" in self.id or "5" in self.id else "FOE",
+                "threat_level": 0 if ("alpha" in self.id or "1" in self.id or "3" in self.id or "5" in self.id) else random.randint(30, 90)
             }
         }
 
@@ -104,7 +106,9 @@ class UAVSim:
         try:
             while True:
                 self.step(t)
-                self._pub(self.telemetry())
+                telemetry_data = self.telemetry()
+                print(f"[DEBUG] ID={self.id} Alignment={telemetry_data['payload'].get('alignment')} Threat={telemetry_data['payload'].get('threat_level')}")
+                self._pub(telemetry_data)
                 det=self.maybe_detection()
                 if det:self._pub(det)
                 al=self.maybe_alert()
