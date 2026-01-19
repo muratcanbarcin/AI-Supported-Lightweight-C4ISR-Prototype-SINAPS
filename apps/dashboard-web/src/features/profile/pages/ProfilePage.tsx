@@ -1,7 +1,7 @@
 export function ProfilePage() {
     const commander = {
-        name: "EMİRHAN",
-        surname: "YILMAZ",
+        name: "SEMİH",
+        surname: "UTKU",
         rank: "YÜZBAŞI",
         role: "OPERASYONEL KOMUTAN",
         unit: "1. TAKTİK İHA FİLOSU",
@@ -17,7 +17,7 @@ export function ProfilePage() {
     ];
 
     const activeOperations = [
-        { id: "OP-2024-A", name: "PENÇE-KİLİT DESTEK", region: "KUZEY IRAK", status: "ONGOING" },
+        { id: "OP-2024-A", name: "SAHA GÜVENLİĞİ", region: "HATAY", status: "ONGOING" },
         { id: "OP-2024-B", name: "SINIR GÜVENLİĞİ", region: "HATAY", status: "ONGOING" },
     ];
 
