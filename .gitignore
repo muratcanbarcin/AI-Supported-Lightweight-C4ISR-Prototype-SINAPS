@@ -23,3 +23,13 @@ target/
 # IDEs
 .idea/
 *.iml
+
+# Frontend (Node/React)
+node_modules/
+dist/
+dist-ssr/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
