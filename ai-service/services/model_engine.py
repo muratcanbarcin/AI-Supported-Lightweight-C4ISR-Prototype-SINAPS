@@ -4,7 +4,11 @@ Model Engine - LLM Management with LoRA Fine-tuning
 SECURITY: OFFLINE MODE - Model loaded from local directory only.
            No external network calls to HuggingFace or any API permitted.
 ============================================================================
-Handles: Gemma-2-2b-it with 4-bit quantization, LoRA adapters, tactical decisions
+MODEL: Google Gemma-2-9b-it (9 billion parameters)
+HARDWARE TARGET: NVIDIA RTX 3080 (16GB VRAM) / 32GB System RAM
+QUANTIZATION: 4-bit NF4 (~6-7GB VRAM footprint)
+============================================================================
+Handles: Gemma-2-9b-it with 4-bit quantization, LoRA adapters, tactical decisions
 """
 import os, time, torch
 from typing import List, Optional, Dict, Any, Tuple
@@ -37,7 +41,10 @@ class ModelEngine:
         self._training_jobs: Dict[str, Dict] = {}
     
     def initialize(self) -> None:
-        """Initialize model from LOCAL directory (air-gapped mode)"""
+        """
+        Initialize Gemma-2-9b-it from LOCAL directory (air-gapped mode)
+        Uses 4-bit NF4 quantization for RTX 3080 16GB VRAM optimization
+        """
         if self._initialized: return
         
         # SECURITY CHECK: Verify local model exists
@@ -51,12 +58,18 @@ class ModelEngine:
             raise FileNotFoundError(error_msg)
         
         model_path = str(LOCAL_LLM_MODEL_PATH.absolute())
-        logger.info("Loading LLM from LOCAL directory (OFFLINE MODE)", model_path=model_path)
+        logger.info("Loading Gemma-2-9b-it from LOCAL directory (OFFLINE MODE)", model_path=model_path)
         
+        # 4-bit NF4 Quantization - Optimized for RTX 3080 16GB
+        # Expected VRAM usage: ~6-7GB (leaves ~9GB for LoRA training batches)
         bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type=settings.BNB_4BIT_QUANT_TYPE,
-            bnb_4bit_compute_dtype=getattr(torch, settings.BNB_4BIT_COMPUTE_DTYPE))
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,  # Nested quantization for extra memory savings
+            bnb_4bit_quant_type="nf4",       # NF4 data type for 4-bit base model
+            bnb_4bit_compute_dtype=torch.float16  # FP16 for computation
+        )
+        
+        logger.info("Quantization config: 4-bit NF4 with double quantization (target: ~6-7GB VRAM)")
         
         # Load tokenizer from LOCAL path - NO NETWORK CALLS
         self._tokenizer = AutoTokenizer.from_pretrained(
@@ -64,13 +77,26 @@ class ModelEngine:
         if self._tokenizer.pad_token is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
         
-        # Load model from LOCAL path - NO NETWORK CALLS
+        # Load model from LOCAL path with 4-bit quantization - NO NETWORK CALLS
+        logger.info("Loading 9B model with 4-bit quantization (this may take 30-60 seconds)...")
         self._model = AutoModelForCausalLM.from_pretrained(
-            model_path, quantization_config=bnb_config, device_map="auto",
-            local_files_only=True, trust_remote_code=True)
+            model_path, 
+            quantization_config=bnb_config, 
+            device_map="auto",
+            local_files_only=True, 
+            trust_remote_code=True
+        )
+        
+        # Log GPU memory usage
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated() / 1024**3
+            reserved = torch.cuda.memory_reserved() / 1024**3
+            logger.info(f"GPU Memory - Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB")
+        
         self._model = prepare_model_for_kbit_training(self._model)
         self._apply_lora_config()
         self._initialized = True
+        logger.info("Gemma-2-9b-it loaded successfully (OFFLINE, 4-bit NF4)")
         self._load_existing_adapter()
     
     def _apply_lora_config(self):

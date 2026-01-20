@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
     
-    # Model Configuration
-    MODEL_NAME: str = "google/gemma-2-2b-it"
+    # Model Configuration - Gemma-2-9b-it for RTX 3080 16GB
+    MODEL_NAME: str = "google/gemma-2-9b-it"
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     
     # LoRA Configuration

@@ -7,8 +7,13 @@ PURPOSE: Run this script ONCE on a machine WITH internet access to download
          all required models for offline/air-gapped deployment.
 
 MODELS DOWNLOADED:
-  - google/gemma-2-2b-it       -> ./local_models/llm
-  - all-MiniLM-L6-v2           -> ./local_models/embedding
+  - google/gemma-2-9b-it       -> ./local_models/llm      (~18GB download)
+  - all-MiniLM-L6-v2           -> ./local_models/embedding (~90MB download)
+
+TARGET HARDWARE:
+  - GPU: NVIDIA RTX 3080 (16GB VRAM) or equivalent
+  - RAM: 32GB system memory
+  - Disk: ~25GB free space for model storage
 
 USAGE:
   1. Set HF_TOKEN environment variable (required for Gemma)
@@ -17,6 +22,7 @@ USAGE:
 
 SECURITY NOTE:
   After transfer, the target system requires NO internet connectivity.
+  Model will be loaded in 4-bit quantization (~6-7GB VRAM at runtime).
 ============================================================================
 """
 
@@ -34,9 +40,9 @@ except ImportError as e:
     sys.exit(1)
 
 
-# Configuration
+# Configuration - UPGRADED TO 9B MODEL FOR RTX 3080 16GB
 LOCAL_MODELS_DIR = Path("./local_models")
-LLM_MODEL_NAME = "google/gemma-2-2b-it"
+LLM_MODEL_NAME = "google/gemma-2-9b-it"  # 9B parameters, ~18GB download
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 LLM_LOCAL_PATH = LOCAL_MODELS_DIR / "llm"
@@ -45,7 +51,7 @@ EMBEDDING_LOCAL_PATH = LOCAL_MODELS_DIR / "embedding"
 
 def check_hf_token():
     """Verify HuggingFace token is available (required for Gemma)"""
-    token = os.getenv("HF_TOKEN")
+    token = "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"
     if not token:
         print("=" * 60)
         print("ERROR: HF_TOKEN environment variable not set!")
@@ -157,13 +163,18 @@ def verify_downloads():
     print(f"\n{'='*60}")
     print("SUCCESS! Models ready for air-gapped deployment.")
     print()
+    print("Model specifications:")
+    print("  • LLM: Gemma-2-9b-it (~18GB on disk, ~6-7GB VRAM with 4-bit)")
+    print("  • Embedding: all-MiniLM-L6-v2 (~90MB)")
+    print()
     print("Next steps:")
     print("  1. Copy the entire 'local_models' folder to secure environment")
     print("  2. Ensure folder structure is preserved:")
     print(f"       {LOCAL_MODELS_DIR}/")
-    print("         ├── llm/")
-    print("         └── embedding/")
+    print("         ├── llm/       (~18GB)")
+    print("         └── embedding/ (~90MB)")
     print("  3. Start the AI service - it will load models offline")
+    print("  4. Verify GPU: nvidia-smi should show ~6-7GB VRAM usage")
     print("=" * 60)
     return True
 
