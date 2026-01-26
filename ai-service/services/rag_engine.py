@@ -173,8 +173,14 @@ class RAGEngine:
             
         Returns:
             List of similar events with their details and similarity scores
+            Returns empty list if database is not available (graceful degradation)
         """
         self._ensure_initialized()
+        
+        # Check if database is available
+        if db_manager._pool is None:
+            logger.debug("Database not available - returning empty context (demo mode)")
+            return []
         
         start_time = time.time()
         
@@ -219,20 +225,24 @@ class RAGEngine:
         params.extend([query_embedding_str, limit])
         
         results = []
-        with db_manager.get_cursor() as cursor:
-            cursor.execute(base_query, params)
-            rows = cursor.fetchall()
-            
-            for row in rows:
-                results.append({
-                    'id': row['id'],
-                    'event_description': row['event_description'],
-                    'outcome': row['outcome'],
-                    'source_platform': row['source_platform'],
-                    'threat_category': row['threat_category'],
-                    'timestamp': row['timestamp'].isoformat() if row['timestamp'] else None,
-                    'similarity_score': round(float(row['similarity_score']), 4)
-                })
+        try:
+            with db_manager.get_cursor() as cursor:
+                cursor.execute(base_query, params)
+                rows = cursor.fetchall()
+                
+                for row in rows:
+                    results.append({
+                        'id': row['id'],
+                        'event_description': row['event_description'],
+                        'outcome': row['outcome'],
+                        'source_platform': row['source_platform'],
+                        'threat_category': row['threat_category'],
+                        'timestamp': row['timestamp'].isoformat() if row['timestamp'] else None,
+                        'similarity_score': round(float(row['similarity_score']), 4)
+                    })
+        except Exception as e:
+            logger.warning(f"Database query failed, returning empty context: {e}")
+            return []
         
         elapsed_ms = (time.time() - start_time) * 1000
         

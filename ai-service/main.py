@@ -62,26 +62,41 @@ async def lifespan(app: FastAPI):
     """Application lifespan - initialize and cleanup resources"""
     logger.info("Starting C4ISR AI Microservice (Polymorphic Architecture)...")
     
-    # Initialize database connection
+    db_initialized = False
+    rag_initialized = False
+    
+    # Step 1: Initialize database connection (optional - for RAG vector storage)
     try:
         initialize_database(use_docker_network=False)
-        logger.info("Database initialized")
+        db_initialized = True
+        logger.info("✅ Database initialized successfully")
     except Exception as e:
-        logger.warning(f"Database init failed (may need to run init-vector.sql): {e}")
+        logger.warning(f"⚠️ Database init failed (RAG retrieval disabled): {e}")
     
-    # Initialize RAG engine
+    # Step 2: Initialize RAG engine embedding model (ALWAYS - required for telemetry summary)
+    # Note: RAG engine loads the embedding model for text processing
+    # Database is only needed for vector storage/retrieval which is optional
     try:
         rag_engine.initialize()
-        logger.info("RAG Engine initialized")
+        rag_initialized = True
+        logger.info("✅ RAG Engine (embedding model) initialized successfully")
     except Exception as e:
-        logger.warning(f"RAG Engine init failed: {e}")
+        logger.warning(f"⚠️ RAG Engine init failed: {e}")
     
-    # Initialize Model engine (optional - may require GPU)
+    # Step 3: Initialize Model engine (optional - may require GPU)
     try:
         model_engine.initialize()
-        logger.info("Model Engine initialized")
+        logger.info("✅ Model Engine initialized successfully")
     except Exception as e:
-        logger.warning(f"Model Engine init failed (GPU may be required): {e}")
+        logger.warning(f"⚠️ Model Engine init failed (GPU may be required): {e}")
+    
+    # Log startup summary
+    logger.info(
+        "Startup complete",
+        database=db_initialized,
+        rag=rag_initialized,
+        model="initialized"
+    )
     
     yield
     
@@ -293,6 +308,8 @@ def _create_telemetry_summary(telemetry: TelemetryInput) -> str:
     """
     Create a natural language summary of telemetry for RAG similarity search.
     Handles each telemetry type appropriately.
+    
+    Note: Fields may be enums or plain strings - access safely.
     """
     entity_type = telemetry.type
     entity_id = telemetry.source_id
@@ -303,17 +320,22 @@ def _create_telemetry_summary(telemetry: TelemetryInput) -> str:
         parts.append(f"altitude {telemetry.altitude}m")
         parts.append(f"speed {telemetry.speed}m/s")
         parts.append(f"battery {telemetry.battery_level}%")
-        parts.append(f"mode {telemetry.mode.value}")
+        # Safe enum access - get .value if enum, otherwise use as-is
+        mode_str = getattr(telemetry.mode, 'value', telemetry.mode)
+        parts.append(f"mode {mode_str}")
         
     elif isinstance(telemetry, SoldierTelemetry):
         parts.append(f"heart rate {telemetry.vitals.hr_bpm} BPM")
         parts.append(f"SpO2 {telemetry.vitals.spo2}%")
-        parts.append(f"status {telemetry.status.value}")
+        # status is now a plain str, no .value needed
+        parts.append(f"status {telemetry.status}")
         if telemetry.vitals.stress_index is not None:
             parts.append(f"stress {telemetry.vitals.stress_index:.2f}")
             
     elif isinstance(telemetry, VehicleTelemetry):
-        parts.append(f"type {telemetry.vehicle_type.value}")
+        # Safe enum access for vehicle_type
+        vtype_str = getattr(telemetry.vehicle_type, 'value', telemetry.vehicle_type)
+        parts.append(f"type {vtype_str}")
         parts.append(f"speed {telemetry.speed} km/h")
         parts.append(f"fuel {telemetry.fuel_pct}%")
         if telemetry.health_pct is not None:
