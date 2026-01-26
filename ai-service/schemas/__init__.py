@@ -1,63 +1,69 @@
-"""Pydantic schemas for API request/response validation"""
+"""
+Pydantic Schemas for C4ISR AI Microservice
+============================================================================
+Polymorphic telemetry models with discriminated unions for automatic
+schema validation based on the 'type' field.
+============================================================================
+"""
 
 from .telemetry import (
-    # Core models
-    AnalysisRequest, 
-    AnalysisResponse,
-    ContextItem,
+    # Enumerations
     ThreatLevel,
     TelemetryType,
-    Alignment,
+    SoldierStatus,
+    VehicleType,
+    DroneMode,
     
-    # Telemetry models
-    FlexibleTelemetryInput,
+    # Base Models
+    BaseTelemetry,
+    SoldierVitals,
+    
+    # Polymorphic Telemetry Models (Discriminated Union)
+    TelemetryInput,
     DroneTelemetry,
     SoldierTelemetry,
     VehicleTelemetry,
     
-    # Payload models
-    DronePayload,
-    SoldierPayload,
-    VehiclePayload,
-    Position,
-    Vitals,
-    Battery,
+    # Response Models
+    AnalysisRequest,
+    AnalysisResponse,
+    AIAnalysisResult,
+    ContextItem,
     
-    # Legacy compatibility
-    LegacyTelemetryData,
-    PlatformType
+    # Legacy Compatibility
+    FlexibleTelemetryInput,
 )
-from .memory import IngestRequest, IngestResponse
-from .training import TrainingRequest, TrainingResponse, TrainingExample
 
-# Backwards compatibility alias
-TelemetryData = LegacyTelemetryData
+from .memory import IngestRequest, IngestResponse
+
+from .training import TrainingRequest, TrainingResponse, TrainingExample, TrainingStatus
 
 __all__ = [
-    # Analysis
-    "AnalysisRequest", 
-    "AnalysisResponse",
-    "ContextItem",
+    # Enumerations
     "ThreatLevel",
     "TelemetryType",
-    "Alignment",
+    "SoldierStatus",
+    "VehicleType",
+    "DroneMode",
     
-    # Telemetry types
-    "FlexibleTelemetryInput",
+    # Base Models
+    "BaseTelemetry",
+    "SoldierVitals",
+    
+    # Polymorphic Telemetry (Discriminated Union)
+    "TelemetryInput",
     "DroneTelemetry",
-    "SoldierTelemetry", 
+    "SoldierTelemetry",
     "VehicleTelemetry",
-    "DronePayload",
-    "SoldierPayload",
-    "VehiclePayload",
-    "Position",
-    "Vitals",
-    "Battery",
     
-    # Legacy
-    "TelemetryData",
-    "LegacyTelemetryData",
-    "PlatformType",
+    # Request/Response
+    "AnalysisRequest",
+    "AnalysisResponse",
+    "AIAnalysisResult",
+    "ContextItem",
+    
+    # Legacy Compatibility
+    "FlexibleTelemetryInput",
     
     # Memory
     "IngestRequest",
@@ -66,5 +72,6 @@ __all__ = [
     # Training
     "TrainingRequest",
     "TrainingResponse",
-    "TrainingExample"
+    "TrainingExample",
+    "TrainingStatus",
 ]

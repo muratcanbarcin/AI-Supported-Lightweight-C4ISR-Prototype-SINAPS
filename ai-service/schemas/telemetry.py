@@ -1,21 +1,29 @@
 """
-Telemetry and Analysis Schemas
 ============================================================================
-Polymorphic models for multi-domain C4ISR telemetry:
-  - Drone (UAV): Battery, Altitude, Speed, Mode
-  - Soldier (Watch): Heart Rate, SpO2, Stress, Vitals
-  - Vehicle: Fuel, Speed, Engine Status, Vehicle Type
+    C4ISR TACTICAL TELEMETRY SCHEMAS - POLYMORPHIC PYDANTIC MODELS
+============================================================================
+    Discriminated Union Architecture for Multi-Domain Telemetry:
+    - DroneTelemetry: UAV operational data (battery, altitude, speed, mode)
+    - SoldierTelemetry: Personnel vitals (heart rate, SpO2, stress indicators)
+    - VehicleTelemetry: Ground asset data (fuel, speed, vehicle type)
+    
+    Uses Pydantic v2 Discriminated Unions with Literal type discriminators
+    for automatic schema validation based on the `type` field.
 ============================================================================
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any, Union, Annotated
+from typing import Optional, List, Dict, Any, Union, Annotated, Literal
 from datetime import datetime
 from enum import Enum
 
 
+# ============================================================================
+#                           ENUMERATIONS
+# ============================================================================
+
 class ThreatLevel(str, Enum):
-    """Threat level classification"""
+    """Standardized threat level classification"""
     CRITICAL = "CRITICAL"
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
@@ -24,53 +32,49 @@ class ThreatLevel(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
-class Alignment(str, Enum):
-    """Friend/Foe alignment"""
-    FRIEND = "FRIEND"
-    FOE = "FOE"
-    NEUTRAL = "NEUTRAL"
+class SoldierStatus(str, Enum):
+    """Soldier operational status"""
+    ACTIVE = "ACTIVE"
+    RESTING = "RESTING"
+    INJURED = "INJURED"
+    CRITICAL = "CRITICAL"
     UNKNOWN = "UNKNOWN"
 
 
-class TelemetryType(str, Enum):
-    """Types of telemetry sources"""
-    DRONE = "drone"
-    SOLDIER = "soldier"
-    VEHICLE = "vehicle"
-    WATCH = "watch"  # Alias for soldier
-    UNKNOWN = "unknown"
+class VehicleType(str, Enum):
+    """Ground vehicle classification"""
+    TANK = "TANK"
+    APC = "APC"
+    TRUCK = "TRUCK"
+    HUMVEE = "HUMVEE"
+    OTHER = "OTHER"
+
+
+class DroneMode(str, Enum):
+    """UAV flight mode"""
+    AUTO = "AUTO"
+    MANUAL = "MANUAL"
+    RTH = "RTH"  # Return to Home
+    LOITER = "LOITER"
+    LANDING = "LANDING"
 
 
 # ============================================================================
 #                           NESTED DATA MODELS
 # ============================================================================
 
-class Position(BaseModel):
-    """GPS Position data"""
-    lat: float = Field(..., ge=-90, le=90, description="Latitude")
-    lon: float = Field(..., ge=-180, le=180, description="Longitude")
-    alt_m: Optional[float] = Field(None, description="Altitude in meters")
-
-
-class Vitals(BaseModel):
-    """Soldier vital signs data"""
-    hr_bpm: int = Field(..., ge=30, le=250, description="Heart rate BPM")
-    spo2_pct: float = Field(98.0, ge=0, le=100, description="Blood oxygen %")
-    resp_bpm: Optional[float] = Field(None, description="Respiration rate")
-    skin_temp_c: Optional[float] = Field(None, description="Skin temperature")
-    stress_score: Optional[float] = Field(None, ge=0, le=1, description="Stress level 0-1")
-
-
-class Battery(BaseModel):
-    """Battery/Power status"""
-    soc_pct: float = Field(..., ge=0, le=100, description="State of charge %")
-
-
-class Device(BaseModel):
-    """Wearable device info"""
-    device_id: str
-    model: Optional[str] = None
-    battery_pct: Optional[float] = None
+class SoldierVitals(BaseModel):
+    """Soldier physiological data from wearable sensors"""
+    hr_bpm: int = Field(..., ge=30, le=250, description="Heart rate in beats per minute")
+    spo2: float = Field(default=98.0, ge=0, le=100, description="Blood oxygen saturation percentage")
+    resp_bpm: Optional[float] = Field(default=None, ge=5, le=60, description="Respiration rate BPM")
+    skin_temp_c: Optional[float] = Field(default=None, ge=20, le=45, description="Skin temperature Celsius")
+    stress_index: Optional[float] = Field(default=None, ge=0, le=1.0, description="Computed stress index 0-1")
+    
+    model_config = {
+        "coerce_numbers_to_str": False,
+        "strict": False,  # Allow coercion of float to int for hr_bpm
+    }
 
 
 # ============================================================================
@@ -78,177 +82,240 @@ class Device(BaseModel):
 # ============================================================================
 
 class BaseTelemetry(BaseModel):
-    """Base class for all telemetry types with common fields"""
-    domain: str = Field(..., description="Telemetry domain (drone/watch/vehicle)")
-    type: str = Field("telemetry", description="Message type")
-    id: str = Field(..., description="Source entity ID")
-    time: Optional[str] = Field(None, description="ISO timestamp")
+    """
+    Base class for all telemetry types.
+    Contains common geospatial and temporal fields.
+    """
+    source_id: str = Field(..., min_length=1, max_length=64, description="Unique identifier for the source entity")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="ISO 8601 timestamp of telemetry capture")
+    latitude: float = Field(..., ge=-90.0, le=90.0, description="WGS84 latitude in degrees")
+    longitude: float = Field(..., ge=-180.0, le=180.0, description="WGS84 longitude in degrees")
     
-    class Config:
-        extra = "allow"  # Allow extra fields for flexibility
+    model_config = {
+        "json_schema_extra": {
+            "description": "Base telemetry model with common geospatial fields"
+        }
+    }
 
 
 # ============================================================================
 #                           DRONE TELEMETRY
 # ============================================================================
 
-class DronePayload(BaseModel):
-    """Drone-specific telemetry payload"""
-    position: Position
-    yaw_deg: Optional[float] = Field(None, ge=0, lt=360)
-    ground_speed_mps: Optional[float] = Field(None, ge=0)
-    mode: Optional[str] = Field("AUTO", description="Flight mode: AUTO/MANUAL/RTH")
-    battery: Optional[Battery] = None
-    alignment: Optional[str] = Field("UNKNOWN")
-    threat_level: Optional[int] = Field(0, ge=0, le=100)
-
-
 class DroneTelemetry(BaseTelemetry):
-    """Full drone telemetry message from simulator"""
-    domain: str = "drone"
-    payload: DronePayload
+    """
+    UAV/Drone telemetry data.
+    Discriminator: type = "drone"
+    """
+    type: Literal["drone"] = Field(default="drone", description="Telemetry type discriminator")
+    
+    # Drone-specific fields
+    altitude: float = Field(..., ge=0, le=50000, description="Altitude above ground level in meters")
+    speed: float = Field(default=0.0, ge=0, le=500, description="Ground speed in meters per second")
+    battery_level: float = Field(..., ge=0, le=100, description="Battery state of charge percentage")
+    mode: DroneMode = Field(default=DroneMode.AUTO, description="Current flight mode")
+    heading_deg: Optional[float] = Field(default=None, ge=0, lt=360, description="Heading in degrees")
+    vertical_speed: Optional[float] = Field(default=None, description="Vertical speed m/s (positive=climbing)")
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "type": "drone",
+                "source_id": "UAV-ALPHA-01",
+                "timestamp": "2026-01-27T00:00:00Z",
+                "latitude": 39.9208,
+                "longitude": 32.8541,
+                "altitude": 150.0,
+                "speed": 12.5,
+                "battery_level": 78.5,
+                "mode": "AUTO"
+            }
+        }
+    }
 
 
 # ============================================================================
-#                           SOLDIER/WATCH TELEMETRY
+#                           SOLDIER TELEMETRY
 # ============================================================================
-
-class SoldierPayload(BaseModel):
-    """Soldier wearable telemetry payload"""
-    soldier_id: str
-    unit_id: Optional[str] = None
-    collected_at: Optional[str] = None
-    position: Position
-    vitals: Vitals
-    device: Optional[Device] = None
-    alignment: Optional[str] = Field("FRIEND")
-    threat_level: Optional[int] = Field(0)
-
 
 class SoldierTelemetry(BaseTelemetry):
-    """Full soldier/watch telemetry message"""
-    domain: str = "watch"
-    payload: SoldierPayload
+    """
+    Soldier/Personnel telemetry from wearable devices.
+    Discriminator: type = "soldier"
+    """
+    type: Literal["soldier"] = Field(default="soldier", description="Telemetry type discriminator")
+    
+    # Soldier-specific fields
+    vitals: SoldierVitals = Field(..., description="Physiological data from wearable sensors")
+    status: str = Field(default="ACTIVE", description="Operational status (ACTIVE, INJURED, ENGAGED, PANIC, etc.)")
+    unit_id: Optional[str] = Field(default=None, description="Military unit identifier")
+    callsign: Optional[str] = Field(default=None, description="Radio callsign")
+    elevation: Optional[float] = Field(default=None, description="Elevation above sea level in meters")
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "type": "soldier",
+                "source_id": "ALPHA-2-ACTUAL",
+                "timestamp": "2026-01-27T00:00:00Z",
+                "latitude": 39.9215,
+                "longitude": 32.8550,
+                "vitals": {
+                    "hr_bpm": 85,
+                    "spo2": 97.5
+                },
+                "status": "ACTIVE",
+                "unit_id": "ALPHA-TEAM"
+            }
+        }
+    }
 
 
 # ============================================================================
 #                           VEHICLE TELEMETRY
 # ============================================================================
 
-class VehiclePayload(BaseModel):
-    """Ground vehicle telemetry payload"""
-    id: str
-    time: Optional[str] = None
-    type: Optional[str] = Field("APC", description="Vehicle type: APC/Tank/Truck etc")
-    position: Position
-    heading_deg: Optional[float] = Field(None, ge=0, lt=360)
-    speed_kph: Optional[float] = Field(None, ge=0)
-    engine: Optional[str] = Field("RUN", description="Engine status: RUN/IDLE/OFF")
-    fuel_pct: Optional[float] = Field(None, ge=0, le=100)
-    health_pct: Optional[float] = Field(None, ge=0, le=100)
-    alignment: Optional[str] = Field("UNKNOWN")
-    threat_level: Optional[int] = Field(0, ge=0, le=100)
-
-
 class VehicleTelemetry(BaseTelemetry):
-    """Full vehicle telemetry message"""
-    domain: str = "vehicle"
-    payload: VehiclePayload
+    """
+    Ground vehicle telemetry data.
+    Discriminator: type = "vehicle"
+    """
+    type: Literal["vehicle"] = Field(default="vehicle", description="Telemetry type discriminator")
+    
+    # Vehicle-specific fields
+    speed: float = Field(default=0.0, ge=0, le=200, description="Ground speed in km/h")
+    fuel_pct: float = Field(..., ge=0, le=100, description="Fuel level percentage")
+    vehicle_type: VehicleType = Field(default=VehicleType.APC, description="Vehicle classification")
+    heading_deg: Optional[float] = Field(default=None, ge=0, lt=360, description="Heading in degrees")
+    engine_status: Optional[str] = Field(default="RUNNING", description="Engine operational status")
+    health_pct: Optional[float] = Field(default=100.0, ge=0, le=100, description="Vehicle health/damage status")
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "type": "vehicle",
+                "source_id": "TANK-BRAVO-03",
+                "timestamp": "2026-01-27T00:00:00Z",
+                "latitude": 39.9300,
+                "longitude": 32.8600,
+                "speed": 35.0,
+                "fuel_pct": 82.0,
+                "vehicle_type": "TANK"
+            }
+        }
+    }
 
 
 # ============================================================================
-#                           UNIFIED TELEMETRY (DISCRIMINATED UNION)
+#                           DISCRIMINATED UNION TYPE
 # ============================================================================
 
-# Use domain as discriminator for polymorphic parsing
-UnifiedTelemetry = Annotated[
+# Polymorphic telemetry input using discriminated union
+# FastAPI automatically validates the correct schema based on the "type" field
+TelemetryInput = Annotated[
     Union[DroneTelemetry, SoldierTelemetry, VehicleTelemetry],
-    Field(discriminator="domain")
-]
-
-
-# ============================================================================
-#                           SIMPLIFIED INPUT MODELS
-# ============================================================================
-
-class SimpleDroneInput(BaseModel):
-    """Simplified drone input for direct API calls"""
-    source_id: str = Field(..., alias="id")
-    latitude: float
-    longitude: float
-    altitude: Optional[float] = Field(None, alias="alt_m")
-    speed: Optional[float] = Field(None, alias="ground_speed_mps")
-    battery_level: Optional[float] = Field(None, alias="battery_pct")
-    mode: Optional[str] = "AUTO"
-    type: str = "drone"
-    alignment: Optional[str] = "UNKNOWN"
-    threat_level: Optional[int] = 0
-    
-    class Config:
-        populate_by_name = True
-
-
-class SimpleSoldierInput(BaseModel):
-    """Simplified soldier input for direct API calls"""
-    source_id: str = Field(..., alias="soldier_id")
-    latitude: float
-    longitude: float
-    vitals: Vitals
-    status: Optional[str] = Field("FRIEND", alias="alignment")
-    type: str = "soldier"
-    unit_id: Optional[str] = None
-    threat_level: Optional[int] = 0
-    
-    class Config:
-        populate_by_name = True
-
-
-class SimpleVehicleInput(BaseModel):
-    """Simplified vehicle input for direct API calls"""
-    source_id: str = Field(..., alias="id")
-    latitude: float
-    longitude: float
-    speed: Optional[float] = Field(None, alias="speed_kph")
-    fuel_pct: Optional[float] = None
-    vehicle_type: Optional[str] = Field("APC", alias="type")
-    engine: Optional[str] = "RUN"
-    health_pct: Optional[float] = 100.0
-    type: str = "vehicle"
-    alignment: Optional[str] = "UNKNOWN"
-    threat_level: Optional[int] = 0
-    
-    class Config:
-        populate_by_name = True
-
-
-# Simple input union - discriminated by 'type' field
-SimpleInput = Annotated[
-    Union[SimpleDroneInput, SimpleSoldierInput, SimpleVehicleInput],
     Field(discriminator="type")
 ]
 
 
 # ============================================================================
-#                           GENERIC FLEXIBLE INPUT
+#                           CONTEXT ITEM (RAG)
 # ============================================================================
 
-class FlexibleTelemetryInput(BaseModel):
+class ContextItem(BaseModel):
+    """Historical context item retrieved from RAG memory"""
+    event_description: str = Field(..., description="Description of the historical event")
+    outcome: str = Field(..., description="Outcome or resolution of the event")
+    similarity_score: float = Field(ge=0, le=1, description="Semantic similarity score")
+    timestamp: Optional[datetime] = Field(default=None, description="When the event occurred")
+
+
+# ============================================================================
+#                           AI ANALYSIS RESPONSE
+# ============================================================================
+
+class AIAnalysisResult(BaseModel):
     """
-    Flexible telemetry input that accepts any structure.
-    Used for backwards compatibility and raw MQTT payloads.
+    Structured response from the AI tactical analysis.
+    Matches the expected LLM JSON output format.
     """
-    domain: Optional[str] = Field(None, description="Domain: drone/watch/vehicle")
-    type: Optional[str] = Field(None, description="Entity type for discrimination")
-    id: Optional[str] = Field(None, description="Entity ID")
-    time: Optional[str] = None
-    payload: Optional[Dict[str, Any]] = Field(None, description="Raw payload data")
+    threat_level: ThreatLevel = Field(..., description="Assessed threat level")
+    decision: str = Field(..., description="Recommended tactical action")
+    reasoning: str = Field(..., description="Explanation of the analysis")
+
+
+class AnalysisResponse(BaseModel):
+    """Complete response from the /analyze endpoint"""
+    # AI Analysis Results
+    decision: str = Field(..., description="Recommended tactical decision")
+    threat_level: ThreatLevel = Field(..., description="Assessed threat level")
+    confidence: float = Field(ge=0, le=1, description="AI confidence in the analysis")
+    reasoning: str = Field(..., description="Explanation for the decision")
     
-    # Allow any additional fields
-    class Config:
-        extra = "allow"
+    # Metadata
+    entity_type: str = Field(..., description="Type of entity analyzed: drone/soldier/vehicle")
+    entity_id: str = Field(..., description="Source ID of the analyzed entity")
+    context_used: List[ContextItem] = Field(default_factory=list, description="RAG context used")
+    processing_time_ms: float = Field(..., description="Total processing time in milliseconds")
+    model_version: str = Field(default="gemma-2-9b-it", description="LLM model version")
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "decision": "Continue monitoring. Asset operating within normal parameters.",
+                "threat_level": "LOW",
+                "confidence": 0.87,
+                "reasoning": "Drone battery at 78%, stable flight pattern, no anomalies detected.",
+                "entity_type": "drone",
+                "entity_id": "UAV-ALPHA-01",
+                "context_used": [],
+                "processing_time_ms": 245.6,
+                "model_version": "gemma-2-9b-it"
+            }
+        }
+    }
+
+
+# ============================================================================
+#                           REQUEST MODEL
+# ============================================================================
+
+class AnalysisRequest(BaseModel):
+    """
+    Request body for the /analyze endpoint.
+    Uses discriminated union for automatic schema validation.
+    """
+    telemetry: TelemetryInput = Field(..., description="Polymorphic telemetry data")
+    include_context: bool = Field(default=True, description="Include RAG historical context")
+    max_context_items: int = Field(default=3, ge=1, le=10, description="Maximum context items to retrieve")
+
+
+# ============================================================================
+#                           LEGACY COMPATIBILITY EXPORTS
+# ============================================================================
+
+# Re-export for backwards compatibility with existing code
+class TelemetryType(str, Enum):
+    """Legacy telemetry type enum"""
+    DRONE = "drone"
+    SOLDIER = "soldier"
+    VEHICLE = "vehicle"
+    WATCH = "watch"  # Alias for soldier
+    UNKNOWN = "unknown"
+
+
+# Flexible input for legacy endpoints (if needed)
+class FlexibleTelemetryInput(BaseModel):
+    """Legacy flexible input for backwards compatibility"""
+    domain: Optional[str] = None
+    type: Optional[str] = None
+    id: Optional[str] = None
+    time: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+    
+    model_config = {"extra": "allow"}
     
     def get_entity_type(self) -> TelemetryType:
-        """Determine entity type from available fields"""
         domain = (self.domain or "").lower()
         type_field = (self.type or "").lower()
         
@@ -259,162 +326,3 @@ class FlexibleTelemetryInput(BaseModel):
         elif domain == "vehicle" or type_field == "vehicle":
             return TelemetryType.VEHICLE
         return TelemetryType.UNKNOWN
-
-
-# ============================================================================
-#                           REQUEST/RESPONSE MODELS
-# ============================================================================
-
-class AnalysisRequest(BaseModel):
-    """
-    Request body for the /analyze endpoint.
-    Accepts flexible telemetry from any source type.
-    """
-    telemetry: FlexibleTelemetryInput = Field(..., description="Telemetry data object")
-    include_context: bool = Field(default=True, description="Include RAG context")
-    max_context_items: int = Field(default=3, ge=1, le=10)
-    
-    class Config:
-        json_schema_extra = {
-            "examples": [
-                {
-                    "name": "Drone Example",
-                    "value": {
-                        "telemetry": {
-                            "domain": "drone",
-                            "type": "telemetry",
-                            "id": "drone1",
-                            "payload": {
-                                "position": {"lat": 39.92, "lon": 32.84, "alt_m": 300},
-                                "ground_speed_mps": 14.0,
-                                "battery": {"soc_pct": 80.0},
-                                "mode": "AUTO"
-                            }
-                        },
-                        "include_context": True
-                    }
-                },
-                {
-                    "name": "Soldier Example",
-                    "value": {
-                        "telemetry": {
-                            "domain": "watch",
-                            "type": "telemetry",
-                            "id": "soldier1",
-                            "payload": {
-                                "soldier_id": "soldier1",
-                                "position": {"lat": 39.92, "lon": 32.84, "alt_m": 900},
-                                "vitals": {"hr_bpm": 75, "spo2_pct": 98}
-                            }
-                        },
-                        "include_context": True
-                    }
-                },
-                {
-                    "name": "Vehicle Example",
-                    "value": {
-                        "telemetry": {
-                            "domain": "vehicle",
-                            "type": "telemetry",
-                            "id": "vehicle1",
-                            "payload": {
-                                "id": "vehicle1",
-                                "type": "APC",
-                                "position": {"lat": 39.93, "lon": 32.85, "alt_m": 900},
-                                "speed_kph": 40.0,
-                                "fuel_pct": 95.0,
-                                "engine": "RUN"
-                            }
-                        },
-                        "include_context": True
-                    }
-                }
-            ]
-        }
-
-
-class ContextItem(BaseModel):
-    """A single historical context item from RAG retrieval"""
-    event_description: str
-    outcome: str
-    similarity_score: float = Field(ge=0, le=1)
-    timestamp: Optional[datetime] = None
-
-
-class AnalysisResponse(BaseModel):
-    """Response from the AI analysis"""
-    decision: str = Field(..., description="Recommended tactical decision")
-    threat_level: ThreatLevel
-    confidence: float = Field(ge=0, le=1, description="AI confidence in the decision")
-    reasoning: str = Field(..., description="Explanation for the decision")
-    entity_type: str = Field("unknown", description="Type of entity analyzed: drone/soldier/vehicle")
-    entity_id: str = Field("", description="ID of the analyzed entity")
-    context_used: List[ContextItem] = Field(default_factory=list)
-    processing_time_ms: float = Field(..., description="Processing time in ms")
-    model_version: str = Field(default="gemma-2-9b-it")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "decision": "Continue monitoring, no immediate action required",
-                "threat_level": "LOW",
-                "confidence": 0.85,
-                "reasoning": "Drone battery at 80%, altitude stable, friendly alignment",
-                "entity_type": "drone",
-                "entity_id": "drone1",
-                "context_used": [],
-                "processing_time_ms": 156.3,
-                "model_version": "gemma-2-9b-it"
-            }
-        }
-
-
-# ============================================================================
-#                      LEGACY COMPATIBILITY MODELS
-# ============================================================================
-
-class PlatformType(str, Enum):
-    """Legacy platform types for backwards compatibility"""
-    UAV = "UAV"
-    AIRCRAFT = "AIRCRAFT"
-    SHIP = "SHIP"
-    SUBMARINE = "SUBMARINE"
-    GROUND_VEHICLE = "GROUND_VEHICLE"
-    RADAR_STATION = "RADAR_STATION"
-    COMMUNICATION_NODE = "COMMUNICATION_NODE"
-    SOLDIER = "SOLDIER"
-    UNKNOWN = "UNKNOWN"
-
-
-class LegacyTelemetryData(BaseModel):
-    """
-    Legacy telemetry format for backwards compatibility.
-    Use FlexibleTelemetryInput for new implementations.
-    """
-    platform_id: str = Field(..., description="Unique identifier for the platform")
-    platform_type: PlatformType = Field(default=PlatformType.UNKNOWN)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    
-    # Position data
-    latitude: Optional[float] = Field(None, ge=-90, le=90)
-    longitude: Optional[float] = Field(None, ge=-180, le=180)
-    altitude_m: Optional[float] = Field(None, description="Altitude in meters")
-    heading_deg: Optional[float] = Field(None, ge=0, lt=360)
-    speed_knots: Optional[float] = Field(None, ge=0)
-    
-    # Detection data
-    contact_bearing: Optional[float] = Field(None, ge=0, lt=360)
-    contact_range_nm: Optional[float] = Field(None, ge=0)
-    contact_altitude_m: Optional[float] = None
-    contact_speed_knots: Optional[float] = None
-    
-    # IFF and Classification
-    iff_response: Optional[str] = Field(None, description="IFF transponder response")
-    classification: Optional[str] = Field(None, description="Friend/Foe classification")
-    
-    # Signal/Sensor data
-    signal_strength_db: Optional[float] = None
-    radar_cross_section: Optional[float] = None
-    
-    # Raw sensor data
-    raw_data: Optional[Dict[str, Any]] = Field(None, description="Additional raw sensor data")

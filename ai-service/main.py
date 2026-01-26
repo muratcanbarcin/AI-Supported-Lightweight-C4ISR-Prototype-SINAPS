@@ -1,13 +1,13 @@
 """
 ============================================================================
-        C4ISR AI MICROSERVICE - TACTICAL DECISION SUPPORT SYSTEM
+        C4ISR AI MICROSERVICE - POLYMORPHIC TACTICAL DECISION SUPPORT
 ============================================================================
-    ███████╗███████╗ ██████╗██╗   ██╗██████╗ ███████╗    ███╗   ███╗ ██████╗ ██████╗ ███████╗
-    ██╔════╝██╔════╝██╔════╝██║   ██║██╔══██╗██╔════╝    ████╗ ████║██╔═══██╗██╔══██╗██╔════╝
-    ███████╗█████╗  ██║     ██║   ██║██████╔╝█████╗      ██╔████╔██║██║   ██║██║  ██║█████╗  
-    ╚════██║██╔══╝  ██║     ██║   ██║██╔══██╗██╔══╝      ██║╚██╔╝██║██║   ██║██║  ██║██╔══╝  
-    ███████║███████╗╚██████╗╚██████╔╝██║  ██║███████╗    ██║ ╚═╝ ██║╚██████╔╝██████╔╝███████╗
-    ╚══════╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝    ╚═╝     ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝
+    ███████╗██╗███╗   ██╗ █████╗ ██████╗ ███████╗
+    ██╔════╝██║████╗  ██║██╔══██╗██╔══██╗██╔════╝
+    ███████╗██║██╔██╗ ██║███████║██████╔╝███████╗
+    ╚════██║██║██║╚██╗██║██╔══██║██╔═══╝ ╚════██║
+    ███████║██║██║ ╚████║██║  ██║██║     ███████║
+    ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝     ╚══════╝
 
     ⚠️  SYSTEM RUNNING IN SECURE MODE - NO EXTERNAL CALLS PERMITTED  ⚠️
     
@@ -15,18 +15,18 @@
     NETWORK MODE: AIR-GAPPED / OFFLINE OPERATION
     MODEL SOURCE: LOCAL DIRECTORY ONLY (./local_models/)
     
-    SUPPORTED TELEMETRY TYPES:
-    - Drone (UAV): Battery, Altitude, Speed, Flight Mode
-    - Soldier (Watch): Heart Rate, SpO2, Vitals, Stress
-    - Vehicle: Fuel, Speed, Engine Status, Health
+    ARCHITECTURE: Polymorphic Discriminated Union
+    - Automatic schema validation based on 'type' field
+    - DroneTelemetry | SoldierTelemetry | VehicleTelemetry
+    - Context-aware LLM analysis without hardcoded rules
 
 ============================================================================
 """
 import time
-import json
 from contextlib import asynccontextmanager
-from typing import Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
+from typing import Union
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 import structlog
 
@@ -34,27 +34,35 @@ from config.settings import settings
 from config.database import initialize_database, close_database
 from services.rag_engine import rag_engine
 from services.model_engine import model_engine
+
 from schemas.telemetry import (
-    AnalysisRequest, 
-    AnalysisResponse, 
-    ContextItem, 
+    # Polymorphic Telemetry Models
+    TelemetryInput,
+    DroneTelemetry,
+    SoldierTelemetry,
+    VehicleTelemetry,
+    # Request/Response Models
+    AnalysisRequest,
+    AnalysisResponse,
+    ContextItem,
     ThreatLevel,
-    TelemetryType,
-    FlexibleTelemetryInput
 )
-from schemas.memory import IngestRequest, IngestResponse, RetrieveRequest, RetrieveResponse
+from schemas.memory import IngestRequest, IngestResponse
 from schemas.training import TrainingRequest, TrainingResponse, TrainingStatus
 
 logger = structlog.get_logger(__name__)
 
 
+# ============================================================================
+#                           APPLICATION LIFESPAN
+# ============================================================================
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - initialize and cleanup resources"""
-    logger.info("Starting C4ISR AI Microservice...")
+    logger.info("Starting C4ISR AI Microservice (Polymorphic Architecture)...")
     
     # Initialize database connection
-    use_docker = settings.DATABASE_URL_DOCKER.find("c4isr-db") > 0
     try:
         initialize_database(use_docker_network=False)
         logger.info("Database initialized")
@@ -82,34 +90,72 @@ async def lifespan(app: FastAPI):
     logger.info("C4ISR AI Microservice shutdown complete")
 
 
+# ============================================================================
+#                           FASTAPI APPLICATION
+# ============================================================================
+
 app = FastAPI(
     title="C4ISR AI Microservice",
     description="""
-## Tactical Decision Support with RAG and LLM
+## Tactical Decision Support with Polymorphic Telemetry Analysis
 
-Supports multi-domain telemetry analysis:
-- **Drone/UAV**: Battery, Altitude, Speed, Flight Mode
-- **Soldier/Watch**: Heart Rate (HR), SpO2, Vitals, Stress Score
-- **Vehicle**: Fuel, Speed, Engine Status, Health Percentage
+This microservice provides AI-powered situational awareness for military C4ISR systems.
 
-### Example Request
+### Architecture
+Uses **Discriminated Unions** for automatic schema validation:
+- The `type` field determines which schema is used
+- FastAPI automatically validates the correct model
+
+### Supported Telemetry Types
+
+| Type | Description | Key Fields |
+|------|-------------|------------|
+| `drone` | UAV operational data | altitude, speed, battery_level, mode |
+| `soldier` | Personnel vitals | vitals (hr_bpm, spo2), status |
+| `vehicle` | Ground assets | speed, fuel_pct, vehicle_type |
+
+### Example Requests
+
+**Drone Telemetry:**
 ```json
 {
-  "telemetry": {
-    "domain": "drone",
-    "type": "telemetry", 
-    "id": "drone1",
-    "payload": {
-      "position": {"lat": 39.92, "lon": 32.84, "alt_m": 300},
-      "battery": {"soc_pct": 80},
-      "mode": "AUTO"
-    }
-  },
-  "include_context": true
+    "type": "drone",
+    "source_id": "UAV-ALPHA-01",
+    "latitude": 39.92,
+    "longitude": 32.85,
+    "altitude": 150.0,
+    "speed": 12.5,
+    "battery_level": 78.5,
+    "mode": "AUTO"
+}
+```
+
+**Soldier Telemetry:**
+```json
+{
+    "type": "soldier",
+    "source_id": "ALPHA-2-ACTUAL",
+    "latitude": 39.92,
+    "longitude": 32.85,
+    "vitals": {"hr_bpm": 85, "spo2": 97.5},
+    "status": "ACTIVE"
+}
+```
+
+**Vehicle Telemetry:**
+```json
+{
+    "type": "vehicle",
+    "source_id": "TANK-BRAVO-03",
+    "latitude": 39.93,
+    "longitude": 32.86,
+    "speed": 35.0,
+    "fuel_pct": 82.0,
+    "vehicle_type": "TANK"
 }
 ```
     """,
-    version="2.0.0",
+    version="3.0.0",
     lifespan=lifespan
 )
 
@@ -124,281 +170,79 @@ app.add_middleware(
 
 
 # ============================================================================
-#                         PROMPT GENERATION FUNCTIONS
-# ============================================================================
-
-def _extract_telemetry_info(telemetry: FlexibleTelemetryInput) -> Dict[str, Any]:
-    """
-    Extract relevant information from flexible telemetry input.
-    Returns a normalized dict with entity_type and key metrics.
-    """
-    entity_type = telemetry.get_entity_type()
-    payload = telemetry.payload or {}
-    
-    # Get position if available
-    position = payload.get("position", {})
-    lat = position.get("lat")
-    lon = position.get("lon")
-    alt = position.get("alt_m")
-    
-    result = {
-        "entity_type": entity_type.value,
-        "entity_id": telemetry.id or payload.get("id") or payload.get("soldier_id") or "unknown",
-        "latitude": lat,
-        "longitude": lon,
-        "altitude_m": alt,
-        "alignment": payload.get("alignment", "UNKNOWN"),
-        "threat_level": payload.get("threat_level", 0),
-        "timestamp": telemetry.time
-    }
-    
-    # Add domain-specific fields
-    if entity_type == TelemetryType.DRONE:
-        battery = payload.get("battery", {})
-        result.update({
-            "battery_pct": battery.get("soc_pct") if isinstance(battery, dict) else None,
-            "speed_mps": payload.get("ground_speed_mps"),
-            "mode": payload.get("mode", "AUTO"),
-            "yaw_deg": payload.get("yaw_deg")
-        })
-    
-    elif entity_type == TelemetryType.SOLDIER:
-        vitals = payload.get("vitals", {})
-        result.update({
-            "soldier_id": payload.get("soldier_id"),
-            "unit_id": payload.get("unit_id"),
-            "hr_bpm": vitals.get("hr_bpm"),
-            "spo2_pct": vitals.get("spo2_pct"),
-            "stress_score": vitals.get("stress_score"),
-            "resp_bpm": vitals.get("resp_bpm"),
-            "skin_temp_c": vitals.get("skin_temp_c")
-        })
-    
-    elif entity_type == TelemetryType.VEHICLE:
-        result.update({
-            "vehicle_type": payload.get("type", "APC"),
-            "speed_kph": payload.get("speed_kph"),
-            "fuel_pct": payload.get("fuel_pct"),
-            "engine": payload.get("engine", "RUN"),
-            "health_pct": payload.get("health_pct"),
-            "heading_deg": payload.get("heading_deg")
-        })
-    
-    return result
-
-
-def _generate_context_aware_prompt(info: Dict[str, Any]) -> str:
-    """
-    Generate a natural language prompt based on entity type.
-    Each entity type gets a specialized prompt focusing on relevant metrics.
-    """
-    entity_type = info.get("entity_type", "unknown")
-    entity_id = info.get("entity_id", "unknown")
-    alignment = info.get("alignment", "UNKNOWN")
-    threat = info.get("threat_level", 0)
-    
-    # Common position info
-    pos_parts = []
-    if info.get("latitude") and info.get("longitude"):
-        pos_parts.append(f"Position: ({info['latitude']:.4f}, {info['longitude']:.4f})")
-    if info.get("altitude_m"):
-        pos_parts.append(f"Altitude: {info['altitude_m']}m")
-    position_str = ", ".join(pos_parts) if pos_parts else "Position unknown"
-    
-    # Entity-specific prompt
-    if entity_type == "drone":
-        battery = info.get("battery_pct")
-        speed = info.get("speed_mps")
-        mode = info.get("mode", "AUTO")
-        
-        battery_status = f"Battery: {battery:.1f}%" if battery else "Battery: Unknown"
-        speed_status = f"Speed: {speed:.1f} m/s" if speed else "Speed: Unknown"
-        
-        # Battery warning logic
-        battery_warning = ""
-        if battery and battery < 20:
-            battery_warning = "⚠️ CRITICAL: Low battery - RTH recommended. "
-        elif battery and battery < 35:
-            battery_warning = "⚠️ Warning: Battery below 35%. "
-        
-        prompt = f"""DRONE TELEMETRY ANALYSIS
-Entity: {entity_id} | Alignment: {alignment} | Threat Level: {threat}
-{position_str}
-{battery_status} | {speed_status} | Mode: {mode}
-{battery_warning}
-Analyze this drone's operational status and provide tactical recommendation."""
-
-    elif entity_type == "soldier":
-        hr = info.get("hr_bpm")
-        spo2 = info.get("spo2_pct")
-        stress = info.get("stress_score")
-        unit = info.get("unit_id", "Unknown Unit")
-        
-        hr_status = f"Heart Rate: {hr} BPM" if hr else "HR: Unknown"
-        spo2_status = f"SpO2: {spo2}%" if spo2 else "SpO2: Unknown"
-        stress_status = f"Stress Score: {stress:.2f}" if stress else ""
-        
-        # Health warnings
-        health_warning = ""
-        if hr and hr > 140:
-            health_warning = "⚠️ HIGH STRESS: Elevated heart rate detected. "
-        elif hr and hr > 120:
-            health_warning = "⚠️ Warning: Heart rate elevated - monitor fatigue. "
-        if spo2 and spo2 < 94:
-            health_warning += "⚠️ LOW SpO2: Oxygen levels concerning. "
-        
-        prompt = f"""SOLDIER VITALS ANALYSIS
-Soldier: {entity_id} | Unit: {unit} | Status: {alignment}
-{position_str}
-{hr_status} | {spo2_status} {stress_status}
-{health_warning}
-Assess soldier's physical condition and operational readiness."""
-
-    elif entity_type == "vehicle":
-        vehicle_type = info.get("vehicle_type", "APC")
-        speed = info.get("speed_kph")
-        fuel = info.get("fuel_pct")
-        engine = info.get("engine", "RUN")
-        health = info.get("health_pct")
-        
-        speed_status = f"Speed: {speed:.1f} km/h" if speed else "Speed: Unknown"
-        fuel_status = f"Fuel: {fuel:.1f}%" if fuel else "Fuel: Unknown"
-        health_status = f"Health: {health:.1f}%" if health else ""
-        
-        # Operational warnings
-        op_warning = ""
-        if fuel and fuel < 15:
-            op_warning = "⚠️ CRITICAL: Low fuel - resupply needed. "
-        elif fuel and fuel < 30:
-            op_warning = "⚠️ Warning: Fuel below 30%. "
-        if engine == "IDLE":
-            op_warning += "⚠️ Engine IDLE - possible maintenance issue. "
-        if health and health < 50:
-            op_warning += f"⚠️ Vehicle damage detected ({health:.0f}% health). "
-        
-        prompt = f"""VEHICLE TELEMETRY ANALYSIS
-Vehicle: {entity_id} | Type: {vehicle_type} | Alignment: {alignment} | Threat Level: {threat}
-{position_str}
-{speed_status} | {fuel_status} | Engine: {engine} {health_status}
-{op_warning}
-Analyze vehicle operational status and provide tactical assessment."""
-
-    else:
-        # Generic fallback
-        prompt = f"""TELEMETRY ANALYSIS
-Entity: {entity_id} | Type: {entity_type} | Alignment: {alignment}
-{position_str}
-Raw Data: {json.dumps(info, default=str)}
-Provide tactical assessment based on available data."""
-    
-    return prompt
-
-
-def _telemetry_to_text(telemetry: FlexibleTelemetryInput) -> str:
-    """
-    Convert telemetry data to natural language summary for RAG query.
-    This is a shorter version for similarity search.
-    """
-    info = _extract_telemetry_info(telemetry)
-    entity_type = info.get("entity_type", "unknown")
-    entity_id = info.get("entity_id", "unknown")
-    
-    parts = [f"{entity_type.title()} {entity_id}"]
-    
-    if entity_type == "drone":
-        if info.get("battery_pct"):
-            parts.append(f"battery {info['battery_pct']:.0f}%")
-        if info.get("altitude_m"):
-            parts.append(f"altitude {info['altitude_m']}m")
-        if info.get("speed_mps"):
-            parts.append(f"speed {info['speed_mps']:.1f}m/s")
-        if info.get("mode"):
-            parts.append(f"mode {info['mode']}")
-            
-    elif entity_type == "soldier":
-        if info.get("hr_bpm"):
-            parts.append(f"heart rate {info['hr_bpm']} BPM")
-        if info.get("spo2_pct"):
-            parts.append(f"SpO2 {info['spo2_pct']}%")
-        if info.get("stress_score"):
-            parts.append(f"stress {info['stress_score']:.2f}")
-            
-    elif entity_type == "vehicle":
-        if info.get("vehicle_type"):
-            parts.append(f"type {info['vehicle_type']}")
-        if info.get("fuel_pct"):
-            parts.append(f"fuel {info['fuel_pct']:.0f}%")
-        if info.get("speed_kph"):
-            parts.append(f"speed {info['speed_kph']:.0f}km/h")
-        if info.get("engine"):
-            parts.append(f"engine {info['engine']}")
-    
-    # Add alignment and threat if relevant
-    alignment = info.get("alignment", "UNKNOWN")
-    threat = info.get("threat_level", 0)
-    if alignment != "UNKNOWN":
-        parts.append(f"alignment {alignment}")
-    if threat > 0:
-        parts.append(f"threat level {threat}")
-    
-    return ", ".join(parts)
-
-
-# ============================================================================
 #                           HEALTH & INFO ENDPOINTS
 # ============================================================================
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "service": "c4isr-ai-microservice", "version": "2.0.0"}
+    """Health check endpoint for load balancers and monitoring"""
+    return {
+        "status": "healthy",
+        "service": "c4isr-ai-microservice",
+        "version": "3.0.0",
+        "architecture": "polymorphic-discriminated-union"
+    }
 
 
-@app.get("/info")
+@app.get("/info", tags=["System"])
 async def service_info():
-    """Get service information and status"""
+    """Get service information and current status"""
     return {
         "service": settings.APP_NAME,
-        "version": settings.APP_VERSION,
+        "version": "3.0.0",
+        "architecture": "Polymorphic Discriminated Union",
         "model": model_engine.get_model_info(),
         "rag_model": settings.EMBEDDING_MODEL,
-        "supported_domains": ["drone", "soldier", "vehicle"],
+        "supported_types": ["drone", "soldier", "vehicle"],
         "endpoint_docs": "/docs"
     }
 
 
 # ============================================================================
-#                           ANALYSIS ENDPOINT
+#                           ANALYSIS ENDPOINT (POLYMORPHIC)
 # ============================================================================
 
-@app.post("/analyze", response_model=AnalysisResponse)
+@app.post("/analyze", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_telemetry(request: AnalysisRequest):
     """
     Analyze telemetry data and provide tactical decision.
     
-    Supports three telemetry domains:
-    - **drone**: Battery, Altitude, Speed, Mode analysis
-    - **soldier/watch**: Heart Rate, SpO2, Vitals, Stress analysis
-    - **vehicle**: Fuel, Speed, Engine, Health analysis
+    This endpoint uses **Discriminated Unions** for automatic schema validation.
+    The `type` field in the request body determines which schema is used:
     
-    The AI generates context-aware prompts based on entity type.
+    - `type: "drone"` → DroneTelemetry schema
+    - `type: "soldier"` → SoldierTelemetry schema  
+    - `type: "vehicle"` → VehicleTelemetry schema
+    
+    The AI analyzes the data for anomalies and threats based on:
+    - Military operational norms
+    - Physiological health indicators
+    - Equipment operational parameters
+    
+    **No hardcoded rules** - relies on LLM contextual understanding.
     """
     start_time = time.time()
     
-    # Extract normalized info from flexible input
-    info = _extract_telemetry_info(request.telemetry)
-    entity_type = info.get("entity_type", "unknown")
-    entity_id = info.get("entity_id", "unknown")
+    # Extract telemetry from request
+    telemetry = request.telemetry
     
-    logger.info(f"Analyzing {entity_type} telemetry", entity_id=entity_id)
+    # Extract entity info from the validated model
+    entity_type = telemetry.type
+    entity_id = telemetry.source_id
     
-    # Create text summary for RAG query
-    telemetry_summary = _telemetry_to_text(request.telemetry)
+    logger.info(
+        f"Analyzing {entity_type} telemetry",
+        entity_id=entity_id,
+        entity_type=entity_type
+    )
     
-    # Step 1: Retrieve context from RAG
+    # Step 1: Retrieve historical context from RAG (if enabled)
     context_items = []
     if request.include_context:
         try:
+            # Create a text summary for similarity search
+            telemetry_summary = _create_telemetry_summary(telemetry)
+            
             raw_context = rag_engine.retrieve_context(
                 query_text=telemetry_summary,
                 limit=request.max_context_items
@@ -414,19 +258,17 @@ async def analyze_telemetry(request: AnalysisRequest):
         except Exception as e:
             logger.warning(f"RAG retrieval failed: {e}")
     
-    # Step 2: Generate context-aware prompt
-    prompt = _generate_context_aware_prompt(info)
-    
-    # Step 3: Generate decision with LLM
+    # Step 2: Generate AI decision
     try:
-        # Pass the structured info and context to model engine
+        # Pass the validated Pydantic model directly to model engine
+        # The model_engine will use model_dump_json() for proper serialization
         decision, threat_level, confidence, reasoning = model_engine.generate_decision(
-            telemetry_json=info,
+            telemetry_data=telemetry,
             retrieved_context=[c.model_dump() for c in context_items]
         )
     except Exception as e:
         logger.error(f"Model generation failed: {e}")
-        # Fallback response based on entity type
+        # Fallback response
         decision = f"Unable to generate decision for {entity_type} - model unavailable"
         threat_level = ThreatLevel.UNKNOWN
         confidence = 0.0
@@ -447,14 +289,54 @@ async def analyze_telemetry(request: AnalysisRequest):
     )
 
 
+def _create_telemetry_summary(telemetry: TelemetryInput) -> str:
+    """
+    Create a natural language summary of telemetry for RAG similarity search.
+    Handles each telemetry type appropriately.
+    """
+    entity_type = telemetry.type
+    entity_id = telemetry.source_id
+    
+    parts = [f"{entity_type.title()} {entity_id}"]
+    
+    if isinstance(telemetry, DroneTelemetry):
+        parts.append(f"altitude {telemetry.altitude}m")
+        parts.append(f"speed {telemetry.speed}m/s")
+        parts.append(f"battery {telemetry.battery_level}%")
+        parts.append(f"mode {telemetry.mode.value}")
+        
+    elif isinstance(telemetry, SoldierTelemetry):
+        parts.append(f"heart rate {telemetry.vitals.hr_bpm} BPM")
+        parts.append(f"SpO2 {telemetry.vitals.spo2}%")
+        parts.append(f"status {telemetry.status.value}")
+        if telemetry.vitals.stress_index is not None:
+            parts.append(f"stress {telemetry.vitals.stress_index:.2f}")
+            
+    elif isinstance(telemetry, VehicleTelemetry):
+        parts.append(f"type {telemetry.vehicle_type.value}")
+        parts.append(f"speed {telemetry.speed} km/h")
+        parts.append(f"fuel {telemetry.fuel_pct}%")
+        if telemetry.health_pct is not None:
+            parts.append(f"health {telemetry.health_pct}%")
+    
+    # Add position info
+    parts.append(f"at ({telemetry.latitude:.4f}, {telemetry.longitude:.4f})")
+    
+    return ", ".join(parts)
+
+
 # ============================================================================
 #                           INGEST ENDPOINT (RAG Memory)
 # ============================================================================
 
-@app.post("/ingest", response_model=IngestResponse)
+@app.post("/ingest", response_model=IngestResponse, tags=["Memory"])
 async def ingest_event(request: IngestRequest):
     """
-    Ingest a confirmed tactical event into memory for future RAG retrieval
+    Ingest a confirmed tactical event into memory for future RAG retrieval.
+    
+    Events stored here will be used to provide historical context
+    for future analyses, enabling pattern recognition and
+    precedent-based decision support.
     """
     try:
         event_id = rag_engine.ingest_event(
@@ -476,9 +358,9 @@ async def ingest_event(request: IngestRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/memory/stats")
+@app.get("/memory/stats", tags=["Memory"])
 async def get_memory_stats():
-    """Get statistics about tactical memory"""
+    """Get statistics about tactical memory (RAG database)"""
     try:
         return rag_engine.get_memory_stats()
     except Exception as e:
@@ -501,10 +383,13 @@ def _run_training(request: TrainingRequest):
     )
 
 
-@app.post("/train", response_model=TrainingResponse)
+@app.post("/train", response_model=TrainingResponse, tags=["Training"])
 async def start_training(request: TrainingRequest, background_tasks: BackgroundTasks):
     """
-    Start LoRA fine-tuning as a background task
+    Start LoRA fine-tuning as a background task.
+    
+    This enables domain-specific adaptation of the base model
+    using tactical training examples from your operational environment.
     """
     from datetime import datetime
     
@@ -522,7 +407,7 @@ async def start_training(request: TrainingRequest, background_tasks: BackgroundT
     )
 
 
-@app.get("/train/{job_id}")
+@app.get("/train/{job_id}", tags=["Training"])
 async def get_training_status(job_id: str):
     """Get status of a training job"""
     status = model_engine.get_training_status(job_id)
@@ -535,22 +420,24 @@ async def get_training_status(job_id: str):
 #                           DEBUG ENDPOINT
 # ============================================================================
 
-@app.post("/debug/parse-telemetry")
-async def debug_parse_telemetry(request: AnalysisRequest):
+@app.post("/debug/validate", tags=["Debug"])
+async def debug_validate_telemetry(request: AnalysisRequest):
     """
-    Debug endpoint to see how telemetry is parsed without running the model.
-    Useful for testing payload structure compatibility.
-    """
-    info = _extract_telemetry_info(request.telemetry)
-    prompt = _generate_context_aware_prompt(info)
-    summary = _telemetry_to_text(request.telemetry)
+    Debug endpoint to validate telemetry parsing without running the AI model.
     
+    Useful for testing:
+    - Discriminated union schema validation
+    - Field extraction and type detection
+    - JSON serialization output
+    """
+    telemetry = request.telemetry
     return {
-        "parsed_info": info,
-        "generated_prompt": prompt,
-        "rag_query_summary": summary,
-        "entity_type": info.get("entity_type"),
-        "entity_id": info.get("entity_id")
+        "validated": True,
+        "entity_type": telemetry.type,
+        "entity_id": telemetry.source_id,
+        "model_class": telemetry.__class__.__name__,
+        "serialized_json": telemetry.model_dump_json(indent=2),
+        "summary_for_rag": _create_telemetry_summary(telemetry)
     }
 
 
