@@ -9,44 +9,52 @@ export interface MockAsset {
   name?: string;
 }
 
-export function useMockAssets(): MockAsset[] {
+// Helper to add small random offsets to a center point
+function offset(center: [number, number], latOffset: number, lngOffset: number): [number, number] {
+  return [center[0] + latOffset, center[1] + lngOffset];
+}
+
+export function useMockAssets(center: [number, number] | null = null): MockAsset[] {
+  // Default to Ankara if no center provided
+  const baseCenter: [number, number] = center || [39.93, 32.85];
+
   return useMemo(() => [
     {
       id: "UAV-01",
       type: "UAV",
-      position: [39.935, 32.852],
+      position: offset(baseCenter, 0.005, 0.002),
       name: "HS-01",
     },
     {
       id: "UAV-02",
       type: "UAV",
-      position: [39.938, 32.858],
+      position: offset(baseCenter, 0.008, 0.008),
       name: "HS-02",
     },
     {
       id: "SOLDIER-01",
       type: "SOLDIER",
-      position: [39.932, 32.855],
+      position: offset(baseCenter, 0.002, 0.005),
       name: "Piyade-01",
     },
     {
       id: "SOLDIER-02",
       type: "SOLDIER",
-      position: [39.934, 32.860],
+      position: offset(baseCenter, 0.004, 0.010),
       name: "Piyade-02",
     },
     {
       id: "VEHICLE-01",
       type: "GROUND_VEHICLE",
-      position: [39.930, 32.853],
+      position: offset(baseCenter, -0.003, 0.003), // South-West
       name: "Araç-01",
     },
     {
-      id: "SOLDIER-03", // Changed from WEARABLE-01
-      type: "SOLDIER",  // Changed from WEARABLE
-      position: [39.933, 32.857],
-      name: "Piyade-03", // Changed form Akıllı Saat-01
+      id: "SOLDIER-03",
+      type: "SOLDIER",
+      position: offset(baseCenter, 0.003, 0.007),
+      name: "Piyade-03",
     },
-  ], []);
+  ], [baseCenter]);
 }
 

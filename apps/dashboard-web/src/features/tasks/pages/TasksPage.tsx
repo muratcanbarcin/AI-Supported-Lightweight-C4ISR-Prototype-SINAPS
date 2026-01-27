@@ -37,6 +37,7 @@ export function TasksPage() {
     const [taskName, setTaskName] = useState('');
     const [taskDesc, setTaskDesc] = useState('');
     const [selectedUnit, setSelectedUnit] = useState<string>('');
+    const [isAiGenerating, setIsAiGenerating] = useState(false);
 
     const handleCreateTask = () => {
         if (!taskName || !taskDesc) return;
@@ -57,6 +58,22 @@ export function TasksPage() {
         setTaskDesc('');
         setSelectedUnit('');
         setActiveTab('LIST');
+    };
+
+    const handleAiAssist = () => {
+        setIsAiGenerating(true);
+        // Simulate AI delay
+        setTimeout(() => {
+            const aiSuggestions = [
+                "Sınır hattı boyunca devriye atılarak olası sızma girişimlerinin tespit edilmesi ve raporlanması.",
+                "Belirlenen koordinatlarda şüpheli hareketlilik gözlemlenen bölgenin termal kameralarla taraması.",
+                "Dost birliklerin intikali sırasında güvenlik koridoru oluşturulması ve havadan gözetleme desteği.",
+                "Kritik mühimmat ve yaşam malzemelerinin ileri hat birliklerine güvenli bir şekilde ulaştırılması."
+            ];
+            const randomSuggestion = aiSuggestions[Math.floor(Math.random() * aiSuggestions.length)];
+            setTaskDesc(randomSuggestion);
+            setIsAiGenerating(false);
+        }, 1500);
     };
 
     return (
@@ -110,8 +127,8 @@ export function TasksPage() {
                                                 <div className="flex items-center gap-3 mb-1">
                                                     <h3 className="text-lg font-bold text-slate-100 tracking-wider font-sans uppercase">{task.name}</h3>
                                                     <span className={`text-[10px] px-2 py-0.5 rounded-sm font-bold tracking-widest border ${task.status === 'IN_PROGRESS' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' :
-                                                            task.status === 'COMPLETED' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' :
-                                                                'border-slate-500/30 bg-slate-500/10 text-slate-400'
+                                                        task.status === 'COMPLETED' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' :
+                                                            'border-slate-500/30 bg-slate-500/10 text-slate-400'
                                                         }`}>
                                                         {task.status === 'IN_PROGRESS' ? 'SÜRÜYOR' : task.status === 'COMPLETED' ? 'TAMAMLANDI' : 'BEKLİYOR'}
                                                     </span>
@@ -164,13 +181,23 @@ export function TasksPage() {
                                 {/* Description Input */}
                                 <div>
                                     <label className="block text-xs font-bold text-sky-500 uppercase tracking-widest mb-2">AÇIKLAMA</label>
-                                    <textarea
-                                        value={taskDesc}
-                                        onChange={(e) => setTaskDesc(e.target.value)}
-                                        rows={4}
-                                        className="w-full bg-[#0b1120] border border-slate-700 text-slate-200 p-3 text-sm focus:outline-none focus:border-sky-500/50 transition-colors rounded-sm shadow-inner placeholder:text-slate-600 resize-none"
-                                        placeholder="Görev detaylarını ve hedeflerini belirtiniz..."
-                                    />
+                                    <div className="relative">
+                                        <textarea
+                                            value={taskDesc}
+                                            onChange={(e) => setTaskDesc(e.target.value)}
+                                            rows={4}
+                                            className="w-full bg-[#0b1120] border border-slate-700 text-slate-200 p-3 text-sm focus:outline-none focus:border-sky-500/50 transition-colors rounded-sm shadow-inner placeholder:text-slate-600 resize-none pb-10"
+                                            placeholder="Görev detaylarını ve hedeflerini belirtiniz..."
+                                        />
+                                        <button
+                                            onClick={handleAiAssist}
+                                            disabled={isAiGenerating}
+                                            className="absolute bottom-2 right-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 text-[10px] font-bold px-3 py-1.5 border border-purple-500/50 rounded-sm flex items-center gap-2 transition-colors disabled:opacity-50"
+                                        >
+                                            {isAiGenerating ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-wand-magic-sparkles"></i>}
+                                            AI DESTEĞİ İLE OLUŞTUR
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Assignment Dropdown */}

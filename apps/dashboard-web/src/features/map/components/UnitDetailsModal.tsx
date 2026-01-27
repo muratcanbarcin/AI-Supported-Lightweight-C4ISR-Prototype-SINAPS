@@ -4,6 +4,7 @@ import type { AssetSummary } from '@/services/mockData';
 interface UnitDetailsModalProps {
     asset: AssetSummary;
     onClose: () => void;
+    onOpenProfile?: (assetId: string) => void;
 }
 
 // Mock initial tasks for demo
@@ -12,7 +13,7 @@ const INITIAL_TASKS = [
     { id: 2, name: "Rutin Devriye", status: "COMPLETED" },
 ];
 
-export function UnitDetailsModal({ asset, onClose }: UnitDetailsModalProps) {
+export function UnitDetailsModal({ asset, onClose, onOpenProfile }: UnitDetailsModalProps) {
     const [tasks, setTasks] = useState(INITIAL_TASKS);
     const [newTaskName, setNewTaskName] = useState("");
 
@@ -27,8 +28,21 @@ export function UnitDetailsModal({ asset, onClose }: UnitDetailsModalProps) {
         setNewTaskName("");
     };
 
+    // Helper to safely get battery/fuel
+    const getBatteryOrFuel = () => {
+        if (asset.type === 'GROUND_VEHICLE' && 'fuelLevel' in (asset.details || {})) {
+            return { label: 'YAKIT SEVİYESİ', value: `${(asset.details as any).fuelLevel}%` };
+        }
+        if ('batteryLevel' in (asset.details || {})) {
+            return { label: 'BATARYA', value: `${(asset.details as any).batteryLevel}%` };
+        }
+        return { label: 'BATARYA / YAKIT', value: '87%' }; // Fallback
+    };
+
+    const batteryInfo = getBatteryOrFuel();
+
     return (
-        <div className="absolute top-20 left-20 z-[60] w-[400px] bg-[#0f172a] backdrop-blur-xl border border-sky-500/30 shadow-2xl rounded-lg overflow-hidden font-sans animation-fade-in-up">
+        <div className="absolute top-20 left-20 z-[2000] w-[400px] bg-[#0f172a] backdrop-blur-xl border border-sky-500/30 shadow-2xl rounded-lg overflow-hidden font-sans animation-fade-in-up">
             {/* Header */}
             <div className="bg-slate-800/50 p-4 border-b border-sky-500/20 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -40,9 +54,19 @@ export function UnitDetailsModal({ asset, onClose }: UnitDetailsModalProps) {
                         <div className="text-[10px] text-slate-400 font-mono tracking-wider">{asset.id}</div>
                     </div>
                 </div>
-                <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-                    <i className="fa-solid fa-xmark text-xl"></i>
-                </button>
+                <div className="flex items-center gap-2">
+                    {onOpenProfile && (
+                        <button
+                            onClick={() => onOpenProfile(asset.id)}
+                            className="bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 text-[10px] font-bold px-2 py-1 rounded-sm border border-sky-500/30 transition-colors uppercase tracking-wider"
+                        >
+                            <i className="fa-solid fa-id-card mr-1"></i> PROFİL
+                        </button>
+                    )}
+                    <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors ml-2">
+                        <i className="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
             </div>
 
             {/* Body */}
@@ -57,9 +81,9 @@ export function UnitDetailsModal({ asset, onClose }: UnitDetailsModalProps) {
                         </div>
                     </div>
                     <div className="bg-slate-900/50 p-3 border border-slate-700/50 rounded-sm">
-                        <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">BATARYA / YAKIT</div>
+                        <div className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">{batteryInfo.label}</div>
                         <div className="text-sm font-bold text-sky-400 tracking-wider">
-                            87%
+                            {batteryInfo.value}
                         </div>
                     </div>
                 </div>
