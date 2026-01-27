@@ -4,10 +4,14 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sinaps.c4isr_backend.client.AIServiceClient;
+import com.sinaps.c4isr_backend.dto.AIAnalysisResult;
 import com.sinaps.c4isr_backend.dto.SimMessageDTO;
 import com.sinaps.c4isr_backend.dto.SimPayloadDTO;
 import com.sinaps.c4isr_backend.model.AssetType;
+import com.sinaps.c4isr_backend.model.TacticalAnalysis;
 import com.sinaps.c4isr_backend.model.Telemetry;
+import com.sinaps.c4isr_backend.repository.TacticalAnalysisRepository;
 import com.sinaps.c4isr_backend.repository.TelemetryRepository;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -33,6 +37,7 @@ import java.util.Optional;
  * - Incoming MQTT telemetry messages
  * - Geospatial queries using PostGIS
  * - Telemetry persistence and retrieval
+ * - AI-powered tactical analysis integration
  */
 @Service
 public class TelemetryService {
@@ -40,12 +45,20 @@ public class TelemetryService {
     private static final Logger log = LoggerFactory.getLogger(TelemetryService.class);
 
     private final TelemetryRepository repository;
+    private final TacticalAnalysisRepository analysisRepository;
+    private final AIServiceClient aiServiceClient;
     private final ObjectMapper objectMapper;
     private final GeometryFactory geometryFactory;
 
-    // Constructor Injection
-    public TelemetryService(TelemetryRepository repository) {
+    // Constructor Injection with AI Service dependencies
+    public TelemetryService(
+            TelemetryRepository repository,
+            TacticalAnalysisRepository analysisRepository,
+            AIServiceClient aiServiceClient
+    ) {
         this.repository = repository;
+        this.analysisRepository = analysisRepository;
+        this.aiServiceClient = aiServiceClient;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         // SRID 4326: WGS84 GPS Coordinate System
@@ -123,14 +136,15 @@ public class TelemetryService {
                     .payload(payload)
                     .build();
 
-            repository.save(telemetry);
+            Telemetry saved = repository.save(telemetry);
 
-            System.out.println(">> Data Saved: " + telemetry.getSourceId() +
-                    " | Location: " + lat + ", " + lon);
+            log.info(">> Data Saved: {} | Location: {}, {}", saved.getSourceId(), lat, lon);
+
+            // 9. Trigger async AI analysis (non-blocking)
+            triggerAIAnalysis(saved);
 
         } catch (Exception e) {
-            System.err.println("JSON Parse Error: " + e.getMessage());
-            e.printStackTrace();
+            log.error("JSON Parse Error: {}", e.getMessage(), e);
         }
     }
 
@@ -286,9 +300,96 @@ public class TelemetryService {
             Telemetry saved = repository.save(telemetry);
             log.info(">> Simulator Data Saved! ID: {} | Source: {}", saved.getId(), saved.getSourceId());
 
+            // 11. Trigger async AI analysis (non-blocking)
+            triggerAIAnalysis(saved);
+
         } catch (Exception e) {
             log.error("Simulator JSON Parse/Save Error: {}", e.getMessage(), e);
             e.printStackTrace();
+        }
+    }
+
+    /**
+     * Trigger asynchronous AI analysis for the saved telemetry.
+     * 
+     * This method is NON-BLOCKING - it subscribes to the reactive stream
+     * and handles the result when it arrives. Errors are logged but do NOT
+     * affect the original telemetry transaction.
+     * 
+     * @param telemetry The saved telemetry entity to analyze
+     */
+    private void triggerAIAnalysis(Telemetry telemetry) {
+        try {
+            log.debug("Triggering AI analysis for telemetry ID: {}", telemetry.getId());
+            
+            aiServiceClient.analyzeAsync(telemetry)
+                    .subscribe(
+                            // onSuccess: Save the analysis result
+                            result -> handleAIAnalysisResult(telemetry, result),
+                            // onError: Log but don't fail - data is already safely saved
+                            error -> log.error("AI analysis failed for telemetry ID: {} | Error: {}. " +
+                                    "Raw telemetry data remains safely stored.",
+                                    telemetry.getId(), error.getMessage())
+                    );
+                    
+        } catch (Exception e) {
+            // Catch any synchronous errors during subscribe setup
+            log.error("Failed to trigger AI analysis for telemetry ID: {} | Error: {}",
+                    telemetry.getId(), e.getMessage());
+            // DO NOT rethrow - raw data must remain safe
+        }
+    }
+
+    /**
+     * Handle the AI analysis result and persist it to the database.
+     * 
+     * This method is called asynchronously when the AI service responds.
+     * It creates a TacticalAnalysis entity linked to the original telemetry.
+     * 
+     * @param telemetry The original telemetry entity
+     * @param result The AI analysis result
+     */
+    private void handleAIAnalysisResult(Telemetry telemetry, AIAnalysisResult result) {
+        try {
+            log.info("AI analysis received for telemetry ID: {} | Threat: {} | Decision: {}",
+                    telemetry.getId(), result.threatLevel(), result.decision());
+
+            // Check if analysis already exists (avoid duplicates)
+            if (analysisRepository.existsByTelemetryId(telemetry.getId())) {
+                log.warn("Analysis already exists for telemetry ID: {}, skipping duplicate", telemetry.getId());
+                return;
+            }
+
+            // Create and save TacticalAnalysis entity
+            TacticalAnalysis analysis = TacticalAnalysis.builder()
+                    .telemetry(telemetry)
+                    .threatLevel(result.threatLevel())
+                    .decision(result.decision())
+                    .reasoning(result.reasoning())
+                    .confidence(result.confidence())
+                    .rawResponse(serializeToJson(result))
+                    .build();
+
+            TacticalAnalysis savedAnalysis = analysisRepository.save(analysis);
+            log.info(">> Tactical Analysis Saved! ID: {} | Telemetry ID: {} | Threat: {}",
+                    savedAnalysis.getId(), telemetry.getId(), savedAnalysis.getThreatLevel());
+
+        } catch (Exception e) {
+            log.error("Failed to save AI analysis for telemetry ID: {} | Error: {}",
+                    telemetry.getId(), e.getMessage(), e);
+            // DO NOT rethrow - this runs asynchronously and shouldn't crash the app
+        }
+    }
+
+    /**
+     * Serialize an object to JSON string for storage.
+     */
+    private String serializeToJson(Object obj) {
+        try {
+            return objectMapper.writeValueAsString(obj);
+        } catch (Exception e) {
+            log.warn("Failed to serialize object to JSON: {}", e.getMessage());
+            return "{}";
         }
     }
 
