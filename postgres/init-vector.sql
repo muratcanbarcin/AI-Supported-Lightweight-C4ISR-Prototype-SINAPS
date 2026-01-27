@@ -1,10 +1,19 @@
 -- ============================================================
--- SQL Script: Enable pgvector and Create tactical_memory Table
--- Purpose: Support RAG-based tactical decision memory for C4ISR
+-- SQL Script: Enable Extensions and Create Tables for C4ISR
+-- Purpose: Support geospatial data (PostGIS) and RAG-based tactical memory (pgvector)
 -- ============================================================
 
--- Enable the vector extension for similarity search
-CREATE EXTENSION IF NOT EXISTS vector;
+-- Enable PostGIS extension for geospatial data (geometry types, spatial queries)
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+-- Enable the vector extension for similarity search (if available)
+-- Note: This requires pgvector to be installed in the PostgreSQL instance
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS vector;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'pgvector extension not available, skipping...';
+END $$;
 
 -- Create the tactical_memory table for storing historical events
 CREATE TABLE IF NOT EXISTS tactical_memory (

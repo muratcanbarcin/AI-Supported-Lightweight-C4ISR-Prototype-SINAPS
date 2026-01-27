@@ -21,12 +21,15 @@ class SoldierSim:
         self.soldier_id = s.get("soldier_id","soldier1")
         self.unit_id = s.get("unit_id","alpha-team")
         self.dt = 1.0/float(s.get("rate_hz",1.0))
+        
         self.lat = float(s.get("start_lat",39.9280))
         self.lon = float(s.get("start_lon",32.8480))
         self.alt = float(s.get("start_alt_m",900.0))
         self.speed = float(s.get("speed_kph",5.0)) # Walking speed
         self.heading = 0.0
-        self.hr_bpm = 75
+        
+        # BAŞLANGIÇ DEĞERİ (Kriz Modu)
+        self.hr_bpm = 185 
         
         print(f"[SoldierSim] ID={self.soldier_id} Target={b['host']}:{b['port']} Topic={self.topic}")
 
@@ -36,6 +39,7 @@ class SoldierSim:
             import ssl
             self.client.tls_set(ca_certs=b.get("cafile"), cert_reqs=ssl.CERT_REQUIRED)
         self.host, self.port = b.get("host","localhost"), int(b.get("port",1883))
+        
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
 
@@ -56,11 +60,10 @@ class SoldierSim:
         self.client.publish(self.topic, json.dumps(obj, ensure_ascii=False), qos=qos)
 
     def telemetry(self):
-        # Schema: watch.telemetry.schema.json
-        # Calculate stress based on HR
+        # Stress hesabı: Nabız yüksek olduğu için stress skoru da otomatik yükselecek
         stress = max(0.0, min(1.0, (self.hr_bpm - 60) / 120.0))
         
-        # Soldiers are always FRIEND
+        # Asker her zaman dost unsur
         alignment = "FRIEND"
         threat = 0
 
@@ -72,11 +75,11 @@ class SoldierSim:
                 "collected_at": now_iso(),
                 "position": {"lat":self.lat, "lon":self.lon, "alt_m":round(self.alt,1)},
                 "vitals": {
-                    "hr_bpm": self.hr_bpm,
-                    "spo2_pct": 98.0,
-                    "resp_bpm": 16.0,
-                    "skin_temp_c": 36.5,
-                    "stress_score": round(stress, 2)
+                    "hr_bpm": self.hr_bpm,   # step() fonksiyonunda 185'e kilitlendi
+                    "spo2_pct": 85.0,        # KRİTİK: Hipoksi (Oksijen yetersizliği)
+                    "resp_bpm": 35.0,        # KRİTİK: Hızlı solunum
+                    "skin_temp_c": 39.5,     # KRİTİK: Yüksek ateş
+                    "stress_score": stress   # 0.9 - 1.0 arası çıkacak
                 },
                 "device": {
                     "device_id": f"dev-{self.soldier_id}",
@@ -88,15 +91,18 @@ class SoldierSim:
             }
         }
 
-    def step(self,t):
-        # Zigzag movement
+    def step(self, t):
+        # Hareket Mantığı (Zigzag yürüme)
         speed_mps = (self.speed * 1000) / 3600
         radius=50.0; omega=speed_mps/radius; ang=omega*t
         north=radius*math.cos(ang)*self.dt
         east=radius*math.sin(ang)*self.dt 
         
-        self.lat,self.lon=offset_latlon(self.lat,self.lon,north,east)
-        self.hr_bpm = int(75 + 10 * math.sin(t*0.1) + random.randint(-2, 2))
+        self.lat, self.lon = offset_latlon(self.lat, self.lon, north, east)
+        
+        # --- KRİZ MODU ---
+        # Eskiden burası rastgele 75 yapıyordu, şimdi 185'e kilitliyoruz.
+        self.hr_bpm = 185 
 
     def run(self, duration=None):
         self.connect_with_backoff()

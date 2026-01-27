@@ -68,13 +68,21 @@ public class AIServiceClient {
     public Mono<AIAnalysisResult> analyzeAsync(Telemetry telemetry) {
         try {
             // 1. Map telemetry to Python-expected JSON structure
-            Map<String, Object> requestBody = mapTelemetryToAIRequest(telemetry);
+            Map<String, Object> telemetryData = mapTelemetryToAIRequest(telemetry);
+            
+            // 2. CRITICAL: Wrap telemetry in AnalysisRequest wrapper
+            // Python expects: { "telemetry": {...}, "include_context": true, "max_context_items": 3 }
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("telemetry", telemetryData);
+            requestBody.put("include_context", true);
+            requestBody.put("max_context_items", 3);
+            
             String jsonBody = objectMapper.writeValueAsString(requestBody);
             
-            log.debug("Sending AI analysis request for telemetry ID: {} | Type: {} | Body: {}", 
+            log.info("Sending AI analysis request for telemetry ID: {} | Type: {} | Body: {}", 
                     telemetry.getId(), telemetry.getSourceType(), jsonBody);
 
-            // 2. Make non-blocking POST request
+            // 3. Make non-blocking POST request
             return webClient.post()
                     .uri("/analyze")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -107,12 +115,11 @@ public class AIServiceClient {
     /**
      * Maps a Java Telemetry entity to the Python AI service expected JSON format.
      * 
-     * CRITICAL: Python expects snake_case keys. This method handles the polymorphic
-     * mapping based on asset type:
+     * CRITICAL: Python expects EXACT field names matching Pydantic models:
      * 
-     * - DRONE: battery_level, altitude, speed
-     * - SOLDIER: vitals, status
-     * - VEHICLE: fuel_pct, vehicle_type
+     * - DroneTelemetry: type, source_id, timestamp, latitude, longitude, altitude, speed, battery_level, mode
+     * - SoldierTelemetry: type, source_id, timestamp, latitude, longitude, vitals{hr_bpm, spo2}, status
+     * - VehicleTelemetry: type, source_id, timestamp, latitude, longitude, speed, fuel_pct, vehicle_type
      * 
      * @param telemetry The telemetry entity to map
      * @return Map representing the JSON structure for Python
@@ -120,132 +127,213 @@ public class AIServiceClient {
     private Map<String, Object> mapTelemetryToAIRequest(Telemetry telemetry) {
         Map<String, Object> request = new HashMap<>();
         
-        // Common fields
+        // ========== COMMON REQUIRED FIELDS ==========
         request.put("source_id", telemetry.getSourceId());
-        request.put("timestamp", telemetry.getTimestamp() != null ? telemetry.getTimestamp().toString() : null);
+        request.put("timestamp", telemetry.getTimestamp() != null 
+                ? telemetry.getTimestamp().toString() 
+                : java.time.Instant.now().toString());
         
-        // Location data (if available)
+        // Location: Python expects latitude/longitude at ROOT level, NOT nested!
         if (telemetry.getLocation() != null) {
-            Map<String, Object> position = new HashMap<>();
-            position.put("lat", telemetry.getLocation().getY()); // Y = latitude
-            position.put("lon", telemetry.getLocation().getX()); // X = longitude
-            if (telemetry.getAltitude() != null) {
-                position.put("alt_m", telemetry.getAltitude());
-            }
-            request.put("position", position);
+            request.put("latitude", telemetry.getLocation().getY());  // Y = latitude
+            request.put("longitude", telemetry.getLocation().getX()); // X = longitude
+        } else {
+            // Default values if location is missing (required by Pydantic)
+            request.put("latitude", 0.0);
+            request.put("longitude", 0.0);
         }
 
-        // Extract payload data for additional fields
+        // Extract payload data
         Map<String, Object> payload = telemetry.getPayload();
-
-        // Polymorphic mapping based on asset type
-        AssetType type = telemetry.getSourceType();
-        if (type == null) {
-            type = AssetType.SENSOR; // Default fallback
+        if (payload == null) {
+            payload = new HashMap<>();
         }
 
-        switch (type) {
+        // ========== POLYMORPHIC MAPPING BASED ON SOURCE TYPE ==========
+        AssetType assetType = telemetry.getSourceType();
+        if (assetType == null) {
+            assetType = AssetType.SENSOR;
+        }
+
+        switch (assetType) {
             case DRONE:
-                request.put("type", "drone");
-                // Drone-specific fields (snake_case for Python)
-                request.put("battery_level", telemetry.getBatteryLevel());
-                request.put("altitude", telemetry.getAltitude());
-                request.put("speed", telemetry.getSpeed());
-                
-                // Additional drone fields from payload
-                if (payload != null) {
-                    if (payload.containsKey("yawDeg") || payload.containsKey("yaw_deg")) {
-                        request.put("heading", payload.getOrDefault("yawDeg", payload.get("yaw_deg")));
-                    }
-                    if (payload.containsKey("mode")) {
-                        request.put("mode", payload.get("mode"));
-                    }
-                }
+                mapDroneTelemetry(request, telemetry, payload);
                 break;
 
             case SOLDIER:
-                request.put("type", "soldier");
-                // Soldier-specific fields
-                if (payload != null) {
-                    // Extract vitals object
-                    if (payload.containsKey("vitals")) {
-                        request.put("vitals", payload.get("vitals"));
-                    }
-                    // Status from device or direct field
-                    if (payload.containsKey("device")) {
-                        request.put("device", payload.get("device"));
-                    }
-                    // Soldier ID and unit
-                    if (payload.containsKey("soldier_id")) {
-                        request.put("soldier_id", payload.get("soldier_id"));
-                    }
-                    if (payload.containsKey("unit_id")) {
-                        request.put("unit_id", payload.get("unit_id"));
-                    }
-                }
-                // Battery as device battery for soldiers
-                if (telemetry.getBatteryLevel() != null) {
-                    request.put("device_battery_pct", telemetry.getBatteryLevel());
-                }
-                request.put("status", determineStatus(telemetry, payload));
+                mapSoldierTelemetry(request, telemetry, payload);
                 break;
 
             case VEHICLE:
-                request.put("type", "vehicle");
-                // Vehicle-specific fields (snake_case for Python)
-                if (payload != null) {
-                    // Fuel percentage
-                    if (payload.containsKey("fuelPct") || payload.containsKey("fuel_pct")) {
-                        request.put("fuel_pct", payload.getOrDefault("fuelPct", payload.get("fuel_pct")));
-                    } else if (telemetry.getBatteryLevel() != null) {
-                        // Fallback: battery field sometimes stores fuel for vehicles
-                        request.put("fuel_pct", telemetry.getBatteryLevel());
-                    }
-                    
-                    // Vehicle type (tank, apc, etc.)
-                    if (payload.containsKey("type")) {
-                        request.put("vehicle_type", payload.get("type"));
-                    } else if (payload.containsKey("vehicleType")) {
-                        request.put("vehicle_type", payload.get("vehicleType"));
-                    }
-                    
-                    // Engine status
-                    if (payload.containsKey("engine")) {
-                        request.put("engine", payload.get("engine"));
-                    }
-                    
-                    // Health percentage
-                    if (payload.containsKey("healthPct") || payload.containsKey("health_pct")) {
-                        request.put("health_pct", payload.getOrDefault("healthPct", payload.get("health_pct")));
-                    }
-                }
-                // Speed
-                if (telemetry.getSpeed() != null) {
-                    request.put("speed", telemetry.getSpeed());
-                }
+                mapVehicleTelemetry(request, telemetry, payload);
                 break;
 
-            default: // SENSOR or unknown types
-                request.put("type", "sensor");
-                // Include all available data
-                if (telemetry.getBatteryLevel() != null) {
-                    request.put("battery_level", telemetry.getBatteryLevel());
-                }
-                if (telemetry.getSpeed() != null) {
-                    request.put("speed", telemetry.getSpeed());
-                }
-                if (telemetry.getAltitude() != null) {
-                    request.put("altitude", telemetry.getAltitude());
-                }
-                // Include full payload for sensor type
-                if (payload != null) {
-                    request.put("payload", payload);
-                }
+            default:
+                // Fallback: try to determine from payload or use generic
+                request.put("type", "drone"); // Default to drone as safest
+                mapDroneTelemetry(request, telemetry, payload);
                 break;
         }
 
-        log.debug("Mapped telemetry ID: {} to AI request with type: {}", telemetry.getId(), request.get("type"));
+        log.debug("Mapped telemetry ID: {} | Type: {} | Request: {}", 
+                telemetry.getId(), request.get("type"), request);
         return request;
+    }
+
+    /**
+     * Maps DRONE telemetry to Python DroneTelemetry schema.
+     * Required fields: type, source_id, timestamp, latitude, longitude, altitude, battery_level
+     */
+    private void mapDroneTelemetry(Map<String, Object> request, Telemetry telemetry, Map<String, Object> payload) {
+        request.put("type", "drone");
+        
+        // Required fields
+        request.put("altitude", telemetry.getAltitude() != null ? telemetry.getAltitude() : 0.0);
+        request.put("battery_level", telemetry.getBatteryLevel() != null ? telemetry.getBatteryLevel() : 100.0);
+        
+        // Optional fields
+        request.put("speed", telemetry.getSpeed() != null ? telemetry.getSpeed() : 0.0);
+        request.put("mode", payload.getOrDefault("mode", "AUTO"));
+        
+        // Heading from yawDeg if available
+        if (payload.containsKey("yawDeg")) {
+            request.put("heading_deg", payload.get("yawDeg"));
+        } else if (payload.containsKey("yaw_deg")) {
+            request.put("heading_deg", payload.get("yaw_deg"));
+        }
+    }
+
+    /**
+     * Maps SOLDIER telemetry to Python SoldierTelemetry schema.
+     * Required fields: type, source_id, timestamp, latitude, longitude, vitals{hr_bpm, spo2}
+     */
+    private void mapSoldierTelemetry(Map<String, Object> request, Telemetry telemetry, Map<String, Object> payload) {
+        request.put("type", "soldier");
+        
+        // Build vitals object - Python expects: hr_bpm (int), spo2 (float)
+        Map<String, Object> vitals = new HashMap<>();
+        
+        // Extract vitals from payload
+        Object payloadVitals = payload.get("vitals");
+        if (payloadVitals instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> vitalsMap = (Map<String, Object>) payloadVitals;
+            
+            // Map heart rate: hrBpm or heartRateBpm -> hr_bpm
+            Number hrBpm = extractNumber(vitalsMap, "hrBpm", "heartRateBpm", "hr_bpm", "heart_rate_bpm");
+            vitals.put("hr_bpm", hrBpm != null ? hrBpm.intValue() : 75);
+            
+            // Map SpO2: spo2 or spo2_pct or spO2 -> spo2
+            Number spo2 = extractNumber(vitalsMap, "spo2", "spo2_pct", "spO2", "oxygen");
+            vitals.put("spo2", spo2 != null ? spo2.doubleValue() : 98.0);
+            
+            // Optional vitals fields
+            Number respBpm = extractNumber(vitalsMap, "respBpm", "respirationRate", "resp_bpm");
+            if (respBpm != null) {
+                vitals.put("resp_bpm", respBpm.doubleValue());
+            }
+            
+            Number skinTemp = extractNumber(vitalsMap, "skinTempC", "skin_temp_c", "temperature");
+            if (skinTemp != null) {
+                vitals.put("skin_temp_c", skinTemp.doubleValue());
+            }
+            
+            Number stressIndex = extractNumber(vitalsMap, "stressIdx", "stress_index", "stress");
+            if (stressIndex != null) {
+                vitals.put("stress_index", stressIndex.doubleValue());
+            }
+        } else {
+            // Default vitals if not provided
+            vitals.put("hr_bpm", 75);
+            vitals.put("spo2", 98.0);
+        }
+        
+        request.put("vitals", vitals);
+        
+        // Status field
+        request.put("status", determineStatus(telemetry, payload));
+        
+        // Optional fields
+        if (payload.containsKey("unit_id") || payload.containsKey("unitId")) {
+            request.put("unit_id", payload.getOrDefault("unit_id", payload.get("unitId")));
+        }
+        if (payload.containsKey("callsign")) {
+            request.put("callsign", payload.get("callsign"));
+        }
+    }
+
+    /**
+     * Maps VEHICLE telemetry to Python VehicleTelemetry schema.
+     * Required fields: type, source_id, timestamp, latitude, longitude, fuel_pct
+     */
+    private void mapVehicleTelemetry(Map<String, Object> request, Telemetry telemetry, Map<String, Object> payload) {
+        request.put("type", "vehicle");
+        
+        // Required: fuel_pct
+        Number fuelPct = extractNumber(payload, "fuelPct", "fuel_pct", "fuel");
+        if (fuelPct != null) {
+            request.put("fuel_pct", fuelPct.doubleValue());
+        } else if (telemetry.getBatteryLevel() != null) {
+            request.put("fuel_pct", telemetry.getBatteryLevel().doubleValue());
+        } else {
+            request.put("fuel_pct", 100.0);
+        }
+        
+        // Speed
+        request.put("speed", telemetry.getSpeed() != null ? telemetry.getSpeed() : 0.0);
+        
+        // Vehicle type: must match VehicleType enum (TANK, APC, TRUCK, HUMVEE, OTHER)
+        String vehicleType = extractString(payload, "vehicleType", "vehicle_type", "type");
+        if (vehicleType != null) {
+            // Normalize to uppercase for enum matching
+            request.put("vehicle_type", vehicleType.toUpperCase());
+        } else {
+            request.put("vehicle_type", "APC"); // Default
+        }
+        
+        // Optional fields
+        Number healthPct = extractNumber(payload, "healthPct", "health_pct");
+        if (healthPct != null) {
+            request.put("health_pct", healthPct.doubleValue());
+        }
+        
+        String engineStatus = extractString(payload, "engine", "engineStatus", "engine_status");
+        if (engineStatus != null) {
+            request.put("engine_status", engineStatus);
+        }
+    }
+
+    /**
+     * Extracts a Number from a map trying multiple possible keys.
+     */
+    private Number extractNumber(Map<String, Object> map, String... keys) {
+        for (String key : keys) {
+            if (map.containsKey(key)) {
+                Object value = map.get(key);
+                if (value instanceof Number) {
+                    return (Number) value;
+                }
+                if (value instanceof String) {
+                    try {
+                        return Double.parseDouble((String) value);
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Extracts a String from a map trying multiple possible keys.
+     */
+    private String extractString(Map<String, Object> map, String... keys) {
+        for (String key : keys) {
+            if (map.containsKey(key)) {
+                Object value = map.get(key);
+                return value != null ? String.valueOf(value) : null;
+            }
+        }
+        return null;
     }
 
     /**
