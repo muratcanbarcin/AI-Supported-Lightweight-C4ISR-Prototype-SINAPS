@@ -1,5 +1,5 @@
 
-export type ActiveView = "map" | "assets" | "alerts" | "tasks" | "ai" | "profile" | "asset-profile";
+export type ActiveView = "map" | "assets" | "alerts" | "tasks" | "ai" | "profile" | "asset-profile" | "telemetry" | "analysis";
 
 interface TopNavBarProps {
   activeView: ActiveView;
@@ -8,6 +8,8 @@ interface TopNavBarProps {
 
 const navItems: Array<{ id: ActiveView; label: string }> = [
   { id: "map", label: "HARİTA" },
+  { id: "telemetry", label: "CANLI AKIŞ" },
+  { id: "analysis", label: "ANALİZ" },
   { id: "assets", label: "BİRİM DURUMU" },
   { id: "tasks", label: "GÖREVLER" },
   { id: "ai", label: "AI ASİSTAN" },

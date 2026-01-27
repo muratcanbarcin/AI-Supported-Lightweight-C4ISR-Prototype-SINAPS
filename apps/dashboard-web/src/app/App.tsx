@@ -5,6 +5,8 @@ import { AssetStatusPage } from '@/features/assets/pages/AssetStatusPage';
 import { AlertsPage } from '@/features/alerts/pages/AlertsPage';
 import { TasksPage } from '@/features/tasks/pages/TasksPage';
 import { AIPage } from '@/features/ai/pages/AIPage';
+import { TelemetryPage } from '@/features/telemetry/pages/TelemetryPage';
+import { AnalysisPage } from '@/features/analysis/pages/AnalysisPage';
 import { ProfilePage } from '@/features/profile/pages/ProfilePage';
 import { AssetProfilePage } from '@/features/assets/pages/AssetProfilePage';
 import { MapView } from '@/features/map';
@@ -60,6 +62,18 @@ export function App() {
           {activeView === "ai" && (
             <div className="absolute inset-0 z-40 bg-slate-900">
               <AIPage />
+            </div>
+          )}
+
+          {activeView === "telemetry" && (
+            <div className="absolute inset-0 z-40 bg-slate-900">
+              <TelemetryPage />
+            </div>
+          )}
+
+          {activeView === "analysis" && (
+            <div className="absolute inset-0 z-40 bg-slate-900">
+              <AnalysisPage />
             </div>
           )}
 
