@@ -1,0 +1,63 @@
+# ============================================================================
+#        C4ISR TACTICAL AI - FINE-TUNING REQUIREMENTS
+# ============================================================================
+# Install with: pip install -r requirements-train.txt
+# 
+# GPU: NVIDIA RTX 3080 16GB or equivalent (CUDA 11.8+)
+# Python: 3.10+
+# ============================================================================
+
+# Core ML Framework
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Transformers and PEFT
+transformers>=4.36.0
+peft>=0.7.0
+trl>=0.7.0
+accelerate>=0.25.0
+
+# Quantization
+bitsandbytes>=0.41.0
+
+# Data handling
+datasets>=2.14.0
+huggingface_hub>=0.19.0
+
+# Training utilities
+tensorboard>=2.15.0
+safetensors>=0.4.0
+sentencepiece>=0.1.99  # For Gemma tokenizer
+
+# Optional: Flash Attention 2 (for faster training)
+# Requires manual installation - see: https://github.com/Dao-AILab/flash-attention
+# flash-attn>=2.3.0
+
+# Utilities
+tqdm>=4.66.0
+pyyaml>=6.0.0
+scipy>=1.11.0
+einops>=0.7.0
+
+# Memory profiling (optional)
+nvidia-ml-py3>=7.352.0
+
+# ============================================================================
+# INSTALLATION NOTES:
+# ============================================================================
+# 
+# 1. CUDA Setup:
+#    Make sure you have CUDA 11.8 or 12.x installed
+#    Check with: nvcc --version
+#
+# 2. Install PyTorch with CUDA:
+#    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#
+# 3. Install bitsandbytes (Windows-specific):
+#    pip install bitsandbytes-windows
+#    OR compile from source: https://github.com/TimDettmers/bitsandbytes
+#
+# 4. Flash Attention 2 (optional, Linux only):
+#    pip install flash-attn --no-build-isolation
+#
+# ============================================================================
