@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { mockAssets } from '@/services/mockData';
-import type { AssetSummary } from '@/services/mockData';
+import type { AssetSummary, UAVDetails, SoldierDetails, VehicleDetails } from '@/services/mockData';
 import { UnitDetailsModal } from '@/features/map/components/UnitDetailsModal';
 
-interface AssetStatusPageProps { }
+interface AssetStatusPageProps {
+  onOpenProfile?: (assetId: string) => void;
+}
 
 // Helper for Corner Brackets
 const CornerBrackets = ({ colorClass }: { colorClass: string }) => {
@@ -21,7 +23,7 @@ const CornerBrackets = ({ colorClass }: { colorClass: string }) => {
   );
 };
 
-export function AssetStatusPage({ }: AssetStatusPageProps) {
+export function AssetStatusPage({ onOpenProfile }: AssetStatusPageProps) {
   const assets = mockAssets;
   const [selectedAsset, setSelectedAsset] = useState<AssetSummary | null>(null);
 
@@ -62,6 +64,18 @@ export function AssetStatusPage({ }: AssetStatusPageProps) {
               iconBorder = "border-amber-500/30";
             }
 
+            // Type Guard Helpers
+            const isUAV = asset.type === 'UAV';
+            const isSoldier = asset.type === 'SOLDIER';
+            const isVehicle = asset.type === 'GROUND_VEHICLE';
+
+            const uavDetails = isUAV ? asset.details as UAVDetails : null;
+            const soldierDetails = isSoldier ? asset.details as SoldierDetails : null;
+            const vehicleDetails = isVehicle ? asset.details as VehicleDetails : null;
+
+            // Common Battery Level (default to random if missing for some reason)
+            const batteryLevel = asset.details.batteryLevel || 85;
+
             return (
               <div
                 key={asset.id}
@@ -76,9 +90,9 @@ export function AssetStatusPage({ }: AssetStatusPageProps) {
                       {/* Scanline effect in icon */}
                       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/5 to-transparent animate-scan"></div>
                       <span className="text-2xl relative z-10">
-                        {asset.type === 'UAV' ? <i className="fa-solid fa-plane text-2xl"></i> :
-                          asset.type === 'SOLDIER' ? <i className="fa-solid fa-person-rifle text-2xl"></i> :
-                            asset.type === 'GROUND_VEHICLE' ? <i className="fa-solid fa-truck-pickup text-xl"></i> :
+                        {isUAV ? <i className="fa-solid fa-plane text-2xl"></i> :
+                          isSoldier ? <i className="fa-solid fa-person-rifle text-2xl"></i> :
+                            isVehicle ? <i className="fa-solid fa-truck-pickup text-xl"></i> :
                               <i className="fa-solid fa-stopwatch text-2xl"></i>}
                       </span>
                     </div>
@@ -99,37 +113,79 @@ export function AssetStatusPage({ }: AssetStatusPageProps) {
                 {/* Coordinates HUD */}
                 <div className="bg-[#0b1120] p-3 mb-6 border-l-2 border-slate-700 relative font-mono text-xs">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-slate-500 uppercase tracking-wider text-[9px]">LATITUDE</span>
-                    <span className="text-slate-300 tracking-wider">4339.93700 N</span>
+                    <span className="text-slate-500 uppercase tracking-wider text-[9px]">SİSTEM SAATİ</span>
+                    <span className="text-slate-300 tracking-wider">14:23:05</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-500 uppercase tracking-wider text-[9px]">LONGITUDE</span>
-                    <span className="text-slate-300 tracking-wider">32.85700 E</span>
+                    <span className="text-slate-500 uppercase tracking-wider text-[9px]">KONUM</span>
+                    <span className="text-slate-300 tracking-wider truncate ml-2" title={asset.coordinates}>
+                      {asset.coordinates || "VERİ YOK"}
+                    </span>
                   </div>
                 </div>
 
-                {/* Status Bars */}
+                {/* Dynamic Status Bars / Grid */}
                 <div className="space-y-4">
-                  {/* Health */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">SAĞLIK</span>
-                      <span className="text-xs text-slate-200 font-bold font-mono">100%</span>
-                    </div>
-                    <div className="h-1 w-full bg-slate-800 relative">
-                      <div className={`absolute top-0 left-0 h-full ${barColor} w-full shadow-[0_0_8px_currentColor] opacity-100`}></div>
-                    </div>
-                  </div>
 
-                  {/* Fuel */}
+                  {/* UAV Specifics */}
+                  {isUAV && uavDetails && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-slate-800/50 p-2 rounded-sm border border-slate-700/50">
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider">İRTİFA</div>
+                        <div className="text-sm font-bold text-white font-mono">{uavDetails.altitude} <span className="text-[10px] text-slate-400">FT</span></div>
+                      </div>
+                      <div className="bg-slate-800/50 p-2 rounded-sm border border-slate-700/50">
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider">HIZ</div>
+                        <div className="text-sm font-bold text-white font-mono">{uavDetails.speed} <span className="text-[10px] text-slate-400">KM/H</span></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Soldier Specifics */}
+                  {isSoldier && soldierDetails && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-slate-800/50 p-2 rounded-sm border border-slate-700/50">
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider">NABIZ</div>
+                        <div className={`text-sm font-bold font-mono ${soldierDetails.heartRate > 100 ? 'text-red-400 animate-pulse' : 'text-white'}`}>
+                          {soldierDetails.heartRate} <span className="text-[10px] text-slate-400">BPM</span>
+                        </div>
+                      </div>
+                      <div className="bg-slate-800/50 p-2 rounded-sm border border-slate-700/50">
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider">SPO2</div>
+                        <div className="text-sm font-bold text-white font-mono">%{soldierDetails.spo2}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Vehicle Specifics */}
+                  {isVehicle && vehicleDetails && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-slate-800/50 p-2 rounded-sm border border-slate-700/50">
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider">MOTOR</div>
+                        <div className="text-sm font-bold text-white font-mono">{vehicleDetails.engineTemp}°C</div>
+                      </div>
+                      <div className="bg-slate-800/50 p-2 rounded-sm border border-slate-700/50">
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider">HIZ</div>
+                        <div className="text-sm font-bold text-white font-mono">{vehicleDetails.speed} <span className="text-[10px] text-slate-400">KM/H</span></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Common: Battery / Fuel */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">YAKIT</span>
-                      <span className="text-xs text-slate-200 font-bold font-mono">{asset.type === 'UAV' ? '72%' : '85%'}</span>
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                        {isVehicle ? "YAKIT SEVİYESİ" : "BATARYA DURUMU"}
+                      </span>
+                      <span className="text-xs text-slate-200 font-bold font-mono">
+                        {isVehicle && vehicleDetails ? vehicleDetails.fuelLevel : batteryLevel}%
+                      </span>
                     </div>
-                    <div className="h-1 w-full bg-slate-800 relative">
-                      {/* Segmented bar effect manually or simple */}
-                      <div className={`absolute top-0 left-0 h-full bg-slate-400 w-[72%] opacity-80`}></div>
+                    <div className="h-1 w-full bg-slate-800 relative overflow-hidden">
+                      <div
+                        className={`absolute top-0 left-0 h-full ${barColor} shadow-[0_0_8px_currentColor] transition-all duration-1000`}
+                        style={{ width: `${isVehicle && vehicleDetails ? vehicleDetails.fuelLevel : batteryLevel}%` }}
+                      ></div>
                     </div>
                   </div>
                 </div>
@@ -143,7 +199,7 @@ export function AssetStatusPage({ }: AssetStatusPageProps) {
                   <div className="flex flex-col items-end">
                     <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">DURUM</span>
                     <span className={`text-xs font-bold tracking-wider ${asset.status === 'ONLINE' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      {asset.status === 'ONLINE' ? 'ONLINE' : 'WARNING'}
+                      {asset.status === 'ONLINE' ? 'ONLINE' : 'BAĞLANTI YOK'}
                     </span>
                   </div>
                 </div>
@@ -159,6 +215,7 @@ export function AssetStatusPage({ }: AssetStatusPageProps) {
         <UnitDetailsModal
           asset={selectedAsset}
           onClose={() => setSelectedAsset(null)}
+          onOpenProfile={onOpenProfile}
         />
       )}
     </div>

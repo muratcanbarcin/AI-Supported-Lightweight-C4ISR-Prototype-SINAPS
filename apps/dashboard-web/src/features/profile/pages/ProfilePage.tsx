@@ -1,4 +1,8 @@
-export function ProfilePage() {
+interface ProfilePageProps {
+    onOpenProfile?: (id: string) => void;
+}
+
+export function ProfilePage({ onOpenProfile }: ProfilePageProps) {
     const commander = {
         name: "SEMİH",
         surname: "UTKU",
@@ -11,9 +15,10 @@ export function ProfilePage() {
     const responsibleUnits = [
         { id: "UAV-01", name: "HS-01", type: "UAV", status: "ONLINE" },
         { id: "UAV-02", name: "HS-02", type: "UAV", status: "ONLINE" },
-        { id: "SOL-01", name: "PİYADE TİMİ A", type: "SOLDIER", status: "ONLINE" },
-        { id: "SOL-02", name: "PİYADE TİMİ B", type: "SOLDIER", status: "WARNING" },
-        { id: "VEH-01", name: "KİRPİ-01", type: "GROUND_VEHICLE", status: "ONLINE" },
+        { id: "SOLDIER-01", name: "PİYADE-01", type: "SOLDIER", status: "ONLINE" },
+        { id: "SOLDIER-02", name: "PİYADE-02", type: "SOLDIER", status: "WARNING" },
+        { id: "SOLDIER-03", name: "PİYADE-03", type: "SOLDIER", status: "ONLINE" },
+        { id: "VEHICLE-01", name: "KİRPİ-01", type: "GROUND_VEHICLE", status: "ONLINE" },
     ];
 
     const activeOperations = [
@@ -80,13 +85,17 @@ export function ProfilePage() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {responsibleUnits.map(unit => (
-                                <div key={unit.id} className="bg-slate-800/30 border border-slate-700/50 p-4 flex items-center justify-between group hover:bg-slate-800/50 transition-colors">
+                                <div
+                                    key={unit.id}
+                                    onClick={() => onOpenProfile && onOpenProfile(unit.id)}
+                                    className="bg-slate-800/30 border border-slate-700/50 p-4 flex items-center justify-between group hover:bg-slate-800/50 transition-colors cursor-pointer"
+                                >
                                     <div className="flex items-center gap-3">
                                         <div className={`w-10 h-10 rounded-sm flex items-center justify-center border ${unit.type === 'UAV' ? 'border-sky-500/30 bg-sky-500/10 text-sky-400' : unit.type === 'SOLDIER' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' : 'border-amber-500/30 bg-amber-500/10 text-amber-400'}`}>
                                             <i className={`fa-solid ${unit.type === 'UAV' ? 'fa-plane' : unit.type === 'SOLDIER' ? 'fa-person-rifle' : 'fa-truck-pickup'}`}></i>
                                         </div>
                                         <div>
-                                            <div className="text-sm font-bold text-slate-200 uppercase tracking-wider">{unit.name}</div>
+                                            <div className="text-sm font-bold text-slate-200 uppercase tracking-wider group-hover:text-sky-400 transition-colors">{unit.name}</div>
                                             <div className="text-[10px] text-slate-500 font-mono tracking-widest">{unit.id}</div>
                                         </div>
                                     </div>

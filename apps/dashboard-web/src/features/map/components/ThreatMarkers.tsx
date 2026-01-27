@@ -9,16 +9,14 @@ interface Threat {
   type: 'AIR' | 'SWARM';
 }
 
-// Mock threat data - Tahrip kutusu içinde/yakınında (Demo için sadece 1 adet)
-const MOCK_THREATS: Threat[] = [
-  {
-    id: 'THREAT-01',
-    position: [39.937, 32.857], // Tahrip kutusu içinde
-    label: '01-HAVA',
-    coordinates: '39.93700 N 32.85700 E',
-    type: 'AIR',
-  },
-];
+// Helper to offset position
+function offset(center: [number, number], latOffset: number, lngOffset: number): [number, number] {
+  return [center[0] + latOffset, center[1] + lngOffset];
+}
+
+interface ThreatMarkersProps {
+  center?: [number, number];
+}
 
 // Create threat marker icon (yellow diamond) - Sade ve kompakt
 function createThreatIcon(threat: Threat): ReturnType<typeof divIcon> {
@@ -51,6 +49,7 @@ function createThreatIcon(threat: Threat): ReturnType<typeof divIcon> {
             font-weight: 600;
             white-space: nowrap;
             line-height: 1.2;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
           ">${threat.label} - BİLİNMEYEN</div>
           <div style="
             color: #e2e8f0;
@@ -58,19 +57,34 @@ function createThreatIcon(threat: Threat): ReturnType<typeof divIcon> {
             font-family: monospace;
             white-space: nowrap;
             line-height: 1.2;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
           ">${threat.coordinates}</div>
         </div>
       </div>
     `,
-    iconSize: [140, 30],
+    iconSize: [200, 34],
     iconAnchor: [0, 15],
   });
 }
 
-export function ThreatMarkers() {
+export function ThreatMarkers({ center }: ThreatMarkersProps) {
+  // Use dynamic center if provided, default to Ankara
+  const baseCenter: [number, number] = center || [39.93, 32.85];
+
+  // Dynamic threat data centered around the base location
+  const threats: Threat[] = [
+    {
+      id: 'THREAT-01',
+      position: offset(baseCenter, 0.007, 0.007), // Tahrip kutusu içinde
+      label: '01-HAVA',
+      coordinates: `${offset(baseCenter, 0.007, 0.007)[0].toFixed(5)} N ${offset(baseCenter, 0.007, 0.007)[1].toFixed(5)} E`,
+      type: 'AIR',
+    },
+  ];
+
   return (
     <>
-      {MOCK_THREATS.map((threat) => (
+      {threats.map((threat) => (
         <Marker
           key={threat.id}
           position={threat.position}

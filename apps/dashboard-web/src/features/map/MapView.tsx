@@ -1,4 +1,4 @@
-import { MapContainer, Marker, useMap } from 'react-leaflet';
+import { MapContainer, Marker, TileLayer, useMap } from 'react-leaflet';
 import { divIcon } from 'leaflet';
 import { useEffect, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
@@ -11,8 +11,40 @@ import { useMockAssets, type AssetType } from './hooks/useMockAssets';
 import { mockAssets, type AssetSummary } from '@/services/mockData';
 import './MapView.css';
 
-// Map center (Ankara coordinates)
-const MAP_CENTER: [number, number] = [39.93, 32.85];
+// Tile Layer Options
+const TILE_LAYERS = {
+  // Stamen Terrain (via Stadia) - good terrain visualization
+  stamenTerrain: {
+    url: 'https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://stamen.com/">Stamen Design</a>',
+  },
+  // OpenTopoMap - topographic map with elevation
+  openTopo: {
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
+  },
+  // Carto Dark - dark themed map (fallback)
+  cartoDark: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+  },
+  // Satellite imagery
+  satellite: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri',
+  },
+  // Thunderforest Landscape (requires API key but has free tier)
+  thunderforest: {
+    url: 'https://{s}.tile.thunderforest.com/landscape/{z}/{x}/{y}.png?apikey=',
+    attribution: '&copy; Thunderforest',
+  },
+};
+
+// Current active tile layer - Satellite imagery (most reliable)
+const ACTIVE_TILE_LAYER = TILE_LAYERS.satellite;
+
+// Default map center (Ankara coordinates - fallback)
+const DEFAULT_CENTER: [number, number] = [39.93, 32.85];
 
 // Component to set map background style
 function MapStyleSetter() {
@@ -26,9 +58,104 @@ function MapStyleSetter() {
   return null;
 }
 
-export function MapView() {
-  const assets = useMockAssets();
+// Component to fly to user's location when it changes
+function FlyToLocation({ position }: { position: [number, number] | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (position) {
+      map.flyTo(position, 14, { duration: 2 });
+    }
+  }, [map, position]);
+
+  return null;
+}
+
+// Custom hook to get user's real location
+function useUserLocation() {
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setLocationError('Tarayıcınız konum servislerini desteklemiyor');
+      return;
+    }
+
+    // Get current position
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserLocation([latitude, longitude]);
+        console.log('📍 Konum alındı:', latitude, longitude);
+      },
+      (error) => {
+        console.error('Konum hatası:', error);
+        setLocationError('Konum alınamadı: ' + error.message);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      }
+    );
+
+    // Watch position for real-time updates
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserLocation([latitude, longitude]);
+      },
+      (error) => {
+        console.error('Konum izleme hatası:', error);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 5000
+      }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  return { userLocation, locationError };
+}
+
+// Create marker for user's current location
+function createUserLocationIcon(): ReturnType<typeof divIcon> {
+  const iconHtml = `
+    <div class="relative flex items-center justify-center" style="width: 24px; height: 24px;">
+      <!-- Outer pulse ring -->
+      <div class="absolute w-6 h-6 rounded-full bg-blue-500/30 animate-ping"></div>
+      <!-- Inner circle -->
+      <div class="absolute w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-lg"></div>
+    </div>
+  `;
+
+  return divIcon({
+    className: 'user-location-marker',
+    html: iconHtml,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
+interface MapViewProps {
+  onOpenProfile?: (assetId: string) => void;
+  focusedAssetId?: string | null;
+}
+
+export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
+  const { userLocation, locationError } = useUserLocation();
+  const mapCenter = userLocation || DEFAULT_CENTER;
+
+  // Generate mock assets relative to the current map center (user location)
+  const assets = useMockAssets(mapCenter);
+
   const [selectedAsset, setSelectedAsset] = useState<AssetSummary | null>(null);
+
+  const targetPosition = focusedAssetId ? assets.find(a => a.id === focusedAssetId)?.position : null;
 
   const handleMarkerClick = (assetId: string) => {
     // Find full details from mockAssets service
@@ -46,33 +173,57 @@ export function MapView() {
           type: basicAsset.type,
           status: 'ONLINE',
           lastSeen: 'Şimdi',
-          details: {}
+          coordinates: 'N/A', // Add missing char
+          details: {} as any // Force cast to avoid strict type error for fallback
         });
       }
     }
   };
 
+  // Log location error if any
+  if (locationError) {
+    console.warn('Konum servisi:', locationError);
+  }
+
   return (
     <div className="map-view-container h-full w-full relative">
       <MapContainer
-        center={MAP_CENTER}
+        center={DEFAULT_CENTER}
         zoom={14}
         zoomControl={false}
         className="radar-map h-full w-full bg-[#080d12]"
       >
         <MapStyleSetter />
 
-        {/* Radar Rings */}
-        <RadarRings center={MAP_CENTER} />
+        {/* Fly to target or user location */}
+        <FlyToLocation position={targetPosition || userLocation} />
+
+        {/* Satellite/Terrain Map Background */}
+        <TileLayer
+          url={ACTIVE_TILE_LAYER.url}
+          attribution={ACTIVE_TILE_LAYER.attribution}
+        />
+
+        {/* User's Current Location Marker */}
+        {userLocation && (
+          <Marker
+            position={userLocation}
+            icon={createUserLocationIcon()}
+            zIndexOffset={200}
+          />
+        )}
+
+        {/* Radar Rings - centered on user location or default */}
+        <RadarRings center={mapCenter} />
 
         {/* Asset Bounds Circle */}
         <AssetBoundsCircle assets={assets} />
 
-        {/* Mission Geofence */}
-        <GeofencePolygon />
+        {/* Mission Geofence - centered relative to user */}
+        <GeofencePolygon center={mapCenter} />
 
-        {/* Threat Markers */}
-        <ThreatMarkers />
+        {/* Threat Markers - centered relative to user */}
+        <ThreatMarkers center={mapCenter} />
 
         {/* Asset Markers */}
         {assets.map((asset) => (
@@ -99,6 +250,7 @@ export function MapView() {
         <UnitDetailsModal
           asset={selectedAsset}
           onClose={() => setSelectedAsset(null)}
+          onOpenProfile={onOpenProfile}
         />
       )}
     </div>

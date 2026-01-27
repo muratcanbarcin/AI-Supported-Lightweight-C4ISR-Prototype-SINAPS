@@ -3,6 +3,7 @@
   height: 100%;
   position: relative;
   background-color: #080d12;
+  z-index: 0;
 }
 
 .radar-map {
@@ -16,9 +17,15 @@
   background-color: #080d12;
 }
 
-.radar-map .leaflet-tile-container {
-  display: none;
+/* Tactical dark blue filter for satellite imagery */
+.radar-map .leaflet-tile-pane {
+  filter: brightness(0.4) saturate(1.2) hue-rotate(180deg) contrast(1.1);
 }
+
+/* Alternative: Even darker military style */
+/* .radar-map .leaflet-tile-pane {
+  filter: brightness(0.3) saturate(0.8) hue-rotate(200deg) sepia(0.3) contrast(1.2);
+} */
 
 .radar-map .leaflet-control-container {
   display: none;
@@ -34,4 +41,3 @@
   background: transparent !important;
   border: none !important;
 }
-
