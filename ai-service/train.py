@@ -59,9 +59,9 @@ from trl import SFTTrainer, SFTConfig
 #                           CONFIGURATION
 # ============================================================================
 
-# Default paths
+# Default paths (relative to ai-service directory)
 DEFAULT_MODEL_PATH = "./local_models/llm"
-DEFAULT_DATASET_PATH = "./simulators/sim-producers/real_world_train_data.jsonl"
+DEFAULT_DATASET_PATH = "../simulators/sim-producers/real_world_train_data.jsonl"
 DEFAULT_OUTPUT_DIR = "./fine_tuned_adapter"
 DEFAULT_LOGS_DIR = "./training_logs"
 
@@ -83,9 +83,9 @@ TRAINING_CONFIG = {
     "weight_decay": 0.01,
     "max_grad_norm": 0.3,
     
-    # Precision
-    "fp16": True,
-    "bf16": False,  # Use bf16 if your GPU supports it (Ampere+)
+    # Precision - Use bf16 on Ampere+ GPUs (RTX 30xx, 40xx)
+    "fp16": False,
+    "bf16": True,  # BFloat16 for Ampere+ GPUs
     
     # Memory optimization
     "gradient_checkpointing": True,
@@ -475,11 +475,6 @@ def create_trainer(
         # Misc
         seed=42,
         push_to_hub=False,
-        
-        # SFT specific settings
-        max_seq_length=TRAINING_CONFIG["max_seq_length"],
-        packing=False,  # Disable packing for better gradient flow
-        dataset_text_field="text",  # Field name for formatted text
     )
     
     logger.info(f"Training arguments configured:")

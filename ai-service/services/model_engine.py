@@ -163,6 +163,9 @@ class ModelEngine:
         """
         Initialize Gemma-2-9b-it from LOCAL directory (air-gapped mode).
         OPTIMIZED: Full GPU residency, NO CPU offload for RTX 3080 16GB.
+        
+        If a fine-tuned Tactical Adapter exists at ./fine_tuned_adapter/final_adapter,
+        it will be automatically loaded on top of the base model.
         """
         if self._initialized:
             return
@@ -240,27 +243,90 @@ class ModelEngine:
         # Verify model is on GPU
         self._log_vram_usage("POST-LOAD")
         logger.info(f"Model loaded in {load_time:.2f} seconds")
-        print(f"✅ Model loaded in {load_time:.2f}s")
+        print(f"✅ Base model loaded in {load_time:.2f}s")
         
-        # Prepare for LoRA Training
-        self._model = prepare_model_for_kbit_training(self._model)
-        self._apply_lora_config()
+        # ====================================================================
+        # TACTICAL ADAPTER LOADING - Priority Fine-Tuned Adapter
+        # ====================================================================
+        tactical_adapter_path = Path("./fine_tuned_adapter/final_adapter")
+        
+        if tactical_adapter_path.exists() and (tactical_adapter_path / "adapter_config.json").exists():
+            try:
+                logger.info("=" * 60)
+                logger.info("🎖️  TACTICAL ADAPTER DETECTED - LOADING FINE-TUNED WEIGHTS")
+                logger.info("=" * 60)
+                print("\n" + "=" * 60)
+                print("🎖️  LOADING TACTICAL ADAPTER...")
+                print("=" * 60)
+                
+                # Load the fine-tuned LoRA adapter
+                self._model = PeftModel.from_pretrained(
+                    self._model,
+                    is_trainable=False  # Inference mode
+                )
+                
+                self._lora_applied = True
+                self._current_adapter = str(tactical_adapter_path)
+                
+                logger.info("=" * 60)
+                logger.info("✅ TACTICAL ADAPTER is ACTIVE")
+                logger.info(f"   Adapter Path: {tactical_adapter_path}")
+                logger.info("   Mode: INFERENCE (Fine-tuned for C4ISR operations)")
+                logger.info("=" * 60)
+                
+                print("=" * 60)
+                print("✅ TACTICAL ADAPTER is ACTIVE!")
+                print(f"   📁 Loaded from: {tactical_adapter_path}")
+                print("   🎯 Mode: Fine-tuned C4ISR Intelligence")
+                print("=" * 60 + "\n")
+                
+                self._log_vram_usage("POST-TACTICAL-ADAPTER")
+                
+            except Exception as e:
+                logger.error(f"Failed to load Tactical Adapter: {e}")
+                print(f"⚠️  Failed to load Tactical Adapter: {e}")
+                print("   Falling back to base model with default LoRA config...")
+                
+                # Fallback: Apply default LoRA config
+                self._model = prepare_model_for_kbit_training(self._model)
+                self._apply_lora_config()
+        else:
+            # No fine-tuned adapter found - use default LoRA config
+            logger.warning("=" * 60)
+            logger.warning("⚠️  TACTICAL ADAPTER NOT FOUND")
+            logger.warning(f"   Expected at: {tactical_adapter_path.absolute()}")
+            logger.warning("   Using base model with default LoRA configuration")
+            logger.warning("   Run 'python train.py' to create the Tactical Adapter")
+            logger.warning("=" * 60)
+            
+            print("\n" + "=" * 60)
+            print("⚠️  TACTICAL ADAPTER NOT FOUND")
+            print(f"   Expected at: {tactical_adapter_path.absolute()}")
+            print("   📌 Using BASE MODEL with default LoRA config")
+            print("   💡 Run 'python train.py' to create the Tactical Adapter")
+            print("=" * 60 + "\n")
+            
+            # Apply default LoRA for training capability
+            self._model = prepare_model_for_kbit_training(self._model)
+            self._apply_lora_config()
         
         self._log_vram_usage("POST-LORA")
         
         self._initialized = True
         total_time = time.time() - start_time
         
+        # Final status
+        adapter_status = "TACTICAL ADAPTER ACTIVE" if self._current_adapter else "BASE MODEL (No Adapter)"
+        
         logger.info(
             "Gemma-2-9b-it loaded successfully",
             mode="OFFLINE",
             quantization="4-bit NF4",
             device="CUDA",
+            adapter=adapter_status,
             load_time_seconds=f"{total_time:.2f}"
         )
-        print(f"🎯 AI Engine ready! Total startup: {total_time:.2f}s")
-        
-        self._load_existing_adapter()
+        print(f"🎯 AI Engine ready! [{adapter_status}] Total startup: {total_time:.2f}s")
     
     def _apply_lora_config(self) -> None:
         """Apply LoRA configuration for efficient fine-tuning"""
