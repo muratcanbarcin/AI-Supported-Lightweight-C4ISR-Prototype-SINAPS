@@ -262,6 +262,7 @@ class ModelEngine:
                 # Load the fine-tuned LoRA adapter
                 self._model = PeftModel.from_pretrained(
                     self._model,
+                    str(tactical_adapter_path),
                     is_trainable=False  # Inference mode
                 )
                 

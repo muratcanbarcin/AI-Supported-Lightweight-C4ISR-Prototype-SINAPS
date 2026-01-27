@@ -15,6 +15,8 @@ paho*
 
 # Logs
 *.log
+logs/
+training_logs/
 
 # Maven / Java Build Artifacts
 target/
@@ -37,7 +39,42 @@ yarn-error.log*
 # --- AI Modelleri ve Hassas Dosyalar ---
 local_models/
 download_models.py
-__pycache__/
 *.pt
 *.bin
 *.safetensors
+*.gguf
+*.ggml
+
+# --- Fine-Tuning Artifacts (Büyük dosyalar - GitHub'da olmamalı) ---
+fine_tuned_adapter/
+lora_adapters/
+adapters/
+checkpoints/
+checkpoint-*/
+
+# Training outputs
+*.ckpt
+wandb/
+runs/
+tensorboard/
+
+# --- Datasets (Büyük veri dosyaları) ---
+*.jsonl
+*.parquet
+*.csv
+!requirements*.txt
+
+# --- HuggingFace Cache ---
+.cache/
+huggingface/
+transformers_cache/
+
+# --- Temporary Files ---
+*.tmp
+*.temp
+*.swp
+*~
+
+# --- OS Generated ---
+Thumbs.db
+Desktop.ini
