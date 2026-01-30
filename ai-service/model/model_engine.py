@@ -54,7 +54,11 @@ logger = structlog.get_logger(__name__)
 # ============================================================================
 
 # Offline model path - NO INTERNET ACCESS
+# NOTE: Paths are relative to ai-service/ directory (where main.py runs from)
 LOCAL_LLM_MODEL_PATH = Path("./local_models/llm")
+
+# Path to fine-tuned LoRA adapters (new microservices structure)
+TACTICAL_ADAPTER_PATH = Path("./model/adapters/fine_tuned_adapter/final_adapter")
 
 # Force CUDA device for all operations
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -247,8 +251,9 @@ class ModelEngine:
         
         # ====================================================================
         # TACTICAL ADAPTER LOADING - Priority Fine-Tuned Adapter
+        # Path updated for new microservices structure
         # ====================================================================
-        tactical_adapter_path = Path("./fine_tuned_adapter/final_adapter")
+        tactical_adapter_path = TACTICAL_ADAPTER_PATH
         
         if tactical_adapter_path.exists() and (tactical_adapter_path / "adapter_config.json").exists():
             try:

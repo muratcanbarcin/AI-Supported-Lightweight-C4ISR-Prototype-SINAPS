@@ -33,7 +33,7 @@ import structlog
 from config.settings import settings
 from config.database import initialize_database, close_database
 from services.rag_engine import rag_engine
-from services.model_engine import model_engine
+from model.model_engine import model_engine
 
 from schemas.telemetry import (
     # Polymorphic Telemetry Models
