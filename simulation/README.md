@@ -9,6 +9,7 @@ This module contains all simulation and data generation utilities for the C4ISR 
 - **vehicle_sim.py** - Ground vehicle telemetry simulator
 - **sim_utils.py** - Shared utilities and scenario definitions
 - **data_generator.py** - Full-spectrum training data generator
+- **contracts/** - JSON schemas and example payloads for all telemetry types
 - **tests/** - Demo and test scripts
 
 ## Running Simulators
@@ -34,6 +35,16 @@ python soldier_sim.py --training-mode --scenario ROUTINE_PATROL --samples 100
 python data_generator.py --samples 10000 --output training_data.jsonl
 ```
 
+## Contracts (JSON Schemas)
+
+The `contracts/` directory contains JSON schemas defining the telemetry message formats:
+
+| Type | Schema | Example |
+|------|--------|---------|
+| Drone Telemetry | `drone.telemetry.schema.json` | `drone.telemetry.example.json` |
+| Soldier/Watch Telemetry | `watch.telemetry.schema.json` | `watch.telemetry.example.json` |
+| Vehicle Telemetry | `vehicle.telemetry.schema.json` | `vehicle.telemetry.example.json` |
+
 ## Demo Scripts
 
 The `tests/` directory contains PowerShell demo scripts:
@@ -44,3 +55,4 @@ cd simulation/tests
 ```
 
 > **Note:** Demo scripts require the AI service to be running at `http://127.0.0.1:8000`
+

@@ -33,13 +33,13 @@ Proje yönetimi ve görev takibi Jira platformu üzerinden yapılacaktır.
 
 |
 
-|--- /backend/         (Murat: FastAPI, AI, Veritabanı kodları)
+|--- /backend/         
 
-|--- /frontend/        (Emirhan/Murat: React, Leaflet.js kodları)
+|--- /frontend/        
 
-|--- /hardware/        (Sarp: ESP32 donanım kodları)
+|--- /hardware/        
 
-|--- /simulators/      (Emirhan: Python simülatör script'leri)
+|--- /simulators/     
 
 |--- /documentation/   (Akademik raporlar, mimari çizimler, Veri Kontratı)
 
