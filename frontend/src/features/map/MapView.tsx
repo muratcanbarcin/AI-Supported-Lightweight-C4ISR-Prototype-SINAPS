@@ -1,14 +1,15 @@
 import { MapContainer, Marker, TileLayer, useMap } from 'react-leaflet';
 import { divIcon } from 'leaflet';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { RadarRings } from './components/RadarRings';
 import { AssetBoundsCircle } from './components/AssetBoundsCircle';
 import { GeofencePolygon } from './components/GeofencePolygon';
 import { ThreatMarkers } from './components/ThreatMarkers';
 import { UnitDetailsModal } from './components/UnitDetailsModal';
-import { useMockAssets, type AssetType } from './hooks/useMockAssets';
-import { mockAssets, type AssetSummary } from '@/services/mockData';
+import { ConnectionWarning } from '@/features/control/ConnectionWarning';
+import { useAssets } from '@/hooks/useAssets';
+import type { AssetSummary, MapAsset, DisplayAssetType } from '@/types';
 import './MapView.css';
 
 // Tile Layer Options
@@ -150,20 +151,47 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
   const { userLocation, locationError } = useUserLocation();
   const mapCenter = userLocation || DEFAULT_CENTER;
 
-  // Generate mock assets relative to the current map center (user location)
-  const assets = useMockAssets(mapCenter);
+  // Get real-time assets from API (with fallback to mock data)
+  const { assets: assetSummaries, mapAssets, connectionStatus } = useAssets();
+
+  // Transform assets for map display with positions relative to user location
+  const assets = useMemo(() => {
+    // If we have real positions from API, use them
+    if (mapAssets.length > 0) {
+      return mapAssets;
+    }
+    
+    // Fallback: generate positions relative to user for mock data
+    const baseCenter = mapCenter;
+    return assetSummaries.map((asset, index) => {
+      // Generate offset positions for fallback
+      const latOffset = ((index % 3) - 1) * 0.005 + (Math.random() - 0.5) * 0.002;
+      const lngOffset = (Math.floor(index / 3) - 1) * 0.005 + (Math.random() - 0.5) * 0.002;
+      
+      return {
+        id: asset.id,
+        type: asset.type,
+        position: asset.latitude && asset.longitude 
+          ? [asset.latitude, asset.longitude] as [number, number]
+          : [baseCenter[0] + latOffset, baseCenter[1] + lngOffset] as [number, number],
+        name: asset.name,
+        alignment: asset.alignment,
+        threatLevel: asset.threatLevel
+      };
+    });
+  }, [mapAssets, assetSummaries, mapCenter]);
 
   const [selectedAsset, setSelectedAsset] = useState<AssetSummary | null>(null);
 
   const targetPosition = focusedAssetId ? assets.find(a => a.id === focusedAssetId)?.position : null;
 
   const handleMarkerClick = (assetId: string) => {
-    // Find full details from mockAssets service
-    const fullAsset = mockAssets.find(a => a.id === assetId);
+    // Find full details from asset summaries
+    const fullAsset = assetSummaries.find(a => a.id === assetId);
     if (fullAsset) {
       setSelectedAsset(fullAsset);
     } else {
-      // Fallback if not found in detailed list (should not happen with consistent data)
+      // Fallback if not found in detailed list
       const basicAsset = assets.find(a => a.id === assetId);
       if (basicAsset) {
         // Construct a temporary AssetSummary for display
@@ -173,8 +201,8 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
           type: basicAsset.type,
           status: 'ONLINE',
           lastSeen: 'Şimdi',
-          coordinates: 'N/A', // Add missing char
-          details: {} as any // Force cast to avoid strict type error for fallback
+          coordinates: 'N/A',
+          details: {} as any
         });
       }
     }
@@ -187,6 +215,8 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
 
   return (
     <div className="map-view-container h-full w-full relative">
+      {/* Connection Warning */}
+      <ConnectionWarning connectionStatus={connectionStatus} />
       <MapContainer
         center={DEFAULT_CENTER}
         zoom={14}
@@ -258,7 +288,7 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
 }
 
 // Helper: Create custom marker icon
-function createAssetIcon(type: AssetType, name?: string): ReturnType<typeof divIcon> {
+function createAssetIcon(type: DisplayAssetType, name?: string): ReturnType<typeof divIcon> {
   // Determine specific styles based on type
   let color = '#38bdf8'; // sky
   let iconClass = 'fa-plane';

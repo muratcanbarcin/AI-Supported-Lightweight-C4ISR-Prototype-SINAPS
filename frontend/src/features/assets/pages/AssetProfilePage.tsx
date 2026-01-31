@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { mockAssets } from "@/services/mockData";
-import type { UAVDetails, SoldierDetails, VehicleDetails } from "@/services/mockData";
+import { useAssets } from "@/hooks/useAssets";
+import type { UAVDetails, SoldierDetails, VehicleDetails } from "@/types";
 
 interface AssetProfilePageProps {
     assetId: string;
@@ -10,7 +10,8 @@ interface AssetProfilePageProps {
 }
 
 export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfilePageProps) {
-    const asset = mockAssets.find((a) => a.id === assetId);
+    const { assets } = useAssets();
+    const asset = assets.find((a) => a.id === assetId);
     const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
     const [newTaskTitle, setNewTaskTitle] = useState("");
     const [newTaskDescription, setNewTaskDescription] = useState("");

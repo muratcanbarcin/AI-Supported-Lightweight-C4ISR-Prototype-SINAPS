@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AssetSummary } from '@/services/mockData';
+import type { AssetSummary } from '@/types';
 
 interface UnitDetailsModalProps {
     asset: AssetSummary;

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { mockAssets } from '@/services/mockData';
-import type { AssetSummary, UAVDetails, SoldierDetails, VehicleDetails } from '@/services/mockData';
+import { useAssets } from '@/hooks/useAssets';
+import { ConnectionWarning } from '@/features/control/ConnectionWarning';
+import type { AssetSummary, UAVDetails, SoldierDetails, VehicleDetails } from '@/types';
 import { UnitDetailsModal } from '@/features/map/components/UnitDetailsModal';
 
 interface AssetStatusPageProps {
@@ -24,11 +25,13 @@ const CornerBrackets = ({ colorClass }: { colorClass: string }) => {
 };
 
 export function AssetStatusPage({ onOpenProfile }: AssetStatusPageProps) {
-  const assets = mockAssets;
+  const { assets, connectionStatus, isLoading } = useAssets();
   const [selectedAsset, setSelectedAsset] = useState<AssetSummary | null>(null);
 
   return (
     <div className="h-full overflow-y-auto bg-slate-900/80 p-8 pt-24 custom-scrollbar font-sans relative">
+      {/* Connection Warning */}
+      <ConnectionWarning connectionStatus={connectionStatus} />
       <div className="max-w-[1600px] mx-auto">
         <div className="mb-6 flex items-center gap-2 border-b border-slate-700/50 pb-2">
           <div className="w-1 h-5 bg-sky-500"></div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import authService from '@/services/authService';
 
 interface LoginPageProps {
     onLogin: () => void;
@@ -8,14 +9,22 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsLoading(true);
-        // Simulate network delay for "System Handshake" effect
-        setTimeout(() => {
+        setError(null);
+        
+        try {
+            // Attempt real authentication via authService
+            await authService.login({ username, password });
             onLogin();
-        }, 1500);
+        } catch (err) {
+            console.error('[LoginPage] Authentication error:', err);
+            setError('Kimlik doğrulama başarısız. Lütfen tekrar deneyin.');
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -80,6 +89,14 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Error Display */}
+                        {error && (
+                            <div className="bg-red-950/50 border border-red-500/30 px-4 py-2 flex items-center gap-2">
+                                <i className="fa-solid fa-triangle-exclamation text-red-500 text-sm"></i>
+                                <span className="text-xs text-red-400 font-mono tracking-wide">{error}</span>
+                            </div>
+                        )}
 
                         <div className="pt-4">
                             <button

@@ -1,6 +1,6 @@
-import { mockAlerts } from '@/services/mockData';
-import type { AlertItem } from '@/services/mockData';
-
+import { useAlerts } from '@/hooks/useAlerts';
+import { ConnectionWarning } from '@/features/control/ConnectionWarning';
+import type { AlertItem } from '@/types';
 interface AlertsPageProps { }
 
 // Helper for Corner Brackets
@@ -21,10 +21,13 @@ const CornerBrackets = ({ colorClass }: { colorClass: string }) => {
 };
 
 export function AlertsPage({ }: AlertsPageProps) {
-  const alerts = mockAlerts;
+  const { alerts, connectionStatus, isLoading } = useAlerts();
 
   return (
     <div className="h-full overflow-y-auto bg-slate-900/80 p-8 pt-24 custom-scrollbar font-sans">
+      {/* Connection Warning */}
+      <ConnectionWarning connectionStatus={connectionStatus} />
+      
       <div className="max-w-[1600px] mx-auto">
 
         <div className="mb-8 flex items-center gap-2 border-b border-slate-700/50 pb-2">
