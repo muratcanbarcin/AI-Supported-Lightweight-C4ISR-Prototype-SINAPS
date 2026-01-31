@@ -9,8 +9,7 @@ import java.util.List;
 
 @RestController // Bu sınıfın bir REST API olduğunu belirtir
 @RequestMapping("/api/v1/telemetry") // Class Diagram'a uygun ana adres yapısı
-@CrossOrigin(origins = "*") // ÖNEMLİ: React (Port 3000) ile Backend (Port 8080) konuşabilsin diye izin
-                            // veriyoruz.
+@CrossOrigin(origins = "http://localhost:3000")
 public class TelemetryController {
 
     private final TelemetryService telemetryService;

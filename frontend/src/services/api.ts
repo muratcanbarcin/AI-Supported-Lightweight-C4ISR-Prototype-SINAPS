@@ -5,22 +5,55 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
  * 
  * Centralized Axios instance configured to communicate with the
  * Spring Boot backend. Includes JWT token injection and error handling.
+ * 
+ * ============================================================
+ * IMPORTANT: CORS Configuration for Spring Boot Backend
+ * ============================================================
+ * 
+ * Ensure your Spring Boot controllers have CORS enabled:
+ * 
+ * Option 1 - Per Controller:
+ *   @CrossOrigin(origins = "http://localhost:3000")
+ *   @RestController
+ *   public class TelemetryController { ... }
+ * 
+ * Option 2 - Global Configuration (WebMvcConfigurer):
+ *   @Configuration
+ *   public class CorsConfig implements WebMvcConfigurer {
+ *       @Override
+ *       public void addCorsMappings(CorsRegistry registry) {
+ *           registry.addMapping("/api/**")
+ *               .allowedOrigins("http://localhost:3000")
+ *               .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+ *               .allowedHeaders("*")
+ *               .allowCredentials(true);
+ *       }
+ *   }
+ * ============================================================
  */
 
-// API Base URL - Can be configured via environment variable
+// API Base URL - Configured for Spring Boot backend
+// Frontend runs on port 3000, Backend runs on port 8080
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 
-// Storage keys
+// Log the API URL in development for debugging
+if (import.meta.env.DEV) {
+  console.log('[API] Base URL:', API_BASE_URL);
+}
+
+// Storage keys for authentication
 export const AUTH_TOKEN_KEY = 'sinaps_auth_token';
 export const AUTH_USER_KEY = 'sinaps_auth_user';
 
-// Create the axios instance
+// Create the axios instance with Spring Boot backend configuration
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
+  // withCredentials is needed if backend uses cookies/sessions
+  // withCredentials: true,
 });
 
 /**
