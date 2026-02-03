@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-TSK WARGAME SIMULATION - DATABASE SEED GENERATOR
+EGE TATBIKATI - DATABASE SEED GENERATOR
 ===============================================================================
 Generates SQL seed file for PostgreSQL with:
-- Full TSK hierarchical inventory (Drone Squadrons, Infantry Units, Armor)
-- Scenario-based initial positioning (Ankara Base, Border Patrol, Syria Combat)
-- Compatible with PostGIS geometry, pgvector, and AI tactical memory
+- 30 units total (10 Drone, 10 Soldier, 10 Vehicle)
+- Half in Izmir Barracks (IDLE)
+- Half in Aegean Exercise Zone (EXERCISE)
 
 Usage:
     python generate_seed.py
-    
-Output:
-    ../postgres/init.sql
 ===============================================================================
 """
 
 import random
-import os
-from datetime import datetime, timedelta
+import json
+from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Tuple
@@ -28,10 +25,7 @@ from enum import Enum
 # CONFIGURATION
 # =============================================================================
 
-# Primary output - postgres folder
-OUTPUT_FILE_PRIMARY = Path(__file__).parent.parent / "postgres" / "init.sql"
-# Fallback output - simulation folder
-OUTPUT_FILE_FALLBACK = Path(__file__).parent / "tsk_seed.sql"
+OUTPUT_FILE = Path(__file__).parent / "ege_tatbikat_seed.sql"
 
 
 class AssetType(Enum):
@@ -41,48 +35,34 @@ class AssetType(Enum):
 
 
 class OperationalStatus(Enum):
-    IDLE = "IDLE"
-    PATROL = "PATROL"
-    COMBAT = "COMBAT"
+    IDLE = "IDLE"           # Izmir Kisla
+    EXERCISE = "EXERCISE"   # Ege Tatbikat
 
 
 class Alignment(Enum):
     FRIEND = "FRIEND"
-    FOE = "FOE"
 
 
 # =============================================================================
 # GEOGRAPHIC ZONES
 # =============================================================================
 
-# Zone definitions with center coordinates and spread radius
 ZONES = {
-    "ANKARA_BASE": {
-        "name": "Mürted Hava Üssü",
-        "center": (39.95, 32.60),
-        "spread_km": 5,
-        "status": OperationalStatus.IDLE,
-        "weight": 0.30,  # 30% of assets
+    OperationalStatus.IDLE: {
+        "name": "Izmir Bornova Kislasi",
+        "center": (38.4650, 27.2150),  # Izmir Bornova
+        "spread_km": 0.5,  # Small area - barracks
     },
-    "BORDER_PATROL": {
-        "name": "Hatay/Kilis Sınır Hattı",
-        "center": (36.60, 36.50),
-        "spread_km": 15,
-        "status": OperationalStatus.PATROL,
-        "weight": 0.40,  # 40% of assets
-    },
-    "SYRIA_COMBAT": {
-        "name": "Suriye Harekat Bölgesi",
-        "center": (36.20, 37.00),
-        "spread_km": 20,
-        "status": OperationalStatus.COMBAT,
-        "weight": 0.30,  # 30% of assets
+    OperationalStatus.EXERCISE: {
+        "name": "Ege Tatbikat Bolgesi",
+        "center": (38.3000, 27.0000),  # Inland Aegean region
+        "spread_km": 10,  # Exercise area
     },
 }
 
 
 # =============================================================================
-# TSK INVENTORY DEFINITIONS
+# ASSET DEFINITIONS - 30 TOTAL (NO TURKISH CHARS)
 # =============================================================================
 
 @dataclass
@@ -90,8 +70,6 @@ class Asset:
     id: str
     name: str
     asset_type: AssetType
-    variant: str
-    unit_name: str
     status: OperationalStatus
     latitude: float
     longitude: float
@@ -101,36 +79,46 @@ class Asset:
     alignment: Alignment = Alignment.FRIEND
 
 
-# Drone Squadrons (İHA Filoları)
-DRONE_SQUADRONS = [
-    {"name": "341. Filo", "base": "Ankara", "size": 12, "variants": ["Akıncı", "TB2"]},
-    {"name": "342. Filo", "base": "Diyarbakır", "size": 15, "variants": ["TB2", "ANKA-S"]},
-    {"name": "343. Filo", "base": "Batman", "size": 10, "variants": ["TB2"]},
-    {"name": "344. Filo", "base": "Elazığ", "size": 14, "variants": ["ANKA-S", "TB2"]},
-    {"name": "345. Filo", "base": "Malatya", "size": 11, "variants": ["Akıncı", "ANKA-S"]},
+# 10 Drones (IHA - Insansiz Hava Araci)
+DRONE_UNITS = [
+    {"id": "TB2-ALFA-01", "name": "TB2 Bayraktar 1"},
+    {"id": "TB2-ALFA-02", "name": "TB2 Bayraktar 2"},
+    {"id": "TB2-ALFA-03", "name": "TB2 Bayraktar 3"},
+    {"id": "ANKA-BRAVO-01", "name": "ANKA-S 1"},
+    {"id": "ANKA-BRAVO-02", "name": "ANKA-S 2"},
+    {"id": "ANKA-BRAVO-03", "name": "ANKA-S 3"},
+    {"id": "AKSUNGUR-01", "name": "Aksungur 1"},
+    {"id": "AKSUNGUR-02", "name": "Aksungur 2"},
+    {"id": "MINI-IHA-01", "name": "Mini IHA 1"},
+    {"id": "MINI-IHA-02", "name": "Mini IHA 2"},
 ]
 
-# Infantry Units (Piyade/Komando Birlikleri)
-INFANTRY_UNITS = [
-    {"name": "OKK-Alpha", "type": "Bordo Bereli", "size": 22},
-    {"name": "OKK-Bravo", "type": "Bordo Bereli", "size": 20},
-    {"name": "JÖH-Mardin", "type": "JÖH", "size": 25},
-    {"name": "JÖH-Şırnak", "type": "JÖH", "size": 24},
-    {"name": "JÖH-Hakkari", "type": "JÖH", "size": 23},
-    {"name": "Komando-1.Tb", "type": "Dağ Komando", "size": 21},
-    {"name": "Komando-2.Tb", "type": "Amfibi Komando", "size": 20},
-    {"name": "Komando-3.Tb", "type": "SAT", "size": 18},
-    {"name": "Komando-4.Tb", "type": "SAS", "size": 19},
-    {"name": "Komando-5.Tb", "type": "MAK", "size": 22},
+# 10 Soldiers (Asker - Piyade/Komando)
+SOLDIER_UNITS = [
+    {"id": "SAT-TIM-01", "name": "SAT Komando Tim 1"},
+    {"id": "SAT-TIM-02", "name": "SAT Komando Tim 2"},
+    {"id": "SAT-TIM-03", "name": "SAT Komando Tim 3"},
+    {"id": "SAS-TIM-01", "name": "SAS Tim 1"},
+    {"id": "SAS-TIM-02", "name": "SAS Tim 2"},
+    {"id": "KOMANDO-01", "name": "Dag Komando 1"},
+    {"id": "KOMANDO-02", "name": "Dag Komando 2"},
+    {"id": "KOMANDO-03", "name": "Dag Komando 3"},
+    {"id": "PIYADE-01", "name": "Piyade Manga 1"},
+    {"id": "PIYADE-02", "name": "Piyade Manga 2"},
 ]
 
-# Armored Units (Zırhlı Birlikler)
-ARMORED_UNITS = [
-    {"name": "1. ZPT Alayı", "variants": ["Altay Tank", "M60T"], "size": 8},
-    {"name": "2. ZPT Alayı", "variants": ["Altay Tank", "Leopard 2A4"], "size": 10},
-    {"name": "3. Mekanize Bl.", "variants": ["Kirpi II", "Kobra II"], "size": 12},
-    {"name": "4. Mekanize Bl.", "variants": ["Kirpi II", "Ejder Yalçın"], "size": 9},
-    {"name": "Topçu Taburu", "variants": ["Fırtına Obüs", "T-155"], "size": 6},
+# 10 Vehicles (KARA ARACLARI - Zirhli/Mekanize)
+VEHICLE_UNITS = [
+    {"id": "ALTAY-01", "name": "Altay Tank 1"},
+    {"id": "ALTAY-02", "name": "Altay Tank 2"},
+    {"id": "KIRPI-01", "name": "Kirpi MRAP 1"},
+    {"id": "KIRPI-02", "name": "Kirpi MRAP 2"},
+    {"id": "KIRPI-03", "name": "Kirpi MRAP 3"},
+    {"id": "KOBRA-01", "name": "Kobra Zirhli 1"},
+    {"id": "KOBRA-02", "name": "Kobra Zirhli 2"},
+    {"id": "FIRTINA-01", "name": "Firtina Obus 1"},
+    {"id": "FIRTINA-02", "name": "Firtina Obus 2"},
+    {"id": "EJDER-01", "name": "Ejder Yalcin 1"},
 ]
 
 
@@ -153,115 +141,53 @@ def random_coord_in_zone(zone: dict) -> Tuple[float, float]:
     return round(lat, 6), round(lon, 6)
 
 
-def assign_zone() -> dict:
-    """Randomly assign a zone based on weight distribution."""
-    r = random.random()
-    cumulative = 0.0
-    
-    for zone_key, zone in ZONES.items():
-        cumulative += zone["weight"]
-        if r <= cumulative:
-            return zone
-    
-    return list(ZONES.values())[-1]
-
-
-def generate_drone_assets() -> List[Asset]:
-    """Generate all drone assets from squadrons."""
+def generate_assets() -> List[Asset]:
+    """Generate all 30 assets with balanced distribution."""
     assets = []
     
-    for squadron in DRONE_SQUADRONS:
-        for i in range(1, squadron["size"] + 1):
-            variant = random.choice(squadron["variants"])
-            zone = assign_zone()
+    # Split each type: half IDLE (Izmir), half EXERCISE (Ege)
+    all_units = [
+        (DRONE_UNITS, AssetType.DRONE),
+        (SOLDIER_UNITS, AssetType.SOLDIER),
+        (VEHICLE_UNITS, AssetType.VEHICLE),
+    ]
+    
+    for units, asset_type in all_units:
+        for i, unit in enumerate(units):
+            # First half IDLE, second half EXERCISE
+            status = OperationalStatus.IDLE if i < 5 else OperationalStatus.EXERCISE
+            zone = ZONES[status]
             lat, lon = random_coord_in_zone(zone)
             
-            # Drones fly at altitude
-            altitude = random.uniform(500, 3000) if zone["status"] != OperationalStatus.IDLE else 0
-            speed = random.uniform(80, 150) if zone["status"] != OperationalStatus.IDLE else 0
-            battery = random.randint(60, 100) if zone["status"] == OperationalStatus.IDLE else random.randint(30, 80)
-            
-            asset_id = f"{squadron['name']}-{variant}-{i:02d}"
+            # Set values based on status
+            if status == OperationalStatus.IDLE:
+                altitude = 0 if asset_type != AssetType.DRONE else random.uniform(0, 50)
+                speed = 0
+                battery = random.randint(90, 100)
+            else:  # EXERCISE
+                if asset_type == AssetType.DRONE:
+                    altitude = random.uniform(500, 2000)
+                    speed = random.uniform(80, 150)
+                    battery = random.randint(50, 90)
+                elif asset_type == AssetType.SOLDIER:
+                    altitude = random.uniform(100, 500)  # Hill terrain
+                    speed = random.uniform(2, 8)
+                    battery = random.randint(60, 95)
+                else:  # VEHICLE (Ground vehicles)
+                    altitude = random.uniform(50, 300)  # Terrain
+                    speed = random.uniform(20, 60)  # km/h
+                    battery = random.randint(70, 100)  # Fuel
             
             assets.append(Asset(
-                id=asset_id,
-                name=f"{variant} #{i}",
-                asset_type=AssetType.DRONE,
-                variant=variant,
-                unit_name=squadron["name"],
-                status=zone["status"],
+                id=unit["id"],
+                name=unit["name"],
+                asset_type=asset_type,
+                status=status,
                 latitude=lat,
                 longitude=lon,
-                altitude=altitude,
-                speed=speed,
+                altitude=round(altitude, 1),
+                speed=round(speed, 1),
                 battery_level=battery,
-            ))
-    
-    return assets
-
-
-def generate_soldier_assets() -> List[Asset]:
-    """Generate all soldier assets from infantry units."""
-    assets = []
-    
-    for unit in INFANTRY_UNITS:
-        for i in range(1, unit["size"] + 1):
-            zone = assign_zone()
-            lat, lon = random_coord_in_zone(zone)
-            
-            # Soldiers on ground
-            altitude = random.uniform(0, 50)  # Terrain altitude
-            speed = 0 if zone["status"] == OperationalStatus.IDLE else random.uniform(1, 8)  # Walking/running
-            battery = random.randint(70, 100)  # Device battery
-            
-            asset_id = f"{unit['name']}-{i:02d}"
-            
-            assets.append(Asset(
-                id=asset_id,
-                name=f"{unit['type']} Personel #{i}",
-                asset_type=AssetType.SOLDIER,
-                variant=unit["type"],
-                unit_name=unit["name"],
-                status=zone["status"],
-                latitude=lat,
-                longitude=lon,
-                altitude=altitude,
-                speed=speed,
-                battery_level=battery,
-            ))
-    
-    return assets
-
-
-def generate_vehicle_assets() -> List[Asset]:
-    """Generate all vehicle assets from armored units."""
-    assets = []
-    
-    for unit in ARMORED_UNITS:
-        for i in range(1, unit["size"] + 1):
-            variant = random.choice(unit["variants"])
-            zone = assign_zone()
-            lat, lon = random_coord_in_zone(zone)
-            
-            # Vehicles on ground
-            altitude = random.uniform(0, 100)  # Terrain altitude
-            speed = 0 if zone["status"] == OperationalStatus.IDLE else random.uniform(10, 50)  # km/h
-            battery = random.randint(60, 100)  # Actually fuel level
-            
-            asset_id = f"{unit['name'].replace(' ', '-').replace('.', '')}-{variant.replace(' ', '-')}-{i:02d}"
-            
-            assets.append(Asset(
-                id=asset_id,
-                name=f"{variant} #{i}",
-                asset_type=AssetType.VEHICLE,
-                variant=variant,
-                unit_name=unit["name"],
-                status=zone["status"],
-                latitude=lat,
-                longitude=lon,
-                altitude=altitude,
-                speed=speed,
-                battery_level=battery,  # Represents fuel for vehicles
             ))
     
     return assets
@@ -281,9 +207,8 @@ def generate_sql(assets: List[Asset]) -> str:
     
     timestamp = datetime.now().isoformat()
     
-    sql_parts = [
-        f"""-- ============================================================================
--- TSK WARGAME SIMULATION - DATABASE SEED
+    sql = f"""-- ============================================================================
+-- EGE TATBIKATI - DATABASE SEED
 -- Generated: {timestamp}
 -- Total Assets: {len(assets)}
 -- ============================================================================
@@ -293,7 +218,7 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ============================================================================
--- DROP EXISTING TABLES (Clean slate)
+-- CLEAN DATABASE (Drop all data)
 -- ============================================================================
 
 DROP TABLE IF EXISTS tactical_memory CASCADE;
@@ -305,14 +230,12 @@ DROP TABLE IF EXISTS assets CASCADE;
 -- CREATE TABLES
 -- ============================================================================
 
--- Assets table: Stores all trackable field assets
+-- Assets table
 CREATE TABLE assets (
     id VARCHAR(100) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     type VARCHAR(50) NOT NULL CHECK (type IN ('DRONE', 'SOLDIER', 'VEHICLE', 'SENSOR')),
-    variant VARCHAR(100),
-    unit_name VARCHAR(100),
-    status VARCHAR(50) DEFAULT 'ONLINE' CHECK (status IN ('ONLINE', 'WARNING', 'OFFLINE', 'IDLE', 'PATROL', 'COMBAT')),
+    status VARCHAR(50) DEFAULT 'ONLINE' CHECK (status IN ('ONLINE', 'WARNING', 'OFFLINE', 'IDLE', 'EXERCISE', 'PATROL', 'COMBAT')),
     alignment VARCHAR(20) DEFAULT 'FRIEND' CHECK (alignment IN ('FRIEND', 'FOE', 'UNKNOWN')),
     last_latitude DOUBLE PRECISION,
     last_longitude DOUBLE PRECISION,
@@ -321,10 +244,10 @@ CREATE TABLE assets (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Telemetry table: Time-series data from assets
+-- Telemetry table (stores ALL history)
 CREATE TABLE telemetry (
     id BIGSERIAL PRIMARY KEY,
-    source_id VARCHAR(100) NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    source_id VARCHAR(100) NOT NULL,
     source_type VARCHAR(50),
     timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     location geometry(Point, 4326),
@@ -335,7 +258,7 @@ CREATE TABLE telemetry (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tactical Analysis table: AI-generated threat assessments
+-- Tactical Analysis table
 CREATE TABLE tactical_analysis (
     id BIGSERIAL PRIMARY KEY,
     telemetry_id BIGINT REFERENCES telemetry(id) ON DELETE CASCADE,
@@ -347,7 +270,7 @@ CREATE TABLE tactical_analysis (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tactical Memory table: For AI RAG (Retrieval-Augmented Generation)
+-- Tactical Memory table (for AI)
 CREATE TABLE tactical_memory (
     id BIGSERIAL PRIMARY KEY,
     event_type VARCHAR(100),
@@ -357,7 +280,7 @@ CREATE TABLE tactical_memory (
     timestamp TIMESTAMP,
     outcome TEXT,
     lessons_learned TEXT,
-    embedding vector(384),  -- Matches all-MiniLM-L6-v2 embedding dimension
+    embedding vector(384),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -365,38 +288,31 @@ CREATE TABLE tactical_memory (
 -- CREATE INDEXES
 -- ============================================================================
 
--- Telemetry indexes for fast queries
 CREATE INDEX idx_telemetry_source_id ON telemetry(source_id);
 CREATE INDEX idx_telemetry_timestamp ON telemetry(timestamp DESC);
 CREATE INDEX idx_telemetry_source_timestamp ON telemetry(source_id, timestamp DESC);
 CREATE INDEX idx_telemetry_location ON telemetry USING GIST(location);
-
--- Tactical memory vector search index
-CREATE INDEX idx_tactical_memory_embedding ON tactical_memory USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-
--- Assets index
 CREATE INDEX idx_assets_type ON assets(type);
 CREATE INDEX idx_assets_status ON assets(status);
 
 -- ============================================================================
--- INSERT ASSETS
+-- INSERT ASSETS (30 Total)
 -- ============================================================================
 
-""",
-    ]
+"""
     
     # Generate INSERT statements for assets
     for asset in assets:
-        sql_parts.append(f"""INSERT INTO assets (id, name, type, variant, unit_name, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('{escape_sql_string(asset.id)}', '{escape_sql_string(asset.name)}', '{asset.asset_type.value}', '{escape_sql_string(asset.variant)}', '{escape_sql_string(asset.unit_name)}', '{asset.status.value}', '{asset.alignment.value}', {asset.latitude}, {asset.longitude}, {asset.altitude}, CURRENT_TIMESTAMP);
-""")
+        sql += f"""INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
+VALUES ('{escape_sql_string(asset.id)}', '{escape_sql_string(asset.name)}', '{asset.asset_type.value}', '{asset.status.value}', '{asset.alignment.value}', {asset.latitude}, {asset.longitude}, {asset.altitude}, CURRENT_TIMESTAMP);
+"""
     
-    sql_parts.append("""
+    sql += """
 -- ============================================================================
--- INSERT INITIAL TELEMETRY (One record per asset)
+-- INSERT INITIAL TELEMETRY
 -- ============================================================================
 
-""")
+"""
     
     # Generate initial telemetry for each asset
     for asset in assets:
@@ -404,73 +320,67 @@ VALUES ('{escape_sql_string(asset.id)}', '{escape_sql_string(asset.name)}', '{as
         if asset.asset_type == AssetType.DRONE:
             payload = {
                 "heading": round(random.uniform(0, 360), 1),
-                "mode": "AUTO" if asset.status != OperationalStatus.IDLE else "STANDBY",
+                "mode": "STANDBY" if asset.status == OperationalStatus.IDLE else "AUTO",
                 "alignment": asset.alignment.value,
                 "threat_level": 0,
-                "vertical_speed": round(random.uniform(-5, 5), 1),
+                "mission": "Bekleme" if asset.status == OperationalStatus.IDLE else "Kesif Ucusu",
             }
         elif asset.asset_type == AssetType.SOLDIER:
-            heart_rate = 70 if asset.status == OperationalStatus.IDLE else (
-                random.randint(90, 120) if asset.status == OperationalStatus.PATROL else random.randint(120, 160)
-            )
             payload = {
-                "heart_rate": heart_rate,
-                "spo2": random.randint(94, 99),
-                "body_temp": round(random.uniform(36.2, 37.2), 1),
-                "stress_level": "LOW" if asset.status == OperationalStatus.IDLE else (
-                    "MEDIUM" if asset.status == OperationalStatus.PATROL else "HIGH"
-                ),
+                "heart_rate": 70 if asset.status == OperationalStatus.IDLE else random.randint(85, 110),
+                "spo2": random.randint(96, 99),
+                "body_temp": round(random.uniform(36.2, 37.0), 1),
+                "stress_level": "LOW" if asset.status == OperationalStatus.IDLE else "MEDIUM",
                 "alignment": asset.alignment.value,
                 "threat_level": 0,
+                "mission": "Kisla Nobet" if asset.status == OperationalStatus.IDLE else "Tatbikat",
             }
-        else:  # VEHICLE
+        else:  # VEHICLE (Ground vehicles)
             payload = {
                 "fuel_level": asset.battery_level,
-                "engine_temp": random.randint(70, 95),
+                "engine_temp": random.randint(70, 85),
                 "engine_status": "OFF" if asset.status == OperationalStatus.IDLE else "RUNNING",
+                "heading": round(random.uniform(0, 360), 1),
                 "alignment": asset.alignment.value,
                 "threat_level": 0,
+                "mission": "Garajda Bekleme" if asset.status == OperationalStatus.IDLE else "Arazi Tatbikati",
             }
         
-        import json
-        payload_json = json.dumps(payload).replace("'", "''")
+        payload_json = json.dumps(payload, ensure_ascii=False).replace("'", "''")
         
-        sql_parts.append(f"""INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
+        sql += f"""INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
 VALUES ('{escape_sql_string(asset.id)}', '{asset.asset_type.value}', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint({asset.longitude}, {asset.latitude}), 4326), {asset.altitude}, {asset.speed}, {asset.battery_level}, '{payload_json}'::jsonb);
-""")
+"""
     
-    sql_parts.append("""
--- ============================================================================
--- INSERT SAMPLE TACTICAL MEMORIES (For AI RAG)
--- ============================================================================
-
-INSERT INTO tactical_memory (event_type, event_description, source_id, timestamp, outcome, lessons_learned)
-VALUES 
-('DRONE_LOW_BATTERY', 'TB2 bataryası kritik seviyeye düştü, acil iniş yapıldı', '341. Filo-TB2-01', NOW() - INTERVAL '7 days', 'Başarılı acil iniş, varlık kurtarıldı', 'Batarya %20 altına düşmeden RTH başlatılmalı'),
-('SOLDIER_HIGH_STRESS', 'JÖH personelinde yüksek stres tespit edildi, taktik değişikliği yapıldı', 'JÖH-Mardin-05', NOW() - INTERVAL '3 days', 'Personel güvenli bölgeye çekildi', 'HR > 140 durumunda personel değişikliği düşünülmeli'),
-('VEHICLE_AMBUSH', 'Kirpi II konvoyuna saldırı girişimi', '3. Mekanize Bl.-Kirpi II-03', NOW() - INTERVAL '14 days', 'Saldırı püskürtüldü, kayıp yok', 'Dar geçitlerde hava desteği kritik'),
-('DRONE_TARGET_ACQUIRED', 'Akıncı ile düşman mevzisi tespit edildi', '341. Filo-Akıncı-01', NOW() - INTERVAL '5 days', 'Hedef koordinatları iletildi', 'Termal görüntüleme gece operasyonlarında etkili'),
-('BORDER_INFILTRATION', 'Sınırda şüpheli hareket tespit edildi', 'JÖH-Şırnak-12', NOW() - INTERVAL '1 day', 'Olay araştırıldı, yanlış alarm', 'Termal drone desteği ile doğrulama yapılmalı');
-
+    sql += """
 -- ============================================================================
 -- SUMMARY
 -- ============================================================================
 
--- Print summary
 DO $$
 DECLARE
     asset_count INTEGER;
     telemetry_count INTEGER;
+    drone_count INTEGER;
+    soldier_count INTEGER;
+    vehicle_count INTEGER;
 BEGIN
     SELECT COUNT(*) INTO asset_count FROM assets;
     SELECT COUNT(*) INTO telemetry_count FROM telemetry;
-    RAISE NOTICE '✅ Database seeded successfully!';
-    RAISE NOTICE '   Assets: %', asset_count;
-    RAISE NOTICE '   Telemetry records: %', telemetry_count;
-END $$;
-""")
+    SELECT COUNT(*) INTO drone_count FROM assets WHERE type = 'DRONE';
+    SELECT COUNT(*) INTO soldier_count FROM assets WHERE type = 'SOLDIER';
+    SELECT COUNT(*) INTO vehicle_count FROM assets WHERE type = 'VEHICLE';
     
-    return "\n".join(sql_parts)
+    RAISE NOTICE 'EGE TATBIKATI Database seeded!';
+    RAISE NOTICE '   Total Assets: %', asset_count;
+    RAISE NOTICE '   - Drones: %', drone_count;
+    RAISE NOTICE '   - Soldiers: %', soldier_count;
+    RAISE NOTICE '   - Vehicles: %', vehicle_count;
+    RAISE NOTICE '   Initial Telemetry: %', telemetry_count;
+END $$;
+"""
+    
+    return sql
 
 
 # =============================================================================
@@ -478,55 +388,40 @@ END $$;
 # =============================================================================
 
 def main():
-    print("=" * 70)
-    print("TSK WARGAME SIMULATION - DATABASE SEED GENERATOR")
-    print("=" * 70)
+    print("=" * 60)
+    print("EGE TATBIKATI - DATABASE SEED GENERATOR")
+    print("=" * 60)
     
-    # Generate all assets
-    print("\n🚁 Generating Drone Squadrons...")
-    drones = generate_drone_assets()
-    print(f"   Created {len(drones)} drones")
+    # Generate assets
+    print("\nGenerating 30 assets...")
+    assets = generate_assets()
     
-    print("🪖 Generating Infantry Units...")
-    soldiers = generate_soldier_assets()
-    print(f"   Created {len(soldiers)} soldiers")
+    # Count by status
+    idle_count = len([a for a in assets if a.status == OperationalStatus.IDLE])
+    exercise_count = len([a for a in assets if a.status == OperationalStatus.EXERCISE])
     
-    print("🚛 Generating Armored Units...")
-    vehicles = generate_vehicle_assets()
-    print(f"   Created {len(vehicles)} vehicles")
+    print(f"   Izmir Kisla (IDLE): {idle_count}")
+    print(f"   Ege Tatbikat (EXERCISE): {exercise_count}")
     
-    all_assets = drones + soldiers + vehicles
-    
-    # Print zone distribution
-    print("\n📍 Zone Distribution:")
-    for status in OperationalStatus:
-        count = len([a for a in all_assets if a.status == status])
-        print(f"   {status.value}: {count} assets ({count/len(all_assets)*100:.1f}%)")
+    # Count by type
+    print(f"\n   Drones: {len([a for a in assets if a.asset_type == AssetType.DRONE])}")
+    print(f"   Soldiers: {len([a for a in assets if a.asset_type == AssetType.SOLDIER])}")
+    print(f"   Vehicles: {len([a for a in assets if a.asset_type == AssetType.VEHICLE])}")
     
     # Generate SQL
-    print("\n📝 Generating SQL...")
-    sql_content = generate_sql(all_assets)
+    print("\nGenerating SQL...")
+    sql_content = generate_sql(assets)
     
-    # Try primary path first, fallback if permission denied
-    output_file = OUTPUT_FILE_PRIMARY
-    try:
-        OUTPUT_FILE_PRIMARY.parent.mkdir(parents=True, exist_ok=True)
-        with open(OUTPUT_FILE_PRIMARY, "w", encoding="utf-8") as f:
-            f.write(sql_content)
-    except PermissionError:
-        print(f"⚠️  Permission denied for {OUTPUT_FILE_PRIMARY}")
-        print(f"   Using fallback path...")
-        output_file = OUTPUT_FILE_FALLBACK
-        with open(OUTPUT_FILE_FALLBACK, "w", encoding="utf-8") as f:
-            f.write(sql_content)
+    # Write to file
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        f.write(sql_content)
     
-    print(f"\n✅ SQL file generated: {output_file}")
+    print(f"\nSQL file generated: {OUTPUT_FILE}")
     print(f"   Total size: {len(sql_content):,} bytes")
-    print(f"   Total assets: {len(all_assets)}")
-    print("\n" + "=" * 70)
+    print("\n" + "=" * 60)
     print("To apply seed, run:")
-    print(f"   docker exec -i c4isr-db psql -U admin -d c4isr_db < {output_file}")
-    print("=" * 70)
+    print(f"   Get-Content {OUTPUT_FILE.name} | docker exec -i c4isr-db psql -U admin -d c4isr_db")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

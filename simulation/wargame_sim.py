@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-TSK WARGAME SIMULATION - LIVE ENGINE
+EGE TATBIKATI - LIVE SIMULATION ENGINE
 ===============================================================================
-Real-time tactical simulation engine for C4ISR system testing.
+Real-time tactical simulation for Aegean Exercise scenario.
 
 Features:
-- Async HTTP telemetry streaming to Spring Boot backend
-- Scenario-based movement patterns (IDLE, PATROL, COMBAT)
-- Realistic biometric/vehicle telemetry generation
-- Configurable update intervals
+- 30 units (10 Drone, 10 Soldier, 10 Ground Vehicle)
+- Half in Izmir Barracks (IDLE) - minimal movement
+- Half in Aegean Exercise (EXERCISE) - active movement
+- Sends telemetry every 60 seconds (configurable)
+- All data persisted to PostgreSQL
 
 Usage:
     python wargame_sim.py [--interval SECONDS] [--backend URL]
     
-Example:
-    python wargame_sim.py --interval 5 --backend http://localhost:8080/api/v1/telemetry
-
-Dependencies:
-    pip install aiohttp asyncio
+Default: 60 second intervals (1 minute)
 ===============================================================================
 """
 
@@ -29,7 +26,6 @@ import math
 import random
 import argparse
 import signal
-import sys
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
@@ -41,7 +37,7 @@ from enum import Enum
 # =============================================================================
 
 DEFAULT_BACKEND_URL = "http://localhost:8080/api/v1/telemetry"
-DEFAULT_INTERVAL = 5  # seconds
+DEFAULT_INTERVAL = 60  # 1 minute
 
 
 class AssetType(Enum):
@@ -51,14 +47,12 @@ class AssetType(Enum):
 
 
 class OperationalStatus(Enum):
-    IDLE = "IDLE"
-    PATROL = "PATROL"
-    COMBAT = "COMBAT"
+    IDLE = "IDLE"           # Izmir Kisla
+    EXERCISE = "EXERCISE"   # Ege Tatbikat
 
 
 class Alignment(Enum):
     FRIEND = "FRIEND"
-    FOE = "FOE"
 
 
 # =============================================================================
@@ -67,20 +61,15 @@ class Alignment(Enum):
 
 ZONES = {
     OperationalStatus.IDLE: {
-        "name": "Mürted Hava Üssü (Ankara)",
-        "center": (39.95, 32.60),
-        "behavior": "stationary",
+        "name": "Izmir Bornova Kislasi",
+        "center": (38.4650, 27.2150),
+        "spread_km": 0.5,
     },
-    OperationalStatus.PATROL: {
-        "name": "Hatay/Kilis Sınır Hattı",
-        "center": (36.60, 36.50),
-        "behavior": "circular_patrol",
-        "patrol_radius_km": 10,
-    },
-    OperationalStatus.COMBAT: {
-        "name": "Suriye Harekat Bölgesi",
-        "center": (36.20, 37.00),
-        "behavior": "erratic_combat",
+    OperationalStatus.EXERCISE: {
+        "name": "Ege Tatbikat Bolgesi",
+        "center": (38.3000, 27.0000),
+        "spread_km": 10,
+        "patrol_radius_km": 5,
     },
 }
 
@@ -95,9 +84,7 @@ class SimulatedAsset:
     id: str
     name: str
     asset_type: AssetType
-    variant: str
     status: OperationalStatus
-    alignment: Alignment
     
     # Position
     latitude: float
@@ -107,9 +94,9 @@ class SimulatedAsset:
     
     # Movement
     speed: float = 0.0
-    patrol_angle: float = 0.0  # For circular patrol
+    patrol_angle: float = 0.0
     
-    # Health/Resources
+    # Resources
     battery_level: int = 100
     fuel_level: int = 100
     
@@ -118,15 +105,13 @@ class SimulatedAsset:
     spo2: int = 98
     stress_level: str = "LOW"
     
-    # Combat state
-    ammo_status: str = "FULL"
-    last_alert: Optional[str] = None
+    # Mission
+    mission: str = "Bekleme"
     
     def to_telemetry_message(self) -> Dict[str, Any]:
         """Convert asset state to backend-compatible telemetry message."""
         timestamp = datetime.now(timezone.utc).isoformat()
         
-        # Build payload based on asset type
         if self.asset_type == AssetType.DRONE:
             payload = {
                 "position": {
@@ -135,13 +120,12 @@ class SimulatedAsset:
                     "alt_m": round(self.altitude, 1),
                 },
                 "yaw_deg": round(self.heading, 1),
-                "ground_speed_mps": round(self.speed * 0.277778, 1),  # km/h to m/s
-                "mode": "COMBAT" if self.status == OperationalStatus.COMBAT else (
-                    "PATROL" if self.status == OperationalStatus.PATROL else "STANDBY"
-                ),
+                "ground_speed_mps": round(self.speed * 0.277778, 1),
+                "mode": "STANDBY" if self.status == OperationalStatus.IDLE else "AUTO",
                 "battery": {"soc_pct": self.battery_level},
-                "alignment": self.alignment.value,
+                "alignment": "FRIEND",
                 "threat_level": 0,
+                "mission": self.mission,
             }
         elif self.asset_type == AssetType.SOLDIER:
             payload = {
@@ -153,16 +137,13 @@ class SimulatedAsset:
                 "heart_rate": self.heart_rate,
                 "spo2": self.spo2,
                 "stress_level": self.stress_level,
-                "body_temp": round(random.uniform(36.2, 37.5), 1),
-                "steps": random.randint(0, 100),
+                "body_temp": round(random.uniform(36.2, 37.2), 1),
                 "device": {"battery_pct": self.battery_level},
-                "alignment": self.alignment.value,
+                "alignment": "FRIEND",
                 "threat_level": 0,
-                "ammo_status": self.ammo_status,
+                "mission": self.mission,
             }
-            if self.last_alert:
-                payload["alert"] = self.last_alert
-        else:  # Vehicle
+        else:  # VEHICLE (Ground vehicles)
             payload = {
                 "position": {
                     "lat": round(self.latitude, 6),
@@ -172,10 +153,11 @@ class SimulatedAsset:
                 "speed_kph": round(self.speed, 1),
                 "heading": round(self.heading, 1),
                 "fuel_pct": self.fuel_level,
-                "engine_temp": random.randint(75, 95),
+                "engine_temp": random.randint(70, 95),
                 "engine_status": "OFF" if self.status == OperationalStatus.IDLE else "RUNNING",
-                "alignment": self.alignment.value,
+                "alignment": "FRIEND",
                 "threat_level": 0,
+                "mission": self.mission,
             }
         
         return {
@@ -192,239 +174,195 @@ class SimulatedAsset:
 # =============================================================================
 
 def update_idle_asset(asset: SimulatedAsset):
-    """Assets in Ankara base - minimal movement, high resources."""
-    # Stationary - only minor position jitter
-    asset.latitude += random.uniform(-0.0001, 0.0001)
-    asset.longitude += random.uniform(-0.0001, 0.0001)
+    """Assets in Izmir Barracks - minimal movement."""
+    # Very small position jitter (people walking around base)
+    asset.latitude += random.uniform(-0.00005, 0.00005)
+    asset.longitude += random.uniform(-0.00005, 0.00005)
     asset.speed = 0
+    asset.altitude = 0 if asset.asset_type != AssetType.DRONE else random.uniform(0, 10)
     
-    # Resources stay high
-    asset.battery_level = max(90, min(100, asset.battery_level + random.randint(0, 2)))
-    asset.fuel_level = max(90, min(100, asset.fuel_level + random.randint(0, 2)))
+    # Resources stay high (charging/refueling)
+    asset.battery_level = min(100, asset.battery_level + random.randint(0, 2))
+    asset.fuel_level = min(100, asset.fuel_level + random.randint(0, 2))
     
     # Soldiers resting
     if asset.asset_type == AssetType.SOLDIER:
-        asset.heart_rate = random.randint(60, 80)
+        asset.heart_rate = random.randint(60, 75)
         asset.spo2 = random.randint(97, 99)
         asset.stress_level = "LOW"
-        asset.ammo_status = "FULL"
+        asset.mission = "Kisla Gorevi"
+    elif asset.asset_type == AssetType.DRONE:
+        asset.mission = "Hangar Bekleme"
+    else:
+        asset.mission = "Garajda Bekleme"
 
 
-def update_patrol_asset(asset: SimulatedAsset):
-    """Assets on border patrol - circular movement pattern."""
-    zone = ZONES[OperationalStatus.PATROL]
+def update_exercise_asset(asset: SimulatedAsset):
+    """Assets in Aegean Exercise - active tactical movement."""
+    zone = ZONES[OperationalStatus.EXERCISE]
     center_lat, center_lon = zone["center"]
-    radius_km = zone.get("patrol_radius_km", 10)
-    radius_deg = radius_km * 0.009  # Approximate km to degrees
+    radius_km = zone.get("patrol_radius_km", 5)
+    radius_deg = radius_km * 0.009
     
-    # Circular patrol movement
-    asset.patrol_angle += random.uniform(0.02, 0.05)  # Slow rotation
+    # Circular/patrol movement with variation
+    asset.patrol_angle += random.uniform(0.02, 0.06)
     if asset.patrol_angle > 2 * math.pi:
         asset.patrol_angle -= 2 * math.pi
     
-    # Calculate new position on circle
-    offset_lat = radius_deg * math.cos(asset.patrol_angle) * random.uniform(0.8, 1.2)
-    offset_lon = radius_deg * math.sin(asset.patrol_angle) * random.uniform(0.8, 1.2)
-    
-    asset.latitude = center_lat + offset_lat
-    asset.longitude = center_lon + offset_lon
-    
-    # Update heading to face movement direction
-    asset.heading = math.degrees(asset.patrol_angle + math.pi / 2) % 360
-    
-    # Set appropriate speeds
+    # Different behavior per asset type
     if asset.asset_type == AssetType.DRONE:
-        asset.speed = random.uniform(60, 100)  # km/h
-        asset.altitude = random.uniform(800, 1500)
-        asset.battery_level = max(30, asset.battery_level - random.randint(0, 2))
-    elif asset.asset_type == AssetType.SOLDIER:
-        asset.speed = random.uniform(3, 6)  # km/h walking
-        asset.heart_rate = random.randint(90, 120)
-        asset.spo2 = random.randint(95, 98)
-        asset.stress_level = "MEDIUM"
-        asset.battery_level = max(40, asset.battery_level - random.randint(0, 1))
-    else:  # Vehicle
-        asset.speed = random.uniform(20, 40)  # km/h
-        asset.fuel_level = max(30, asset.fuel_level - random.randint(0, 2))
-
-
-def update_combat_asset(asset: SimulatedAsset):
-    """Assets in Syria combat zone - erratic movement, high stress."""
-    # Zig-zag erratic movement
-    direction_change = random.uniform(-0.5, 0.5)
-    asset.heading = (asset.heading + direction_change * 180) % 360
-    
-    # Calculate movement based on heading
-    heading_rad = math.radians(asset.heading)
-    
-    if asset.asset_type == AssetType.DRONE:
-        move_distance = random.uniform(0.01, 0.03)  # Fast movement
-        asset.speed = random.uniform(100, 180)  # km/h combat speed
-        asset.altitude = random.uniform(500, 2000) + random.uniform(-100, 100)
-        asset.battery_level = max(15, asset.battery_level - random.randint(1, 3))
-    elif asset.asset_type == AssetType.SOLDIER:
-        move_distance = random.uniform(0.001, 0.005)  # Running/taking cover
-        asset.speed = random.uniform(5, 12)  # km/h running
-        
-        # Combat stress biometrics
-        asset.heart_rate = random.randint(120, 160)
-        if random.random() < 0.1:  # 10% chance of spike
-            asset.heart_rate = random.randint(160, 180)
-        
-        asset.spo2 = random.randint(92, 97)  # Lower due to exertion
-        if random.random() < 0.05:
-            asset.spo2 = random.randint(88, 92)  # Occasional dip
-        
-        asset.stress_level = "HIGH"
+        # High altitude reconnaissance pattern
+        offset_lat = radius_deg * math.cos(asset.patrol_angle) * random.uniform(0.8, 1.2)
+        offset_lon = radius_deg * math.sin(asset.patrol_angle) * random.uniform(0.8, 1.2)
+        asset.latitude = center_lat + offset_lat
+        asset.longitude = center_lon + offset_lon
+        asset.altitude = random.uniform(1000, 2500)
+        asset.speed = random.uniform(100, 160)
+        asset.heading = math.degrees(asset.patrol_angle + math.pi / 2) % 360
         asset.battery_level = max(20, asset.battery_level - random.randint(0, 2))
+        asset.mission = "Kesif Ucusu"
         
-        # Occasional ammo alerts
-        if random.random() < 0.15:
-            asset.ammo_status = random.choice(["LOW", "CRITICAL", "NORMAL"])
-            if asset.ammo_status in ["LOW", "CRITICAL"]:
-                asset.last_alert = f"AMMO_{asset.ammo_status}"
-        else:
-            asset.last_alert = None
-    else:  # Vehicle
-        move_distance = random.uniform(0.005, 0.015)
-        asset.speed = random.uniform(30, 60)  # km/h
-        asset.fuel_level = max(10, asset.fuel_level - random.randint(1, 4))
-    
-    # Apply movement
-    asset.latitude += move_distance * math.cos(heading_rad)
-    asset.longitude += move_distance * math.sin(heading_rad)
-    
-    # Keep within combat zone bounds
-    zone = ZONES[OperationalStatus.COMBAT]
-    center_lat, center_lon = zone["center"]
-    max_distance = 0.3  # degrees
-    
-    if abs(asset.latitude - center_lat) > max_distance:
-        asset.latitude = center_lat + (max_distance if asset.latitude > center_lat else -max_distance)
-        asset.heading = (asset.heading + 180) % 360
-    if abs(asset.longitude - center_lon) > max_distance:
-        asset.longitude = center_lon + (max_distance if asset.longitude > center_lon else -max_distance)
-        asset.heading = (asset.heading + 180) % 360
+    elif asset.asset_type == AssetType.SOLDIER:
+        # Infantry patrol / exercise
+        offset_lat = (radius_deg * 0.4) * math.cos(asset.patrol_angle) * random.uniform(0.9, 1.1)
+        offset_lon = (radius_deg * 0.4) * math.sin(asset.patrol_angle) * random.uniform(0.9, 1.1)
+        asset.latitude = center_lat + offset_lat
+        asset.longitude = center_lon + offset_lon
+        asset.altitude = random.uniform(100, 400)  # Hilly terrain
+        asset.speed = random.uniform(3, 8)
+        asset.heart_rate = random.randint(90, 130)
+        asset.spo2 = random.randint(94, 98)
+        asset.stress_level = random.choice(["MEDIUM", "MEDIUM", "HIGH"])
+        asset.battery_level = max(30, asset.battery_level - random.randint(0, 1))
+        asset.mission = "Arazi Tatbikati"
+        
+    else:  # VEHICLE (Ground vehicles - tanks, MRAPs, etc.)
+        # Armored vehicle patrol
+        offset_lat = radius_deg * math.cos(asset.patrol_angle + random.uniform(-0.1, 0.1))
+        offset_lon = radius_deg * math.sin(asset.patrol_angle + random.uniform(-0.1, 0.1))
+        asset.latitude = center_lat + offset_lat
+        asset.longitude = center_lon + offset_lon
+        asset.altitude = random.uniform(50, 300)  # Terrain elevation
+        asset.speed = random.uniform(25, 55)  # km/h
+        asset.heading = math.degrees(asset.patrol_angle + math.pi / 2) % 360
+        asset.fuel_level = max(40, asset.fuel_level - random.randint(0, 1))
+        
+        # Random mission types for vehicles
+        missions = ["Arazi Devriye", "Konvoy Harekati", "Hedef Atisi", "Manevra"]
+        asset.mission = random.choice(missions)
 
 
 UPDATE_FUNCTIONS = {
     OperationalStatus.IDLE: update_idle_asset,
-    OperationalStatus.PATROL: update_patrol_asset,
-    OperationalStatus.COMBAT: update_combat_asset,
+    OperationalStatus.EXERCISE: update_exercise_asset,
 }
 
 
 # =============================================================================
-# TSK INVENTORY GENERATION
+# ASSET GENERATION (30 units)
 # =============================================================================
 
-def generate_tsk_inventory() -> List[SimulatedAsset]:
-    """Generate the full TSK asset inventory."""
+def generate_assets() -> List[SimulatedAsset]:
+    """Generate the 30 assets for Ege Tatbikati."""
     assets = []
     
-    # Drone Squadrons
-    squadrons = [
-        ("341.Filo", ["Akıncı", "TB2"], 12),
-        ("342.Filo", ["TB2", "ANKA-S"], 15),
-        ("343.Filo", ["TB2"], 10),
-        ("344.Filo", ["ANKA-S", "TB2"], 14),
-        ("345.Filo", ["Akıncı", "ANKA-S"], 11),
+    # 10 Drones
+    drone_units = [
+        ("TB2-ALFA-01", "TB2 Bayraktar 1"),
+        ("TB2-ALFA-02", "TB2 Bayraktar 2"),
+        ("TB2-ALFA-03", "TB2 Bayraktar 3"),
+        ("ANKA-BRAVO-01", "ANKA-S 1"),
+        ("ANKA-BRAVO-02", "ANKA-S 2"),
+        ("ANKA-BRAVO-03", "ANKA-S 3"),
+        ("AKSUNGUR-01", "Aksungur 1"),
+        ("AKSUNGUR-02", "Aksungur 2"),
+        ("MINI-IHA-01", "Mini IHA 1"),
+        ("MINI-IHA-02", "Mini IHA 2"),
     ]
     
-    for squad_name, variants, size in squadrons:
-        for i in range(1, size + 1):
-            variant = random.choice(variants)
-            status = random.choices(
-                [OperationalStatus.IDLE, OperationalStatus.PATROL, OperationalStatus.COMBAT],
-                weights=[0.3, 0.4, 0.3]
-            )[0]
-            zone = ZONES[status]
-            center_lat, center_lon = zone["center"]
-            
-            assets.append(SimulatedAsset(
-                id=f"{squad_name}-{variant}-{i:02d}",
-                name=f"{variant} #{i}",
-                asset_type=AssetType.DRONE,
-                variant=variant,
-                status=status,
-                alignment=Alignment.FRIEND,
-                latitude=center_lat + random.uniform(-0.1, 0.1),
-                longitude=center_lon + random.uniform(-0.1, 0.1),
-                altitude=random.uniform(500, 2000) if status != OperationalStatus.IDLE else 0,
-                heading=random.uniform(0, 360),
-                battery_level=random.randint(60, 100),
-            ))
+    for i, (unit_id, name) in enumerate(drone_units):
+        status = OperationalStatus.IDLE if i < 5 else OperationalStatus.EXERCISE
+        zone = ZONES[status]
+        center_lat, center_lon = zone["center"]
+        spread = zone["spread_km"] * 0.009
+        
+        assets.append(SimulatedAsset(
+            id=unit_id,
+            name=name,
+            asset_type=AssetType.DRONE,
+            status=status,
+            latitude=center_lat + random.uniform(-spread, spread),
+            longitude=center_lon + random.uniform(-spread, spread),
+            altitude=0 if status == OperationalStatus.IDLE else random.uniform(800, 2000),
+            heading=random.uniform(0, 360),
+            battery_level=random.randint(80, 100),
+            patrol_angle=random.uniform(0, 2 * math.pi),
+        ))
     
-    # Infantry Units
-    infantry = [
-        ("OKK-Alpha", "Bordo Bereli", 22),
-        ("OKK-Bravo", "Bordo Bereli", 20),
-        ("JÖH-Mardin", "JÖH", 25),
-        ("JÖH-Şırnak", "JÖH", 24),
-        ("JÖH-Hakkari", "JÖH", 23),
-        ("Komando-1Tb", "Dağ Komando", 21),
-        ("Komando-2Tb", "Amfibi", 20),
-        ("Komando-3Tb", "SAT", 18),
-        ("Komando-4Tb", "SAS", 19),
-        ("Komando-5Tb", "MAK", 22),
+    # 10 Soldiers
+    soldier_units = [
+        ("SAT-TIM-01", "SAT Komando Tim 1"),
+        ("SAT-TIM-02", "SAT Komando Tim 2"),
+        ("SAT-TIM-03", "SAT Komando Tim 3"),
+        ("SAS-TIM-01", "SAS Tim 1"),
+        ("SAS-TIM-02", "SAS Tim 2"),
+        ("KOMANDO-01", "Dag Komando 1"),
+        ("KOMANDO-02", "Dag Komando 2"),
+        ("KOMANDO-03", "Dag Komando 3"),
+        ("PIYADE-01", "Piyade Manga 1"),
+        ("PIYADE-02", "Piyade Manga 2"),
     ]
     
-    for unit_name, variant, size in infantry:
-        for i in range(1, size + 1):
-            status = random.choices(
-                [OperationalStatus.IDLE, OperationalStatus.PATROL, OperationalStatus.COMBAT],
-                weights=[0.3, 0.4, 0.3]
-            )[0]
-            zone = ZONES[status]
-            center_lat, center_lon = zone["center"]
-            
-            assets.append(SimulatedAsset(
-                id=f"{unit_name}-{i:02d}",
-                name=f"{variant} Personel #{i}",
-                asset_type=AssetType.SOLDIER,
-                variant=variant,
-                status=status,
-                alignment=Alignment.FRIEND,
-                latitude=center_lat + random.uniform(-0.15, 0.15),
-                longitude=center_lon + random.uniform(-0.15, 0.15),
-                altitude=random.uniform(0, 100),
-                heart_rate=70 if status == OperationalStatus.IDLE else random.randint(90, 140),
-                spo2=random.randint(95, 99),
-                battery_level=random.randint(50, 100),
-            ))
+    for i, (unit_id, name) in enumerate(soldier_units):
+        status = OperationalStatus.IDLE if i < 5 else OperationalStatus.EXERCISE
+        zone = ZONES[status]
+        center_lat, center_lon = zone["center"]
+        spread = zone["spread_km"] * 0.009
+        
+        assets.append(SimulatedAsset(
+            id=unit_id,
+            name=name,
+            asset_type=AssetType.SOLDIER,
+            status=status,
+            latitude=center_lat + random.uniform(-spread, spread),
+            longitude=center_lon + random.uniform(-spread, spread),
+            heart_rate=70 if status == OperationalStatus.IDLE else random.randint(85, 110),
+            spo2=random.randint(96, 99),
+            battery_level=random.randint(70, 100),
+            patrol_angle=random.uniform(0, 2 * math.pi),
+        ))
     
-    # Armored Units
-    armor = [
-        ("1ZPT", ["Altay Tank", "M60T"], 8),
-        ("2ZPT", ["Altay Tank", "Leopard 2A4"], 10),
-        ("3Mek", ["Kirpi II", "Kobra II"], 12),
-        ("4Mek", ["Kirpi II", "Ejder"], 9),
-        ("Topcu", ["Fırtına Obüs", "T-155"], 6),
+    # 10 Vehicles (Ground vehicles)
+    vehicle_units = [
+        ("ALTAY-01", "Altay Tank 1"),
+        ("ALTAY-02", "Altay Tank 2"),
+        ("KIRPI-01", "Kirpi MRAP 1"),
+        ("KIRPI-02", "Kirpi MRAP 2"),
+        ("KIRPI-03", "Kirpi MRAP 3"),
+        ("KOBRA-01", "Kobra Zirhli 1"),
+        ("KOBRA-02", "Kobra Zirhli 2"),
+        ("FIRTINA-01", "Firtina Obus 1"),
+        ("FIRTINA-02", "Firtina Obus 2"),
+        ("EJDER-01", "Ejder Yalcin 1"),
     ]
     
-    for unit_name, variants, size in armor:
-        for i in range(1, size + 1):
-            variant = random.choice(variants)
-            status = random.choices(
-                [OperationalStatus.IDLE, OperationalStatus.PATROL, OperationalStatus.COMBAT],
-                weights=[0.3, 0.4, 0.3]
-            )[0]
-            zone = ZONES[status]
-            center_lat, center_lon = zone["center"]
-            
-            assets.append(SimulatedAsset(
-                id=f"{unit_name}-{variant.replace(' ', '-')}-{i:02d}",
-                name=f"{variant} #{i}",
-                asset_type=AssetType.VEHICLE,
-                variant=variant,
-                status=status,
-                alignment=Alignment.FRIEND,
-                latitude=center_lat + random.uniform(-0.12, 0.12),
-                longitude=center_lon + random.uniform(-0.12, 0.12),
-                altitude=random.uniform(0, 50),
-                heading=random.uniform(0, 360),
-                fuel_level=random.randint(50, 100),
-            ))
+    for i, (unit_id, name) in enumerate(vehicle_units):
+        status = OperationalStatus.IDLE if i < 5 else OperationalStatus.EXERCISE
+        zone = ZONES[status]
+        center_lat, center_lon = zone["center"]
+        spread = zone["spread_km"] * 0.009
+        
+        assets.append(SimulatedAsset(
+            id=unit_id,
+            name=name,
+            asset_type=AssetType.VEHICLE,
+            status=status,
+            latitude=center_lat + random.uniform(-spread, spread),
+            longitude=center_lon + random.uniform(-spread, spread),
+            heading=random.uniform(0, 360),
+            fuel_level=random.randint(70, 100),
+            patrol_angle=random.uniform(0, 2 * math.pi),
+        ))
     
     return assets
 
@@ -433,7 +371,7 @@ def generate_tsk_inventory() -> List[SimulatedAsset]:
 # SIMULATION ENGINE
 # =============================================================================
 
-class WargameSimulator:
+class EgeTatbikatiSimulator:
     """Main simulation engine."""
     
     def __init__(self, backend_url: str, interval: float):
@@ -445,31 +383,28 @@ class WargameSimulator:
             "messages_sent": 0,
             "errors": 0,
             "start_time": None,
+            "cycles": 0,
         }
     
     def initialize(self):
-        """Initialize the simulation with TSK inventory."""
-        print("🎖️  Initializing TSK Wargame Simulation...")
-        self.assets = generate_tsk_inventory()
+        """Initialize the simulation."""
+        print("Initializing Ege Tatbikati Simulation...")
+        self.assets = generate_assets()
         
         # Count by status
-        status_counts = {}
-        for asset in self.assets:
-            status_counts[asset.status.value] = status_counts.get(asset.status.value, 0) + 1
+        idle_count = len([a for a in self.assets if a.status == OperationalStatus.IDLE])
+        exercise_count = len([a for a in self.assets if a.status == OperationalStatus.EXERCISE])
         
-        print(f"\n📊 Asset Distribution:")
-        print(f"   Total Assets: {len(self.assets)}")
-        for status, count in status_counts.items():
-            print(f"   {status}: {count}")
+        print(f"\nAsset Distribution:")
+        print(f"   Total: {len(self.assets)} units")
+        print(f"   Izmir Kisla (IDLE): {idle_count}")
+        print(f"   Ege Tatbikat (EXERCISE): {exercise_count}")
         
         # Count by type
-        type_counts = {}
-        for asset in self.assets:
-            type_counts[asset.asset_type.value] = type_counts.get(asset.asset_type.value, 0) + 1
-        
-        print(f"\n🎯 Asset Types:")
-        for atype, count in type_counts.items():
-            print(f"   {atype.upper()}: {count}")
+        print(f"\nAsset Types:")
+        print(f"   Drones: {len([a for a in self.assets if a.asset_type == AssetType.DRONE])}")
+        print(f"   Soldiers: {len([a for a in self.assets if a.asset_type == AssetType.SOLDIER])}")
+        print(f"   Vehicles: {len([a for a in self.assets if a.asset_type == AssetType.VEHICLE])}")
     
     async def update_assets(self):
         """Update all asset positions and states."""
@@ -487,72 +422,54 @@ class WargameSimulator:
                     self.stats["messages_sent"] += 1
                 else:
                     self.stats["errors"] += 1
-                    text = await response.text()
-                    if self.stats["errors"] <= 5:  # Limit error spam
-                        print(f"⚠️  Error sending {asset.id}: {response.status} - {text[:100]}")
+                    if self.stats["errors"] <= 3:
+                        text = await response.text()
+                        print(f"\nError sending {asset.id}: {response.status}")
         except Exception as e:
             self.stats["errors"] += 1
-            if self.stats["errors"] <= 5:
-                print(f"❌ Connection error for {asset.id}: {e}")
+            if self.stats["errors"] <= 3:
+                print(f"\nConnection error: {e}")
     
-    async def send_batch_telemetry(self, session: aiohttp.ClientSession):
-        """Send all telemetry as a batch (more efficient)."""
-        messages = [asset.to_telemetry_message() for asset in self.assets]
-        batch_url = self.backend_url + "/batch"
-        
-        try:
-            async with session.post(batch_url, json=messages) as response:
-                if response.status == 200:
-                    self.stats["messages_sent"] += len(messages)
-                else:
-                    # Fallback to individual sends
-                    self.stats["errors"] += 1
-                    print(f"⚠️  Batch send failed ({response.status}), falling back to individual sends...")
-                    tasks = [self.send_telemetry(session, asset) for asset in self.assets]
-                    await asyncio.gather(*tasks)
-        except Exception as e:
-            self.stats["errors"] += 1
-            print(f"❌ Batch connection error: {e}")
-            # Fallback to individual sends
-            tasks = [self.send_telemetry(session, asset) for asset in self.assets]
-            await asyncio.gather(*tasks)
+    async def send_all_telemetry(self, session: aiohttp.ClientSession):
+        """Send telemetry for all assets."""
+        tasks = [self.send_telemetry(session, asset) for asset in self.assets]
+        await asyncio.gather(*tasks)
     
     async def run_simulation_loop(self):
         """Main simulation loop."""
         self.running = True
         self.stats["start_time"] = datetime.now()
         
-        connector = aiohttp.TCPConnector(limit=50)  # Connection pool
-        timeout = aiohttp.ClientTimeout(total=10)
+        connector = aiohttp.TCPConnector(limit=50)
+        timeout = aiohttp.ClientTimeout(total=30)
         
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-            cycle = 0
             while self.running:
-                cycle += 1
+                self.stats["cycles"] += 1
                 cycle_start = datetime.now()
                 
                 # Update all asset states
                 await self.update_assets()
                 
-                # Send telemetry (batch mode)
-                await self.send_batch_telemetry(session)
+                # Send telemetry
+                await self.send_all_telemetry(session)
                 
                 # Print status
                 elapsed = (datetime.now() - self.stats["start_time"]).total_seconds()
-                rate = self.stats["messages_sent"] / elapsed if elapsed > 0 else 0
+                elapsed_min = elapsed / 60
                 
-                print(f"\r🔄 Cycle {cycle:04d} | "
+                print(f"\rCycle {self.stats['cycles']:03d} | "
                       f"Sent: {self.stats['messages_sent']:,} | "
                       f"Errors: {self.stats['errors']} | "
-                      f"Rate: {rate:.1f} msg/s | "
-                      f"Elapsed: {elapsed:.0f}s", end="", flush=True)
+                      f"Runtime: {elapsed_min:.1f} min | "
+                      f"Next in {self.interval}s...", end="", flush=True)
                 
                 # Wait for next cycle
                 cycle_duration = (datetime.now() - cycle_start).total_seconds()
                 sleep_time = max(0, self.interval - cycle_duration)
                 await asyncio.sleep(sleep_time)
         
-        print("\n\n🛑 Simulation stopped.")
+        print("\n\nSimulation stopped.")
     
     def stop(self):
         """Stop the simulation."""
@@ -564,45 +481,46 @@ class WargameSimulator:
 # =============================================================================
 
 async def main():
-    parser = argparse.ArgumentParser(description="TSK Wargame Simulation Engine")
+    parser = argparse.ArgumentParser(description="Ege Tatbikati Simulation Engine")
     parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL,
                         help=f"Update interval in seconds (default: {DEFAULT_INTERVAL})")
     parser.add_argument("--backend", type=str, default=DEFAULT_BACKEND_URL,
                         help=f"Backend API URL (default: {DEFAULT_BACKEND_URL})")
     args = parser.parse_args()
     
-    print("=" * 70)
-    print("🎖️  TSK WARGAME SIMULATION ENGINE")
-    print("=" * 70)
-    print(f"Backend URL: {args.backend}")
-    print(f"Update Interval: {args.interval}s")
-    print("=" * 70)
+    print("=" * 60)
+    print("EGE TATBIKATI SIMULATION ENGINE")
+    print("=" * 60)
+    print(f"Backend: {args.backend}")
+    print(f"Interval: {args.interval}s ({args.interval/60:.1f} min)")
+    print("=" * 60)
     
-    simulator = WargameSimulator(args.backend, args.interval)
+    simulator = EgeTatbikatiSimulator(args.backend, args.interval)
     simulator.initialize()
     
     # Handle graceful shutdown
     def signal_handler(sig, frame):
-        print("\n\n⏹️  Stopping simulation...")
+        print("\n\nStopping simulation...")
         simulator.stop()
     
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    print("\n" + "=" * 70)
-    print("🚀 Starting simulation... (Press Ctrl+C to stop)")
-    print("=" * 70 + "\n")
+    print("\n" + "=" * 60)
+    print("Starting simulation... (Press Ctrl+C to stop)")
+    print("   Each unit sends data every 60 seconds")
+    print("=" * 60 + "\n")
     
     await simulator.run_simulation_loop()
     
     # Final stats
-    print("\n📊 Final Statistics:")
+    print("\nFinal Statistics:")
     print(f"   Total Messages Sent: {simulator.stats['messages_sent']:,}")
     print(f"   Total Errors: {simulator.stats['errors']}")
+    print(f"   Total Cycles: {simulator.stats['cycles']}")
     if simulator.stats["start_time"]:
         elapsed = (datetime.now() - simulator.stats["start_time"]).total_seconds()
-        print(f"   Total Runtime: {elapsed:.1f}s")
-        print(f"   Average Rate: {simulator.stats['messages_sent']/elapsed:.1f} msg/s")
+        print(f"   Total Runtime: {elapsed/60:.1f} minutes")
 
 
 if __name__ == "__main__":
