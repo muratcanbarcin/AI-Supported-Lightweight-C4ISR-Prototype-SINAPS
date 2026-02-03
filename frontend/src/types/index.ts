@@ -1,44 +1,66 @@
 /**
- * Central Types for SINAPS C4ISR Frontend
- * Aligned with Backend DTO structures (TelemetryResponseDTO, etc.)
+ * =============================================================================
+ * SINAPS C4ISR Frontend Types
+ * =============================================================================
+ * 
+ * Strictly aligned with:
+ * - Backend DTOs (TelemetryResponseDTO.java)
+ * - Backend Entities (Telemetry.java, AssetType.java)
+ * - PostgreSQL Schema
+ * 
+ * Last sync: 2026-02-03
  */
 
-// ============ ASSET TYPES ============
+// =============================================================================
+// ENUMS - Match Backend AssetType.java
+// =============================================================================
 
-/** Backend AssetType enum mapping */
-export type AssetType = "DRONE" | "SOLDIER" | "VEHICLE" | "SENSOR";
+/** Backend AssetType enum - MUST match com.sinaps.c4isr_backend.model.AssetType */
+export type AssetType = 'DRONE' | 'SOLDIER' | 'VEHICLE' | 'SENSOR';
 
-/** Frontend display asset type (for UI compatibility) */
-export type DisplayAssetType = "UAV" | "SOLDIER" | "GROUND_VEHICLE" | "WEARABLE";
+/** Asset operational status */
+export type AssetStatus = 'ONLINE' | 'WARNING' | 'OFFLINE';
 
-/** Convert backend type to frontend display type */
-export function toDisplayAssetType(backendType: AssetType): DisplayAssetType {
-  switch (backendType) {
-    case "DRONE": return "UAV";
-    case "SOLDIER": return "SOLDIER";
-    case "VEHICLE": return "GROUND_VEHICLE";
-    case "SENSOR": return "WEARABLE";
-    default: return "UAV";
-  }
+/** Friend/Foe identification */
+export type Alignment = 'FRIEND' | 'FOE' | 'UNKNOWN';
+
+/** Alert severity levels */
+export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+
+/** Threat level classification */
+export type ThreatLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'MINIMAL' | 'UNKNOWN';
+
+// =============================================================================
+// CORE ENTITIES - Match Backend DTOs
+// =============================================================================
+
+/**
+ * Asset Entity
+ * Represents a trackable field asset (drone, soldier, vehicle, sensor)
+ */
+export interface Asset {
+  id: string;
+  name: string;
+  type: AssetType;
+  status: AssetStatus;
+  lastLatitude: number | null;
+  lastLongitude: number | null;
+  lastUpdate: string; // ISO 8601 timestamp
+  alignment?: Alignment;
+  batteryLevel?: number | null;
 }
 
-/** Asset status */
-export type AssetStatus = "ONLINE" | "WARNING" | "OFFLINE";
-
-/** Alignment type for friend/foe identification */
-export type Alignment = "FRIEND" | "FOE" | "UNKNOWN";
-
-/** Severity levels */
-export type Severity = "HIGH" | "MEDIUM" | "LOW" | "CRITICAL";
-
-// ============ TELEMETRY (from Backend) ============
-
-/** Matches TelemetryResponseDTO from Spring Boot backend */
-export interface TelemetryDTO {
+/**
+ * Telemetry Entity
+ * Matches TelemetryResponseDTO from Spring Boot backend
+ * 
+ * @see backend/src/main/java/com/sinaps/c4isr_backend/dto/TelemetryResponseDTO.java
+ */
+export interface Telemetry {
   id: number;
   sourceId: string;
   sourceType: AssetType;
-  timestamp: string; // ISO 8601 format
+  timestamp: string; // ISO 8601 format (LocalDateTime from backend)
   latitude: number | null;
   longitude: number | null;
   altitude: number | null;
@@ -49,20 +71,56 @@ export interface TelemetryDTO {
   payload: Record<string, unknown> | null;
 }
 
-// ============ OPERATOR / PERSONNEL ============
+// Legacy alias for backward compatibility
+export type TelemetryDTO = Telemetry;
 
-export interface Operator {
-  name: string;
-  rank: string;
-  id: string;
+// =============================================================================
+// DISPLAY TYPES - Frontend UI Mapping
+// =============================================================================
+
+/** Frontend display asset type (for UI icons/labels) */
+export type DisplayAssetType = 'UAV' | 'SOLDIER' | 'GROUND_VEHICLE' | 'WEARABLE';
+
+/** Convert backend AssetType to frontend display type */
+export function toDisplayAssetType(backendType: AssetType): DisplayAssetType {
+  switch (backendType) {
+    case 'DRONE': return 'UAV';
+    case 'SOLDIER': return 'SOLDIER';
+    case 'VEHICLE': return 'GROUND_VEHICLE';
+    case 'SENSOR': return 'WEARABLE';
+    default: return 'UAV';
+  }
 }
 
-// ============ ASSET DETAILS (Extended) ============
+/** Convert Telemetry to Asset (for asset list views) */
+export function telemetryToAsset(telemetry: Telemetry): Asset {
+  return {
+    id: telemetry.sourceId,
+    name: telemetry.sourceId,
+    type: telemetry.sourceType,
+    status: telemetry.batteryLevel && telemetry.batteryLevel < 20 ? 'WARNING' : 'ONLINE',
+    lastLatitude: telemetry.latitude,
+    lastLongitude: telemetry.longitude,
+    lastUpdate: telemetry.timestamp,
+    alignment: telemetry.alignment,
+    batteryLevel: telemetry.batteryLevel,
+  };
+}
+
+// =============================================================================
+// EXTENDED ASSET DETAILS - For Profile Pages
+// =============================================================================
 
 export interface BaseAssetDetails {
   batteryLevel?: number;
   signalQuality?: number;
   latency?: number;
+}
+
+export interface Operator {
+  name: string;
+  rank: string;
+  id: string;
 }
 
 export interface UAVDetails extends BaseAssetDetails {
@@ -85,7 +143,7 @@ export interface SoldierDetails extends BaseAssetDetails {
   respirationRate: number;
   skinTemp: number;
   stressScore: number;
-  bodyPosture: "STANDING" | "PRONE" | "RUNNING";
+  bodyPosture: 'STANDING' | 'PRONE' | 'RUNNING';
   realName?: string;
   rank?: string;
 }
@@ -98,21 +156,13 @@ export interface VehicleDetails extends BaseAssetDetails {
   health: number;
   oilPressure: number;
   transmissionTemp: number;
-  vehicleModel: "KIRPI" | "COBRA" | "AMBULANCE";
+  vehicleModel: 'KIRPI' | 'COBRA' | 'AMBULANCE';
   operator?: Operator;
 }
 
-// ============ ASSET TASK ============
-
-export interface AssetTask {
-  id: string;
-  title: string;
-  status: "PENDING" | "IN_PROGRESS" | "COMPLETED";
-  priority: "HIGH" | "MEDIUM" | "LOW";
-  dueDate?: string;
-}
-
-// ============ ASSET SUMMARY (Frontend Model) ============
+// =============================================================================
+// ASSET SUMMARY - Combined View Model
+// =============================================================================
 
 export interface AssetSummary {
   id: string;
@@ -129,6 +179,14 @@ export interface AssetSummary {
   threatLevel?: number;
 }
 
+export interface AssetTask {
+  id: string;
+  title: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  dueDate?: string;
+}
+
 /** Map position asset for map rendering */
 export interface MapAsset {
   id: string;
@@ -139,7 +197,9 @@ export interface MapAsset {
   threatLevel?: number;
 }
 
-// ============ ALERTS / ALARMS ============
+// =============================================================================
+// ALERTS & ALARMS
+// =============================================================================
 
 export interface AlertItem {
   id: string;
@@ -151,7 +211,6 @@ export interface AlertItem {
   timestamp?: string;
 }
 
-/** Backend Alarm DTO mapping */
 export interface AlarmDTO {
   id: string;
   threatType: string;
@@ -166,7 +225,9 @@ export interface AlarmDTO {
   };
 }
 
-// ============ AUTH ============
+// =============================================================================
+// AUTH
+// =============================================================================
 
 export interface LoginRequest {
   username: string;
@@ -185,12 +246,14 @@ export interface AuthState {
   username: string | null;
 }
 
-// ============ AI ANALYSIS ============
+// =============================================================================
+// AI ANALYSIS
+// =============================================================================
 
 export interface AIAnalysisRequest {
   imageUrl?: string;
   imageBase64?: string;
-  telemetryData?: TelemetryDTO[];
+  telemetryData?: Telemetry[];
 }
 
 export interface BoundingBox {
@@ -207,10 +270,30 @@ export interface AIDetectionResult {
   status: string;
 }
 
-// ============ CONNECTION STATUS ============
+// =============================================================================
+// CONNECTION STATUS
+// =============================================================================
 
 export interface ConnectionStatus {
   isConnected: boolean;
   lastChecked: Date;
   errorMessage?: string;
+}
+
+// =============================================================================
+// API RESPONSE WRAPPERS
+// =============================================================================
+
+export interface ApiResponse<T> {
+  data: T;
+  status: number;
+  message?: string;
+}
+
+export interface PaginatedResponse<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  page: number;
+  size: number;
 }

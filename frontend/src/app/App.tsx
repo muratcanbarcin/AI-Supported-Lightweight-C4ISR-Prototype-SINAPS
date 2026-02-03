@@ -1,5 +1,20 @@
-import { useState, useEffect, createContext, useContext } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
+/**
+ * =============================================================================
+ * SINAPS C4ISR Application
+ * =============================================================================
+ * 
+ * Main application entry point with React Router v6/v7 compatible routing.
+ * 
+ * Routes:
+ * - /         -> Dashboard (connection status, asset count)
+ * - /map      -> MapComponent (main tactical view)
+ * - /assets   -> Asset list
+ * - /alerts   -> Alerts page
+ * - /login    -> Authentication
+ */
+
+import { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, NavLink } from 'react-router-dom';
 
 // Layout Components
 import { TopNavBar } from '@/features/navigation/TopNavBar';
@@ -18,19 +33,20 @@ import { AnalysisPage } from '@/features/analysis/pages/AnalysisPage';
 import { ProfilePage } from '@/features/profile/pages/ProfilePage';
 import { LoginPage } from '@/features/auth/LoginPage';
 
+// Services
+import { checkHealth, fetchLatestTelemetry } from '@/services/api';
+import authService from '@/services/authService';
+
+// Types
+import type { ConnectionStatus, AlertItem, Telemetry } from '@/types';
+
 // Hooks
 import { useAlerts } from '@/hooks/useAlerts';
 import { useAssets } from '@/hooks/useAssets';
 
-// Services
-import authService from '@/services/authService';
-
-// Types
-import type { ConnectionStatus, AlertItem } from '@/types';
-
-// ============================================================
-// Global State Context
-// ============================================================
+// =============================================================================
+// GLOBAL STATE CONTEXT
+// =============================================================================
 
 interface GlobalState {
   connectionStatus: ConnectionStatus;
@@ -50,28 +66,21 @@ export function useGlobalState() {
   return context;
 }
 
-// ============================================================
-// Global Poller Component
-// ============================================================
+// =============================================================================
+// GLOBAL POLLER - Background data fetching
+// =============================================================================
 
-/**
- * GlobalPoller runs at the top level to ensure background polling
- * continues regardless of which page/route is active.
- */
 function GlobalPoller({ children }: { children: React.ReactNode }) {
-  // Poll alerts globally - this runs even when not on AlertsPage
   const { alerts, connectionStatus: alertsConnectionStatus } = useAlerts({
     pollingInterval: 5000,
     enabled: true,
   });
 
-  // Poll assets globally for connection status
   const { connectionStatus: assetsConnectionStatus } = useAssets({
     pollingInterval: 3000,
     enabled: true,
   });
 
-  // Combine connection statuses - if either is disconnected, show warning
   const connectionStatus: ConnectionStatus = {
     isConnected: alertsConnectionStatus.isConnected && assetsConnectionStatus.isConnected,
     lastChecked: new Date(),
@@ -80,10 +89,7 @@ function GlobalPoller({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {/* Global Connection Warning - Always visible at top when disconnected */}
       <ConnectionWarning connectionStatus={connectionStatus} />
-
-      {/* Provide global state to children */}
       <GlobalStateContext.Provider
         value={{
           connectionStatus,
@@ -102,35 +108,172 @@ function GlobalPoller({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ============================================================
-// Main Layout Component
-// ============================================================
+// =============================================================================
+// DASHBOARD COMPONENT - Shows connection status and asset count
+// =============================================================================
+
+function Dashboard() {
+  const [isConnected, setIsConnected] = useState<boolean | null>(null);
+  const [assetCount, setAssetCount] = useState<number>(0);
+  const [lastCheck, setLastCheck] = useState<Date | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const checkConnection = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const healthy = await checkHealth();
+      setIsConnected(healthy);
+      
+      if (healthy) {
+        const telemetry = await fetchLatestTelemetry();
+        setAssetCount(telemetry.length);
+      }
+    } catch {
+      setIsConnected(false);
+    } finally {
+      setIsLoading(false);
+      setLastCheck(new Date());
+    }
+  }, []);
+
+  useEffect(() => {
+    checkConnection();
+    const interval = setInterval(checkConnection, 10000);
+    return () => clearInterval(interval);
+  }, [checkConnection]);
+
+  return (
+    <div className="absolute inset-0 z-40 bg-slate-900 p-8 overflow-auto">
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold text-white mb-8">
+          SINAPS C4ISR Dashboard
+        </h1>
+
+        {/* Connection Status Card */}
+        <div className="bg-slate-800 rounded-xl p-6 mb-6 border border-slate-700">
+          <h2 className="text-lg font-semibold text-slate-300 mb-4">
+            Bağlantı Durumu
+          </h2>
+          
+          <div className="flex items-center gap-4">
+            {/* Status Indicator */}
+            <div className={`
+              w-16 h-16 rounded-full flex items-center justify-center
+              ${isLoading ? 'bg-slate-700 animate-pulse' : 
+                isConnected ? 'bg-emerald-500/20' : 'bg-red-500/20'}
+            `}>
+              <div className={`
+                w-8 h-8 rounded-full
+                ${isLoading ? 'bg-slate-500' : 
+                  isConnected ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50' : 
+                  'bg-red-500 shadow-lg shadow-red-500/50'}
+              `} />
+            </div>
+
+            <div>
+              <p className={`text-2xl font-bold ${
+                isConnected ? 'text-emerald-400' : 'text-red-400'
+              }`}>
+                {isLoading ? 'Kontrol ediliyor...' : 
+                  isConnected ? 'BAĞLANTI BAŞARILI' : 'BAĞLANTI YOK'}
+              </p>
+              <p className="text-slate-400 text-sm">
+                Backend: http://localhost:8080/api/v1
+              </p>
+              {lastCheck && (
+                <p className="text-slate-500 text-xs mt-1">
+                  Son kontrol: {lastCheck.toLocaleTimeString('tr-TR')}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <button
+            onClick={checkConnection}
+            disabled={isLoading}
+            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 
+                       text-white rounded-lg transition-colors text-sm"
+          >
+            {isLoading ? 'Kontrol ediliyor...' : 'Tekrar Kontrol Et'}
+          </button>
+        </div>
+
+        {/* Asset Count Card */}
+        <div className="bg-slate-800 rounded-xl p-6 mb-6 border border-slate-700">
+          <h2 className="text-lg font-semibold text-slate-300 mb-4">
+            Aktif Varlıklar
+          </h2>
+          
+          <div className="flex items-baseline gap-2">
+            <span className="text-5xl font-bold text-cyan-400">
+              {assetCount}
+            </span>
+            <span className="text-slate-400">adet asset takip ediliyor</span>
+          </div>
+        </div>
+
+        {/* Quick Links */}
+        <div className="grid grid-cols-2 gap-4">
+          <NavLink
+            to="/map"
+            className="bg-slate-800 hover:bg-slate-700 rounded-xl p-6 border border-slate-700 
+                       transition-colors group"
+          >
+            <div className="text-2xl mb-2">🗺️</div>
+            <h3 className="text-lg font-semibold text-white group-hover:text-cyan-400 transition-colors">
+              Harita Görünümü
+            </h3>
+            <p className="text-slate-400 text-sm mt-1">
+              Taktik harita ve varlık takibi
+            </p>
+          </NavLink>
+
+          <NavLink
+            to="/assets"
+            className="bg-slate-800 hover:bg-slate-700 rounded-xl p-6 border border-slate-700 
+                       transition-colors group"
+          >
+            <div className="text-2xl mb-2">📊</div>
+            <h3 className="text-lg font-semibold text-white group-hover:text-cyan-400 transition-colors">
+              Varlık Listesi
+            </h3>
+            <p className="text-slate-400 text-sm mt-1">
+              Tüm varlıkların detaylı listesi
+            </p>
+          </NavLink>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// MAIN LAYOUT
+// =============================================================================
 
 function MainLayout() {
   const navigate = useNavigate();
 
-  // Handler for opening asset profile (used by Map and AssetStatus pages)
   const handleOpenProfile = (assetId: string) => {
     navigate(`/assets/${assetId}`);
   };
 
-  // Handler for focusing asset on map
   const handleFocusAsset = (assetId: string) => {
     navigate(`/map?focus=${assetId}`);
   };
 
   return (
     <div className="h-screen w-screen bg-tactical-bg flex overflow-hidden relative font-sans">
-      {/* Top Navigation Bar - Fixed at top */}
+      {/* Top Navigation Bar */}
       <TopNavBar />
 
       {/* Main Layout Container */}
       <div className="flex-1 flex overflow-hidden pt-16">
-        {/* Main Content Area with Routes */}
+        {/* Main Content Area */}
         <div className="flex-1 overflow-hidden relative">
           <Routes>
-            {/* Default redirect to map */}
-            <Route path="/" element={<Navigate to="/map" replace />} />
+            {/* Dashboard - Connection status and asset count */}
+            <Route path="/" element={<Dashboard />} />
 
             {/* Map View */}
             <Route
@@ -218,21 +361,21 @@ function MainLayout() {
               }
             />
 
-            {/* Fallback - 404 */}
-            <Route path="*" element={<Navigate to="/map" replace />} />
+            {/* Fallback - Redirect to Dashboard */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
 
-        {/* Right Control Panel - Always visible */}
+        {/* Right Control Panel */}
         <RightControlPanel />
       </div>
     </div>
   );
 }
 
-// ============================================================
-// Asset Profile Wrapper (for dynamic route params)
-// ============================================================
+// =============================================================================
+// ASSET PROFILE WRAPPER
+// =============================================================================
 
 function AssetProfileWrapper({ onFocusAsset }: { onFocusAsset: (id: string) => void }) {
   const navigate = useNavigate();
@@ -253,15 +396,14 @@ function AssetProfileWrapper({ onFocusAsset }: { onFocusAsset: (id: string) => v
   );
 }
 
-// ============================================================
-// Protected Route Wrapper
-// ============================================================
+// =============================================================================
+// PROTECTED ROUTE
+// =============================================================================
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
 
   useEffect(() => {
-    // Listen for auth changes
     const handleLogout = () => setIsAuthenticated(false);
     window.addEventListener('auth:logout', handleLogout);
     return () => window.removeEventListener('auth:logout', handleLogout);
@@ -278,9 +420,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ============================================================
-// App Entry Point
-// ============================================================
+// =============================================================================
+// APP ENTRY POINT
+// =============================================================================
 
 export function App() {
   return (
@@ -292,7 +434,7 @@ export function App() {
           element={
             <LoginPage
               onLogin={() => {
-                window.location.href = '/map';
+                window.location.href = '/';
               }}
             />
           }
