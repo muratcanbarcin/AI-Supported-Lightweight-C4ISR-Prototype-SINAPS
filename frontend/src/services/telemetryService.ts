@@ -4,6 +4,7 @@ import type {
   AssetSummary,
   MapAsset,
   DisplayAssetType,
+  MiddlewareClassification,
   UAVDetails,
   SoldierDetails,
   VehicleDetails,
@@ -100,14 +101,21 @@ export function telemetryToAssetSummary(telemetry: TelemetryDTO): AssetSummary {
 export function telemetryToMapAssets(telemetryList: TelemetryDTO[]): MapAsset[] {
   return telemetryList
     .filter(t => t.latitude !== null && t.longitude !== null)
-    .map(t => ({
-      id: t.sourceId,
-      type: convertType(t.sourceType),
-      position: [t.latitude!, t.longitude!] as [number, number],
-      name: formatAssetName(t.sourceId, convertType(t.sourceType)),
-      alignment: t.alignment,
-      threatLevel: t.threatLevel
-    }));
+    .map(t => {
+      // Extract middleware classification from payload if present
+      const mw = t.payload?._middleware as { classification?: string } | undefined;
+      const classification = (mw?.classification as MiddlewareClassification) || 'NORMAL';
+
+      return {
+        id: t.sourceId,
+        type: convertType(t.sourceType),
+        position: [t.latitude!, t.longitude!] as [number, number],
+        name: formatAssetName(t.sourceId, convertType(t.sourceType)),
+        alignment: t.alignment,
+        threatLevel: t.threatLevel,
+        classification,
+      };
+    });
 }
 
 /**

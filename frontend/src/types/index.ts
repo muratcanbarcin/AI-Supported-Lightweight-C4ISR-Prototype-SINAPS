@@ -187,6 +187,9 @@ export interface AssetTask {
   dueDate?: string;
 }
 
+/** Middleware anomaly classification */
+export type MiddlewareClassification = 'NORMAL' | 'SUSPICIOUS' | 'CRITICAL';
+
 /** Map position asset for map rendering */
 export interface MapAsset {
   id: string;
@@ -195,6 +198,7 @@ export interface MapAsset {
   name?: string;
   alignment?: Alignment;
   threatLevel?: number;
+  classification?: MiddlewareClassification;
 }
 
 // =============================================================================

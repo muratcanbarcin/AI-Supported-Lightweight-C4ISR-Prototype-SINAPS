@@ -41,3 +41,108 @@
   background: transparent !important;
   border: none !important;
 }
+
+/* Ensure HUD marker has no default leaflet styles */
+.custom-hud-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* =============================================================================
+   CLASSIFICATION PULSE ANIMATIONS
+   Industry-standard C4ISR anomaly indicators:
+   - NORMAL:     Steady state (no animation)
+   - SUSPICIOUS: Slow amber pulse (2s cycle, ~30 bpm visual rhythm)
+   - CRITICAL:   Fast red pulse (0.8s cycle, ~75 bpm visual rhythm)
+   ============================================================================= */
+
+/* SUSPICIOUS - Slow breathing pulse (amber/orange) */
+@keyframes suspiciousPulse {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.6);
+    opacity: 0;
+  }
+}
+
+.classification-pulse-suspicious {
+  animation: suspiciousPulse 2s ease-in-out infinite;
+}
+
+/* CRITICAL - Fast alarm pulse (red) */
+@keyframes criticalPulse {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(2);
+    opacity: 0;
+  }
+}
+
+.classification-pulse-critical {
+  animation: criticalPulse 0.8s ease-in-out infinite;
+}
+
+/* Badge pulse variants (for the ! and ? indicators) */
+@keyframes badgePulseCritical {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 8px 4px rgba(239, 68, 68, 0);
+  }
+}
+
+@keyframes badgePulseSuspicious {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 6px 3px rgba(245, 158, 11, 0);
+  }
+}
+
+/* Legend dot animations */
+.map-view-container .classification-pulse-normal {
+  animation: none;
+  box-shadow: 0 0 4px rgba(52, 211, 153, 0.4);
+}
+
+.map-view-container .classification-pulse-suspicious {
+  animation: legendPulseSuspicious 2s ease-in-out infinite;
+}
+
+.map-view-container .classification-pulse-critical {
+  animation: legendPulseCritical 0.8s ease-in-out infinite;
+}
+
+@keyframes legendPulseSuspicious {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(245, 158, 11, 0.4);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.8);
+    opacity: 0.6;
+  }
+}
+
+@keyframes legendPulseCritical {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.9);
+    opacity: 0.5;
+  }
+}

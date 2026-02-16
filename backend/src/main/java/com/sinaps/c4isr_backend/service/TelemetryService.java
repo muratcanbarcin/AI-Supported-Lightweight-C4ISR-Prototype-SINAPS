@@ -140,8 +140,9 @@ public class TelemetryService {
 
             log.info(">> Data Saved: {} | Location: {}, {}", saved.getSourceId(), lat, lon);
 
-            // 9. Trigger async AI analysis (non-blocking)
-            triggerAIAnalysis(saved);
+            // 9. AI analysis is now handled by Edge AI Middleware
+            // Only middleware-classified CRITICAL/SUSPICIOUS data triggers AI analysis
+            // via processSimulatorMessage(). This legacy path does NOT trigger AI.
 
         } catch (Exception e) {
             log.error("JSON Parse Error: {}", e.getMessage(), e);
@@ -284,6 +285,12 @@ public class TelemetryService {
                     new TypeReference<Map<String, Object>>() {
                     });
 
+            // Inject _middleware classification from Edge AI Middleware
+            if (message.middleware() != null && !message.middleware().isEmpty()) {
+                payloadMap.put("_middleware", message.middleware());
+                log.info("Middleware classification: {}", message.middleware().get("classification"));
+            }
+
             // 10. Build and save telemetry entity
             Telemetry telemetry = Telemetry.builder()
                     .sourceId(message.id())
@@ -300,8 +307,18 @@ public class TelemetryService {
             Telemetry saved = repository.save(telemetry);
             log.info(">> Simulator Data Saved! ID: {} | Source: {}", saved.getId(), saved.getSourceId());
 
-            // 11. Trigger async AI analysis (non-blocking)
-            triggerAIAnalysis(saved);
+            // 11. Only trigger AI analysis when middleware flagged as CRITICAL or SUSPICIOUS
+            //     This prevents flooding the AI service with every normal telemetry record.
+            String classification = "NORMAL";
+            if (message.middleware() != null && message.middleware().get("classification") != null) {
+                classification = message.middleware().get("classification").toString().toUpperCase();
+            }
+            if ("CRITICAL".equals(classification) || "SUSPICIOUS".equals(classification)) {
+                log.info("⚠️ Triggering AI analysis for {} — classification: {}", saved.getSourceId(), classification);
+                triggerAIAnalysis(saved);
+            } else {
+                log.debug("Skipping AI analysis for {} — classification: {}", saved.getSourceId(), classification);
+            }
 
         } catch (Exception e) {
             log.error("Simulator JSON Parse/Save Error: {}", e.getMessage(), e);

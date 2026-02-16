@@ -7,9 +7,10 @@ import { AssetBoundsCircle } from './components/AssetBoundsCircle';
 import { GeofencePolygon } from './components/GeofencePolygon';
 import { ThreatMarkers } from './components/ThreatMarkers';
 import { UnitDetailsModal } from './components/UnitDetailsModal';
+import { AIAnalysisPanel } from './components/AIAnalysisPanel';
 import { ConnectionWarning } from '@/features/control/ConnectionWarning';
 import { useAssets } from '@/hooks/useAssets';
-import type { AssetSummary, MapAsset, DisplayAssetType } from '@/types';
+import type { AssetSummary, MapAsset, DisplayAssetType, MiddlewareClassification } from '@/types';
 import './MapView.css';
 
 // Tile Layer Options
@@ -154,6 +155,10 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
   // Get real-time assets from API (with fallback to mock data)
   const { assets: assetSummaries, mapAssets, connectionStatus } = useAssets();
 
+  // AI Analysis Panel state
+  const [isAnalysisPanelOpen, setIsAnalysisPanelOpen] = useState(false);
+  const [focusTarget, setFocusTarget] = useState<string | null>(null);
+
   // Transform assets for map display with positions relative to user location
   const assets = useMemo(() => {
     // If we have real positions from API, use them
@@ -183,7 +188,21 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
 
   const [selectedAsset, setSelectedAsset] = useState<AssetSummary | null>(null);
 
-  const targetPosition = focusedAssetId ? assets.find(a => a.id === focusedAssetId)?.position : null;
+  // Handle focus from both external prop and AI panel
+  const activeFocusId = focusTarget || focusedAssetId || null;
+  const targetPosition = activeFocusId ? assets.find(a => a.id === activeFocusId)?.position : null;
+
+  // Clear focus target after navigation
+  useEffect(() => {
+    if (focusTarget) {
+      const timer = setTimeout(() => setFocusTarget(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [focusTarget]);
+
+  const handleFocusAsset = (assetId: string) => {
+    setFocusTarget(assetId);
+  };
 
   const handleMarkerClick = (assetId: string) => {
     // Find full details from asset summaries
@@ -217,6 +236,34 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
     <div className="map-view-container h-full w-full relative">
       {/* Connection Warning */}
       <ConnectionWarning connectionStatus={connectionStatus} />
+
+      {/* AI Analysis Panel */}
+      <AIAnalysisPanel
+        onFocusAsset={handleFocusAsset}
+        isOpen={isAnalysisPanelOpen}
+        onToggle={() => setIsAnalysisPanelOpen(!isAnalysisPanelOpen)}
+      />
+
+      {/* Classification Legend */}
+      <div className="absolute bottom-6 left-4 z-[1000] flex flex-col gap-1.5
+        bg-slate-900/90 backdrop-blur-sm border border-slate-700/50 rounded-lg px-3 py-2 shadow-lg">
+        <span className="text-[9px] text-slate-500 uppercase tracking-wider font-bold mb-0.5">
+          Durum Sınıfı
+        </span>
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 classification-pulse-normal" />
+          <span className="text-[10px] text-slate-300">Normal</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-400 classification-pulse-suspicious" />
+          <span className="text-[10px] text-slate-300">Şüpheli</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full bg-red-500 classification-pulse-critical" />
+          <span className="text-[10px] text-slate-300">Kritik</span>
+        </div>
+      </div>
+
       <MapContainer
         center={DEFAULT_CENTER}
         zoom={14}
@@ -255,14 +302,18 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
         {/* Threat Markers - centered relative to user */}
         <ThreatMarkers center={mapCenter} />
 
-        {/* Asset Markers */}
+        {/* Asset Markers - with classification-based styling */}
         {assets.map((asset) => (
           <Marker
             key={asset.id}
             position={asset.position}
-            icon={createAssetIcon(asset.type, asset.name)}
+            icon={createAssetIcon(asset.type, asset.name, asset.classification)}
             interactive={true}
-            zIndexOffset={100}
+            zIndexOffset={
+              asset.classification === 'CRITICAL' ? 300
+                : asset.classification === 'SUSPICIOUS' ? 200
+                : 100
+            }
             eventHandlers={{
               click: () => handleMarkerClick(asset.id),
             }}
@@ -287,36 +338,125 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
   );
 }
 
-// Helper: Create custom marker icon
-function createAssetIcon(type: DisplayAssetType, name?: string): ReturnType<typeof divIcon> {
-  // Determine specific styles based on type
-  let color = '#38bdf8'; // sky
+// =============================================================================
+// CLASSIFICATION-AWARE MARKER ICON
+// =============================================================================
+
+/**
+ * Color scheme per classification:
+ *   NORMAL     → asset's default color, steady glow
+ *   SUSPICIOUS → amber/orange, slow pulse (~2s)
+ *   CRITICAL   → red, fast pulse (~0.8s)
+ */
+function getClassificationStyle(classification?: MiddlewareClassification) {
+  switch (classification) {
+    case 'CRITICAL':
+      return {
+        ringColor: '#ef4444',    // red-500
+        ringClass: 'classification-pulse-critical',
+        outerSize: 28,
+        glowOpacity: 0.5,
+      };
+    case 'SUSPICIOUS':
+      return {
+        ringColor: '#f59e0b',    // amber-500
+        ringClass: 'classification-pulse-suspicious',
+        outerSize: 24,
+        glowOpacity: 0.35,
+      };
+    default:
+      return {
+        ringColor: '',
+        ringClass: '',
+        outerSize: 0,
+        glowOpacity: 0,
+      };
+  }
+}
+
+// Helper: Create custom marker icon with classification-based styling
+function createAssetIcon(
+  type: DisplayAssetType,
+  name?: string,
+  classification?: MiddlewareClassification,
+): ReturnType<typeof divIcon> {
+  // Determine base color by asset type
+  let baseColor = '#38bdf8'; // sky
   let iconClass = 'fa-plane';
 
   if (type === 'SOLDIER') {
-    color = '#4ade80'; // green
+    baseColor = '#4ade80'; // green
     iconClass = 'fa-person-rifle';
   } else if (type === 'GROUND_VEHICLE') {
-    color = '#f97316'; // orange
+    baseColor = '#f97316'; // orange
     iconClass = 'fa-truck-pickup';
   } else if (type === 'WEARABLE') {
-    color = '#a855f7'; // purple
+    baseColor = '#a855f7'; // purple
     iconClass = 'fa-stopwatch';
   }
 
-  // Minimalist HUD Marker
-  // Just a dot and a very small label
+  // Classification styling
+  const cs = getClassificationStyle(classification);
+  const dotColor = classification === 'CRITICAL' ? '#ef4444'
+    : classification === 'SUSPICIOUS' ? '#f59e0b'
+    : baseColor;
+
+  // Build outer ring HTML for SUSPICIOUS / CRITICAL
+  const outerRingHtml = (classification === 'CRITICAL' || classification === 'SUSPICIOUS') ? `
+    <!-- Classification Pulse Ring -->
+    <div class="absolute ${cs.ringClass}"
+         style="width: ${cs.outerSize}px; height: ${cs.outerSize}px; 
+                border-radius: 50%;
+                left: 50%; top: 50%;
+                transform: translate(-50%, -50%);
+                border: 2px solid ${cs.ringColor};
+                opacity: ${cs.glowOpacity};
+                ">
+    </div>
+    <!-- Static Glow Ring -->
+    <div class="absolute" 
+         style="width: ${cs.outerSize - 6}px; height: ${cs.outerSize - 6}px;
+                border-radius: 50%;
+                left: 50%; top: 50%;
+                transform: translate(-50%, -50%);
+                background: ${cs.ringColor};
+                opacity: 0.12;
+                ">
+    </div>
+  ` : '';
+
+  // Classification badge for CRITICAL/SUSPICIOUS
+  const badgeHtml = classification === 'CRITICAL' ? `
+    <div class="absolute -top-3 -right-2 flex items-center justify-center 
+                w-4 h-4 rounded-full bg-red-500 text-white text-[7px] font-black
+                classification-pulse-critical shadow-lg shadow-red-500/50">!</div>
+  ` : classification === 'SUSPICIOUS' ? `
+    <div class="absolute -top-2.5 -right-1.5 flex items-center justify-center
+                w-3.5 h-3.5 rounded-full bg-amber-500 text-white text-[7px] font-black
+                classification-pulse-suspicious shadow-lg shadow-amber-500/50">?</div>
+  ` : '';
+
+  // Label border tint  
+  const labelBorderColor = classification === 'CRITICAL'
+    ? 'border-red-500/50'
+    : classification === 'SUSPICIOUS'
+    ? 'border-amber-500/50'
+    : 'border-slate-700/50';
+
   const iconHtml = `
     <div class="relative group cursor-pointer flex items-center justify-center" style="width: 10px; height: 10px;">
+        ${outerRingHtml}
         
-        <!-- Center Dot with Pulse -->
+        <!-- Center Dot -->
         <div class="absolute w-2.5 h-2.5 rounded-full" 
-             style="background-color: ${color}; box-shadow: 0 0 8px ${color};">
+             style="background-color: ${dotColor}; box-shadow: 0 0 10px ${dotColor}, 0 0 20px ${dotColor}40;">
         </div>
 
-        <!-- Floating Label (Right) - Only visible on hover or if needed, but keeping it visible but tiny for now -->
-        <div class="absolute left-[14px] flex items-center gap-1.5 bg-[#0f172a]/80 backdrop-blur-sm border border-slate-700/50 px-1.5 py-0.5 rounded-sm shadow-sm whitespace-nowrap transition-all hover:bg-[#0f172a] hover:border-slate-500">
-             <i class="fa-solid ${iconClass} text-[9px]" style="color: ${color};"></i>
+        ${badgeHtml}
+
+        <!-- Floating Label (Right) -->
+        <div class="absolute left-[14px] flex items-center gap-1.5 bg-[#0f172a]/80 backdrop-blur-sm border ${labelBorderColor} px-1.5 py-0.5 rounded-sm shadow-sm whitespace-nowrap transition-all hover:bg-[#0f172a] hover:border-slate-500">
+             <i class="fa-solid ${iconClass} text-[9px]" style="color: ${dotColor};"></i>
              <span class="text-[9px] font-bold text-slate-200 font-mono tracking-tight uppercase">${name || type}</span>
         </div>
     </div>
