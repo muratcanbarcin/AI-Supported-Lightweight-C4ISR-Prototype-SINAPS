@@ -201,7 +201,14 @@ def update_idle_asset(asset: SimulatedAsset):
 
 
 def update_exercise_asset(asset: SimulatedAsset):
-    """Assets in Aegean Exercise - active tactical movement."""
+    """Assets in Aegean Exercise - active tactical movement.
+    
+    Includes low-probability anomaly injection (~10-15%) to simulate
+    realistic edge cases that the Middleware should detect:
+        - Soldiers: HR spike >150, COMBAT status, hypothermia/hyperthermia
+        - Vehicles: Critical fuel <10%, engine overheat
+        - Drones:   Severe battery drain, erratic speed
+    """
     zone = ZONES[OperationalStatus.EXERCISE]
     center_lat, center_lon = zone["center"]
     radius_km = zone.get("patrol_radius_km", 5)
@@ -210,6 +217,9 @@ def update_exercise_asset(asset: SimulatedAsset):
     asset.patrol_angle += random.uniform(0.02, 0.06)
     if asset.patrol_angle > 2 * math.pi:
         asset.patrol_angle -= 2 * math.pi
+    
+    # Roll for anomaly (~10% chance per asset per cycle)
+    anomaly_roll = random.random()
     
     if asset.asset_type == AssetType.DRONE:
         offset_lat = radius_deg * math.cos(asset.patrol_angle) * random.uniform(0.8, 1.2)
@@ -221,6 +231,12 @@ def update_exercise_asset(asset: SimulatedAsset):
         asset.heading = math.degrees(asset.patrol_angle + math.pi / 2) % 360
         asset.battery_level = max(20, asset.battery_level - random.randint(0, 2))
         asset.mission = "Kesif Ucusu"
+        
+        # 🔴 Anomaly: Severe battery drain (ML should catch)
+        if anomaly_roll < 0.08:
+            asset.battery_level = random.randint(5, 15)
+            asset.speed = random.uniform(180, 250)  # erratic speed
+            asset.mission = "ACIL Donus"
         
     elif asset.asset_type == AssetType.SOLDIER:
         offset_lat = (radius_deg * 0.4) * math.cos(asset.patrol_angle) * random.uniform(0.9, 1.1)
@@ -236,6 +252,22 @@ def update_exercise_asset(asset: SimulatedAsset):
         asset.battery_level = max(30, asset.battery_level - random.randint(0, 1))
         asset.mission = "Arazi Tatbikati"
         
+        # 🔴 Anomaly: Heart rate spike + COMBAT (Rule Engine should catch)
+        if anomaly_roll < 0.10:
+            asset.heart_rate = random.randint(155, 195)
+            asset.stress_level = random.choice(["COMBAT", "ENGAGED", "PANIC"])
+            asset.spo2 = random.randint(85, 92)
+            asset.body_temp = round(random.uniform(38.5, 40.0), 1)
+            asset.speed = random.uniform(10, 20)  # sprinting
+            asset.mission = "Catisma / Temas"
+        # 🟡 Anomaly: Moderate HR anomaly (ML should catch, rules may not)
+        elif anomaly_roll < 0.15:
+            asset.heart_rate = random.randint(141, 149)
+            asset.spo2 = random.randint(88, 93)
+            asset.body_temp = round(random.uniform(38.0, 39.0), 1)
+            asset.speed = random.uniform(12, 18)
+            asset.mission = "Yogun Efor"
+        
     else:  # VEHICLE
         offset_lat = radius_deg * math.cos(asset.patrol_angle + random.uniform(-0.1, 0.1))
         offset_lon = radius_deg * math.sin(asset.patrol_angle + random.uniform(-0.1, 0.1))
@@ -247,6 +279,12 @@ def update_exercise_asset(asset: SimulatedAsset):
         asset.fuel_level = max(40, asset.fuel_level - random.randint(0, 1))
         missions = ["Arazi Devriye", "Konvoy Harekati", "Hedef Atisi", "Manevra"]
         asset.mission = random.choice(missions)
+        
+        # 🔴 Anomaly: Critical fuel (Rule Engine should catch)
+        if anomaly_roll < 0.08:
+            asset.fuel_level = random.randint(3, 9)
+            asset.speed = random.uniform(5, 15)  # limping
+            asset.mission = "ACIL Yakit"
 
 
 UPDATE_FUNCTIONS = {

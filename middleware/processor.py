@@ -37,6 +37,7 @@ import time
 import signal
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
@@ -54,8 +55,8 @@ MQTT_BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "c4isr/telemetry")
 MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "c4isr-middleware")
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080/api/v1/telemetry")
-AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:8000/analyze")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://host.docker.internal:8080/api/v1/telemetry")
+AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://host.docker.internal:8000/analyze")
 
 # Rule-based thresholds
 RULE_HEART_RATE_CRITICAL = int(os.getenv("RULE_HR_CRITICAL", "150"))
@@ -68,8 +69,12 @@ ML_N_ESTIMATORS = int(os.getenv("ML_N_ESTIMATORS", "100"))
 ML_RANDOM_STATE = 42
 
 # Retry / resilience
-HTTP_TIMEOUT = int(os.getenv("HTTP_TIMEOUT", "10"))
+HTTP_TIMEOUT = int(os.getenv("HTTP_TIMEOUT", "15"))       # Backend timeout (fast)
+AI_TIMEOUT = int(os.getenv("AI_TIMEOUT", "120"))           # AI Service timeout (LLM inference is slow)
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "2"))
+
+# Thread pool for async AI calls (so MQTT pipeline isn't blocked)
+_ai_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="ai-fwd")
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -114,25 +119,58 @@ class AnomalyDetector:
         """
         Train IsolationForest on synthetic normal-range data immediately.
 
-        Normal ranges:
-            heart_rate:    60 – 100 bpm
-            speed:          0 – 100 km/h (or m/s for drones, keeps the scale)
-            fuel_level:    40 – 100 %
-            battery_level: 40 – 100 %
+        Generates domain-specific profiles so each asset type has
+        realistic "normal" feature vectors:
+            Soldier: heart_rate 60-140, speed 0-10,   fuel 100,  battery 30-100
+            Drone:   heart_rate 0,      speed 0-50,   fuel 100,  battery 20-100
+            Vehicle: heart_rate 0,      speed 0-80,   fuel 40-100, battery 100
+            Idle:    heart_rate 0/60-75, speed 0,      fuel/bat high
         """
         rng = np.random.RandomState(ML_RANDOM_STATE)
-        n_samples = 1000
+        blocks = []
 
-        heart_rate = rng.uniform(60, 100, n_samples)
-        speed = rng.uniform(0, 100, n_samples)
-        fuel_level = rng.uniform(40, 100, n_samples)
-        battery_level = rng.uniform(40, 100, n_samples)
+        # --- Soldier profiles (active + idle) ---
+        n = 300
+        blocks.append(np.column_stack([
+            rng.uniform(60, 140, n),   # heart_rate (exercise can go up to 140)
+            rng.uniform(0, 10, n),     # speed (walking/running)
+            np.full(n, 100.0),         # fuel (N/A for soldiers)
+            rng.uniform(30, 100, n),   # battery
+        ]))
 
-        X_train = np.column_stack([heart_rate, speed, fuel_level, battery_level])
+        # --- Drone profiles (flying + idle/hangar) ---
+        n = 300
+        blocks.append(np.column_stack([
+            np.zeros(n),               # heart_rate (N/A)
+            rng.uniform(0, 50, n),     # speed (0 = hangar, up to 50 m/s)
+            np.full(n, 100.0),         # fuel (N/A)
+            rng.uniform(20, 100, n),   # battery
+        ]))
 
+        # --- Vehicle profiles (moving + idle/garage) ---
+        n = 300
+        blocks.append(np.column_stack([
+            np.zeros(n),               # heart_rate (N/A)
+            rng.uniform(0, 80, n),     # speed (0 = parked)
+            rng.uniform(40, 100, n),   # fuel
+            np.full(n, 100.0),         # battery (N/A)
+        ]))
+
+        # --- Idle assets (all types, minimal values) ---
+        n = 100
+        blocks.append(np.column_stack([
+            rng.choice([0.0] * 60 + list(rng.uniform(60, 75, 40)), n),  # hr: 0 or resting
+            np.zeros(n),               # speed 0
+            rng.uniform(80, 100, n),   # fuel high
+            rng.uniform(80, 100, n),   # battery high
+        ]))
+
+        X_train = np.vstack(blocks)
+
+        n_total = X_train.shape[0]
         logger.info(
             "Training IsolationForest — %d samples, %d estimators, contamination=%.2f",
-            n_samples, ML_N_ESTIMATORS, ML_CONTAMINATION,
+            n_total, ML_N_ESTIMATORS, ML_CONTAMINATION,
         )
         t0 = time.time()
 
@@ -236,11 +274,12 @@ def rule_check(message: dict) -> Tuple[bool, str]:
 #                       HTTP FORWARDER
 # =============================================================================
 
-def _post_with_retry(url: str, json_data: dict, label: str) -> bool:
+def _post_with_retry(url: str, json_data: dict, label: str, timeout: int = None) -> bool:
     """POST JSON to url with retries.  Returns True on success."""
+    _timeout = timeout or HTTP_TIMEOUT
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            resp = requests.post(url, json=json_data, timeout=HTTP_TIMEOUT)
+            resp = requests.post(url, json=json_data, timeout=_timeout)
             if resp.status_code < 400:
                 logger.debug("[%s] ✔ %s  (HTTP %d)", label, url, resp.status_code)
                 return True
@@ -273,10 +312,10 @@ def forward_to_backend(raw_message: dict, classification: str, reason: str = "")
     _post_with_retry(BACKEND_URL, enriched, "BACKEND")
 
 
-def forward_to_ai(raw_message: dict, classification: str, reason: str = ""):
+def _build_ai_request(raw_message: dict) -> dict:
     """
-    Build an AnalysisRequest matching the AI Service's Pydantic schema
-    and POST to /analyze.
+    Build an AnalysisRequest dict matching the AI Service's Pydantic schema.
+    Returns None if domain is unknown.
     """
     domain = raw_message.get("domain", "unknown").lower()
     payload = raw_message.get("payload", {})
@@ -285,8 +324,12 @@ def forward_to_ai(raw_message: dict, classification: str, reason: str = ""):
     lat = position.get("lat", 0.0)
     lon = position.get("lon", 0.0)
 
-    # Build the polymorphic telemetry body the AI service expects
+    # Valid DroneMode values in AI schema: AUTO, MANUAL, RTH, LOITER, LANDING
+    VALID_DRONE_MODES = {"AUTO", "MANUAL", "RTH", "LOITER", "LANDING"}
+
     if domain == "drone":
+        raw_mode = payload.get("mode", "AUTO")
+        mode = raw_mode if raw_mode in VALID_DRONE_MODES else "LOITER"
         telemetry = {
             "type": "drone",
             "source_id": entity_id,
@@ -295,7 +338,7 @@ def forward_to_ai(raw_message: dict, classification: str, reason: str = ""):
             "altitude": position.get("alt_m", 0.0),
             "speed": payload.get("ground_speed_mps", 0.0),
             "battery_level": (payload.get("battery", {}) or {}).get("soc_pct", 100.0),
-            "mode": payload.get("mode", "AUTO"),
+            "mode": mode,
         }
     elif domain == "soldier":
         telemetry = {
@@ -320,21 +363,46 @@ def forward_to_ai(raw_message: dict, classification: str, reason: str = ""):
             "vehicle_type": "APC",
         }
     else:
-        logger.warning("Unknown domain '%s' — skipping AI forward", domain)
-        return
+        return None
 
-    analysis_request = {
+    return {
         "telemetry": telemetry,
         "include_context": True,
         "max_context_items": 3,
     }
 
-    success = _post_with_retry(AI_SERVICE_URL, analysis_request, "AI-SERVICE")
+
+def _do_ai_forward(analysis_request: dict, entity_id: str, classification: str, reason: str):
+    """Blocking AI call — runs in thread pool so it doesn't stall MQTT pipeline."""
+    success = _post_with_retry(AI_SERVICE_URL, analysis_request, "AI-SERVICE", timeout=AI_TIMEOUT)
     if success:
         logger.info(
-            "🧠 AI analysis requested — entity=%s classification=%s reason=%s",
+            "🧠 AI analysis complete — entity=%s classification=%s reason=%s",
             entity_id, classification, reason,
         )
+    else:
+        logger.warning(
+            "🧠 AI analysis FAILED — entity=%s classification=%s reason=%s",
+            entity_id, classification, reason,
+        )
+
+
+def forward_to_ai(raw_message: dict, classification: str, reason: str = ""):
+    """
+    Fire-and-forget: submit AI request to a background thread.
+    The MQTT processing pipeline continues immediately.
+    """
+    analysis_request = _build_ai_request(raw_message)
+    if analysis_request is None:
+        logger.warning("Unknown domain — skipping AI forward")
+        return
+
+    entity_id = raw_message.get("id", "UNKNOWN")
+    _ai_executor.submit(_do_ai_forward, analysis_request, entity_id, classification, reason)
+    logger.info(
+        "🧠 AI analysis dispatched (async) — entity=%s classification=%s",
+        entity_id, classification,
+    )
 
 
 # =============================================================================
