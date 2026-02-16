@@ -77,4 +77,30 @@ public interface TacticalAnalysisRepository extends JpaRepository<TacticalAnalys
      */
     @Query("SELECT ta FROM TacticalAnalysis ta WHERE ta.telemetry.sourceId = :sourceId ORDER BY ta.analyzedAt DESC")
     List<TacticalAnalysis> findByTelemetrySourceId(@Param("sourceId") String sourceId);
+
+    /**
+     * Find all analyses ordered by analyzed date (most recent first).
+     */
+    List<TacticalAnalysis> findAllByOrderByAnalyzedAtDesc();
+
+    /**
+     * Find top 50 most recent analyses.
+     */
+    List<TacticalAnalysis> findTop50ByOrderByAnalyzedAtDesc();
+
+    /**
+     * Find analyses by threat level ordered by analyzed date.
+     */
+    List<TacticalAnalysis> findByThreatLevelOrderByAnalyzedAtDesc(String threatLevel);
+
+    /**
+     * Find analyses for asset by source ID.
+     */
+    @Query("SELECT ta FROM TacticalAnalysis ta WHERE ta.telemetry.sourceId = :sourceId ORDER BY ta.analyzedAt DESC")
+    List<TacticalAnalysis> findByTelemetrySourceIdOrderByAnalyzedAtDesc(@Param("sourceId") String sourceId);
+
+    /**
+     * Find most recent analysis.
+     */
+    Optional<TacticalAnalysis> findTopByOrderByAnalyzedAtDesc();
 }

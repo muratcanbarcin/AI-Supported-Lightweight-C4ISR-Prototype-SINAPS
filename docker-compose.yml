@@ -20,32 +20,8 @@ services:
       timeout: 5s
       retries: 5
 
-  # AI Service - DISABLED for lighter startup (uncomment when needed)
-  # ai-service:
-  #   build:
-  #     context: ./ai-service
-  #     dockerfile: Dockerfile
-  #   container_name: c4isr-ai
-  #   restart: unless-stopped
-  #   environment:
-  #     DATABASE_URL: postgresql://admin:password@c4isr-db:5432/c4isr_db
-  #     HF_TOKEN: ${HF_TOKEN:-}
-  #   ports:
-  #     - "8000:8000"
-  #   volumes:
-  #     - ./ai-service/adapters:/app/adapters
-  #   networks:
-  #     - c4isr-network
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: 1
-  #             capabilities: [gpu]
+  # AI Service runs LOCALLY, not in Docker (faster startup, GPU support)
+  # To run: cd ai-service && python main.py
 
   mosquitto:
     image: eclipse-mosquitto:latest

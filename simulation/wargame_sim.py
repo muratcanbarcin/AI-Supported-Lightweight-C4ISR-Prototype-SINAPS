@@ -1,43 +1,53 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-EGE TATBIKATI - LIVE SIMULATION ENGINE
+EGE TATBIKATI - LIVE SIMULATION ENGINE (MQTT VERSION)
 ===============================================================================
 Real-time tactical simulation for Aegean Exercise scenario.
+Publishes telemetry to MQTT broker for Spring Boot backend to consume.
 
 Features:
 - 30 units (10 Drone, 10 Soldier, 10 Ground Vehicle)
 - Half in Izmir Barracks (IDLE) - minimal movement
 - Half in Aegean Exercise (EXERCISE) - active movement
-- Sends telemetry every 60 seconds (configurable)
-- All data persisted to PostgreSQL
+- Publishes to MQTT every 60 seconds (configurable)
+- Backend receives via MQTT -> AI Service -> Analysis
 
 Usage:
-    python wargame_sim.py [--interval SECONDS] [--backend URL]
+    python wargame_sim.py [--interval SECONDS] [--broker HOST:PORT]
     
-Default: 60 second intervals (1 minute)
+Default: 60 second intervals, localhost:1883
 ===============================================================================
 """
 
 import asyncio
-import aiohttp
 import json
 import math
 import random
 import argparse
 import signal
 from datetime import datetime, timezone
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
+from typing import List, Dict, Any
 from enum import Enum
+
+# MQTT Client
+import paho.mqtt.client as mqtt
 
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
-DEFAULT_BACKEND_URL = "http://localhost:8080/api/v1/telemetry"
+DEFAULT_BROKER_HOST = "localhost"
+DEFAULT_BROKER_PORT = 1883
 DEFAULT_INTERVAL = 60  # 1 minute
+
+# MQTT Topics (must match Spring Boot config)
+MQTT_TOPIC_TELEMETRY = "c4isr/telemetry"
+MQTT_TOPIC_DRONE = "drone/events"
+MQTT_TOPIC_SOLDIER = "soldier/events"
+MQTT_TOPIC_VEHICLE = "vehicle/events"
 
 
 class AssetType(Enum):
@@ -47,12 +57,8 @@ class AssetType(Enum):
 
 
 class OperationalStatus(Enum):
-    IDLE = "IDLE"           # Izmir Kisla
-    EXERCISE = "EXERCISE"   # Ege Tatbikat
-
-
-class Alignment(Enum):
-    FRIEND = "FRIEND"
+    IDLE = "IDLE"
+    EXERCISE = "EXERCISE"
 
 
 # =============================================================================
@@ -104,21 +110,25 @@ class SimulatedAsset:
     heart_rate: int = 70
     spo2: int = 98
     stress_level: str = "LOW"
+    body_temp: float = 36.5
     
     # Mission
     mission: str = "Bekleme"
     
-    def to_telemetry_message(self) -> Dict[str, Any]:
-        """Convert asset state to backend-compatible telemetry message."""
+    def to_mqtt_message(self) -> Dict[str, Any]:
+        """Convert asset state to MQTT message format."""
         timestamp = datetime.now(timezone.utc).isoformat()
+        
+        # Common position data
+        position = {
+            "lat": round(self.latitude, 6),
+            "lon": round(self.longitude, 6),
+            "alt_m": round(self.altitude, 1),
+        }
         
         if self.asset_type == AssetType.DRONE:
             payload = {
-                "position": {
-                    "lat": round(self.latitude, 6),
-                    "lon": round(self.longitude, 6),
-                    "alt_m": round(self.altitude, 1),
-                },
+                "position": position,
                 "yaw_deg": round(self.heading, 1),
                 "ground_speed_mps": round(self.speed * 0.277778, 1),
                 "mode": "STANDBY" if self.status == OperationalStatus.IDLE else "AUTO",
@@ -129,27 +139,19 @@ class SimulatedAsset:
             }
         elif self.asset_type == AssetType.SOLDIER:
             payload = {
-                "position": {
-                    "lat": round(self.latitude, 6),
-                    "lon": round(self.longitude, 6),
-                    "alt_m": round(self.altitude, 1),
-                },
+                "position": position,
                 "heart_rate": self.heart_rate,
                 "spo2": self.spo2,
                 "stress_level": self.stress_level,
-                "body_temp": round(random.uniform(36.2, 37.2), 1),
+                "body_temp": round(self.body_temp, 1),
                 "device": {"battery_pct": self.battery_level},
                 "alignment": "FRIEND",
                 "threat_level": 0,
                 "mission": self.mission,
             }
-        else:  # VEHICLE (Ground vehicles)
+        else:  # VEHICLE
             payload = {
-                "position": {
-                    "lat": round(self.latitude, 6),
-                    "lon": round(self.longitude, 6),
-                    "alt_m": round(self.altitude, 1),
-                },
+                "position": position,
                 "speed_kph": round(self.speed, 1),
                 "heading": round(self.heading, 1),
                 "fuel_pct": self.fuel_level,
@@ -167,6 +169,15 @@ class SimulatedAsset:
             "time": timestamp,
             "payload": payload,
         }
+    
+    def get_mqtt_topic(self) -> str:
+        """Get the MQTT topic for this asset type."""
+        if self.asset_type == AssetType.DRONE:
+            return MQTT_TOPIC_DRONE
+        elif self.asset_type == AssetType.SOLDIER:
+            return MQTT_TOPIC_SOLDIER
+        else:
+            return MQTT_TOPIC_VEHICLE
 
 
 # =============================================================================
@@ -175,21 +186,19 @@ class SimulatedAsset:
 
 def update_idle_asset(asset: SimulatedAsset):
     """Assets in Izmir Barracks - minimal movement."""
-    # Very small position jitter (people walking around base)
     asset.latitude += random.uniform(-0.00005, 0.00005)
     asset.longitude += random.uniform(-0.00005, 0.00005)
     asset.speed = 0
     asset.altitude = 0 if asset.asset_type != AssetType.DRONE else random.uniform(0, 10)
     
-    # Resources stay high (charging/refueling)
     asset.battery_level = min(100, asset.battery_level + random.randint(0, 2))
     asset.fuel_level = min(100, asset.fuel_level + random.randint(0, 2))
     
-    # Soldiers resting
     if asset.asset_type == AssetType.SOLDIER:
         asset.heart_rate = random.randint(60, 75)
         asset.spo2 = random.randint(97, 99)
         asset.stress_level = "LOW"
+        asset.body_temp = round(random.uniform(36.2, 36.8), 1)
         asset.mission = "Kisla Gorevi"
     elif asset.asset_type == AssetType.DRONE:
         asset.mission = "Hangar Bekleme"
@@ -204,14 +213,11 @@ def update_exercise_asset(asset: SimulatedAsset):
     radius_km = zone.get("patrol_radius_km", 5)
     radius_deg = radius_km * 0.009
     
-    # Circular/patrol movement with variation
     asset.patrol_angle += random.uniform(0.02, 0.06)
     if asset.patrol_angle > 2 * math.pi:
         asset.patrol_angle -= 2 * math.pi
     
-    # Different behavior per asset type
     if asset.asset_type == AssetType.DRONE:
-        # High altitude reconnaissance pattern
         offset_lat = radius_deg * math.cos(asset.patrol_angle) * random.uniform(0.8, 1.2)
         offset_lon = radius_deg * math.sin(asset.patrol_angle) * random.uniform(0.8, 1.2)
         asset.latitude = center_lat + offset_lat
@@ -223,31 +229,28 @@ def update_exercise_asset(asset: SimulatedAsset):
         asset.mission = "Kesif Ucusu"
         
     elif asset.asset_type == AssetType.SOLDIER:
-        # Infantry patrol / exercise
         offset_lat = (radius_deg * 0.4) * math.cos(asset.patrol_angle) * random.uniform(0.9, 1.1)
         offset_lon = (radius_deg * 0.4) * math.sin(asset.patrol_angle) * random.uniform(0.9, 1.1)
         asset.latitude = center_lat + offset_lat
         asset.longitude = center_lon + offset_lon
-        asset.altitude = random.uniform(100, 400)  # Hilly terrain
+        asset.altitude = random.uniform(100, 400)
         asset.speed = random.uniform(3, 8)
-        asset.heart_rate = random.randint(90, 130)
-        asset.spo2 = random.randint(94, 98)
+        asset.heart_rate = random.randint(90, 140)
+        asset.spo2 = random.randint(93, 98)
         asset.stress_level = random.choice(["MEDIUM", "MEDIUM", "HIGH"])
+        asset.body_temp = round(random.uniform(36.8, 37.8), 1)
         asset.battery_level = max(30, asset.battery_level - random.randint(0, 1))
         asset.mission = "Arazi Tatbikati"
         
-    else:  # VEHICLE (Ground vehicles - tanks, MRAPs, etc.)
-        # Armored vehicle patrol
+    else:  # VEHICLE
         offset_lat = radius_deg * math.cos(asset.patrol_angle + random.uniform(-0.1, 0.1))
         offset_lon = radius_deg * math.sin(asset.patrol_angle + random.uniform(-0.1, 0.1))
         asset.latitude = center_lat + offset_lat
         asset.longitude = center_lon + offset_lon
-        asset.altitude = random.uniform(50, 300)  # Terrain elevation
-        asset.speed = random.uniform(25, 55)  # km/h
+        asset.altitude = random.uniform(50, 300)
+        asset.speed = random.uniform(25, 55)
         asset.heading = math.degrees(asset.patrol_angle + math.pi / 2) % 360
         asset.fuel_level = max(40, asset.fuel_level - random.randint(0, 1))
-        
-        # Random mission types for vehicles
         missions = ["Arazi Devriye", "Konvoy Harekati", "Hedef Atisi", "Manevra"]
         asset.mission = random.choice(missions)
 
@@ -332,7 +335,7 @@ def generate_assets() -> List[SimulatedAsset]:
             patrol_angle=random.uniform(0, 2 * math.pi),
         ))
     
-    # 10 Vehicles (Ground vehicles)
+    # 10 Vehicles
     vehicle_units = [
         ("ALTAY-01", "Altay Tank 1"),
         ("ALTAY-02", "Altay Tank 2"),
@@ -368,17 +371,41 @@ def generate_assets() -> List[SimulatedAsset]:
 
 
 # =============================================================================
+# MQTT CLIENT CALLBACKS
+# =============================================================================
+
+def on_connect(client, userdata, flags, rc, properties=None):
+    """Callback when connected to MQTT broker."""
+    if rc == 0:
+        print("[MQTT] Connected to broker successfully!")
+    else:
+        print(f"[MQTT] Connection failed with code: {rc}")
+
+
+def on_disconnect(client, userdata, rc, properties=None):
+    """Callback when disconnected from MQTT broker."""
+    print(f"[MQTT] Disconnected from broker (rc={rc})")
+
+
+def on_publish(client, userdata, mid, properties=None):
+    """Callback when message is published."""
+    pass  # Quiet
+
+
+# =============================================================================
 # SIMULATION ENGINE
 # =============================================================================
 
 class EgeTatbikatiSimulator:
-    """Main simulation engine."""
+    """Main simulation engine with MQTT publishing."""
     
-    def __init__(self, backend_url: str, interval: float):
-        self.backend_url = backend_url
+    def __init__(self, broker_host: str, broker_port: int, interval: float):
+        self.broker_host = broker_host
+        self.broker_port = broker_port
         self.interval = interval
         self.assets: List[SimulatedAsset] = []
         self.running = False
+        self.mqtt_client: mqtt.Client = None
         self.stats = {
             "messages_sent": 0,
             "errors": 0,
@@ -386,12 +413,37 @@ class EgeTatbikatiSimulator:
             "cycles": 0,
         }
     
+    def connect_mqtt(self) -> bool:
+        """Connect to MQTT broker."""
+        try:
+            self.mqtt_client = mqtt.Client(
+                client_id=f"c4isr-simulation-{random.randint(1000, 9999)}",
+                protocol=mqtt.MQTTv5
+            )
+            self.mqtt_client.on_connect = on_connect
+            self.mqtt_client.on_disconnect = on_disconnect
+            self.mqtt_client.on_publish = on_publish
+            
+            print(f"[MQTT] Connecting to {self.broker_host}:{self.broker_port}...")
+            self.mqtt_client.connect(self.broker_host, self.broker_port, keepalive=60)
+            self.mqtt_client.loop_start()
+            return True
+        except Exception as e:
+            print(f"[MQTT] Connection error: {e}")
+            return False
+    
+    def disconnect_mqtt(self):
+        """Disconnect from MQTT broker."""
+        if self.mqtt_client:
+            self.mqtt_client.loop_stop()
+            self.mqtt_client.disconnect()
+            print("[MQTT] Disconnected.")
+    
     def initialize(self):
         """Initialize the simulation."""
-        print("Initializing Ege Tatbikati Simulation...")
+        print("\nInitializing Ege Tatbikati Simulation...")
         self.assets = generate_assets()
         
-        # Count by status
         idle_count = len([a for a in self.assets if a.status == OperationalStatus.IDLE])
         exercise_count = len([a for a in self.assets if a.status == OperationalStatus.EXERCISE])
         
@@ -400,74 +452,73 @@ class EgeTatbikatiSimulator:
         print(f"   Izmir Kisla (IDLE): {idle_count}")
         print(f"   Ege Tatbikat (EXERCISE): {exercise_count}")
         
-        # Count by type
         print(f"\nAsset Types:")
         print(f"   Drones: {len([a for a in self.assets if a.asset_type == AssetType.DRONE])}")
         print(f"   Soldiers: {len([a for a in self.assets if a.asset_type == AssetType.SOLDIER])}")
         print(f"   Vehicles: {len([a for a in self.assets if a.asset_type == AssetType.VEHICLE])}")
     
-    async def update_assets(self):
+    def update_assets(self):
         """Update all asset positions and states."""
         for asset in self.assets:
             update_fn = UPDATE_FUNCTIONS.get(asset.status)
             if update_fn:
                 update_fn(asset)
     
-    async def send_telemetry(self, session: aiohttp.ClientSession, asset: SimulatedAsset):
-        """Send single asset telemetry to backend."""
+    def publish_telemetry(self, asset: SimulatedAsset) -> bool:
+        """Publish asset telemetry via MQTT."""
         try:
-            message = asset.to_telemetry_message()
-            async with session.post(self.backend_url, json=message) as response:
-                if response.status == 200:
-                    self.stats["messages_sent"] += 1
-                else:
-                    self.stats["errors"] += 1
-                    if self.stats["errors"] <= 3:
-                        text = await response.text()
-                        print(f"\nError sending {asset.id}: {response.status}")
+            message = asset.to_mqtt_message()
+            topic = asset.get_mqtt_topic()
+            payload = json.dumps(message, ensure_ascii=False)
+            
+            result = self.mqtt_client.publish(topic, payload, qos=1)
+            
+            if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                self.stats["messages_sent"] += 1
+                return True
+            else:
+                self.stats["errors"] += 1
+                return False
         except Exception as e:
             self.stats["errors"] += 1
-            if self.stats["errors"] <= 3:
-                print(f"\nConnection error: {e}")
+            if self.stats["errors"] <= 5:
+                print(f"\n[ERROR] Publish failed for {asset.id}: {e}")
+            return False
     
-    async def send_all_telemetry(self, session: aiohttp.ClientSession):
-        """Send telemetry for all assets."""
-        tasks = [self.send_telemetry(session, asset) for asset in self.assets]
-        await asyncio.gather(*tasks)
+    def publish_all_telemetry(self):
+        """Publish telemetry for all assets."""
+        for asset in self.assets:
+            self.publish_telemetry(asset)
     
     async def run_simulation_loop(self):
-        """Main simulation loop."""
+        """Main async simulation loop."""
         self.running = True
         self.stats["start_time"] = datetime.now()
         
-        connector = aiohttp.TCPConnector(limit=50)
-        timeout = aiohttp.ClientTimeout(total=30)
-        
-        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-            while self.running:
-                self.stats["cycles"] += 1
-                cycle_start = datetime.now()
-                
-                # Update all asset states
-                await self.update_assets()
-                
-                # Send telemetry
-                await self.send_all_telemetry(session)
-                
-                # Print status
-                elapsed = (datetime.now() - self.stats["start_time"]).total_seconds()
-                elapsed_min = elapsed / 60
-                
-                print(f"\rCycle {self.stats['cycles']:03d} | "
-                      f"Sent: {self.stats['messages_sent']:,} | "
-                      f"Errors: {self.stats['errors']} | "
-                      f"Runtime: {elapsed_min:.1f} min | "
-                      f"Next in {self.interval}s...", end="", flush=True)
-                
-                # Wait for next cycle
-                cycle_duration = (datetime.now() - cycle_start).total_seconds()
-                sleep_time = max(0, self.interval - cycle_duration)
-                await asyncio.sleep(sleep_time)
+        while self.running:
+            self.stats["cycles"] += 1
+            cycle_start = datetime.now()
+            
+            # Update all asset states
+            self.update_assets()
+            
+            # Publish telemetry via MQTT
+            self.publish_all_telemetry()
+            
+            # Print status
+            elapsed = (datetime.now() - self.stats["start_time"]).total_seconds()
+            elapsed_min = elapsed / 60
+            
+            print(f"\rCycle {self.stats['cycles']:03d} | "
+                  f"Published: {self.stats['messages_sent']:,} | "
+                  f"Errors: {self.stats['errors']} | "
+                  f"Runtime: {elapsed_min:.1f} min | "
+                  f"Next in {self.interval}s...", end="", flush=True)
+            
+            # Wait for next cycle
+            cycle_duration = (datetime.now() - cycle_start).total_seconds()
+            sleep_time = max(0, self.interval - cycle_duration)
+            await asyncio.sleep(sleep_time)
         
         print("\n\nSimulation stopped.")
     
@@ -481,21 +532,32 @@ class EgeTatbikatiSimulator:
 # =============================================================================
 
 async def main():
-    parser = argparse.ArgumentParser(description="Ege Tatbikati Simulation Engine")
+    parser = argparse.ArgumentParser(description="Ege Tatbikati Simulation (MQTT)")
     parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL,
                         help=f"Update interval in seconds (default: {DEFAULT_INTERVAL})")
-    parser.add_argument("--backend", type=str, default=DEFAULT_BACKEND_URL,
-                        help=f"Backend API URL (default: {DEFAULT_BACKEND_URL})")
+    parser.add_argument("--broker-host", type=str, default=DEFAULT_BROKER_HOST,
+                        help=f"MQTT broker host (default: {DEFAULT_BROKER_HOST})")
+    parser.add_argument("--broker-port", type=int, default=DEFAULT_BROKER_PORT,
+                        help=f"MQTT broker port (default: {DEFAULT_BROKER_PORT})")
     args = parser.parse_args()
     
     print("=" * 60)
-    print("EGE TATBIKATI SIMULATION ENGINE")
+    print("EGE TATBIKATI SIMULATION ENGINE (MQTT)")
     print("=" * 60)
-    print(f"Backend: {args.backend}")
+    print(f"MQTT Broker: {args.broker_host}:{args.broker_port}")
     print(f"Interval: {args.interval}s ({args.interval/60:.1f} min)")
+    print(f"Topics: {MQTT_TOPIC_DRONE}, {MQTT_TOPIC_SOLDIER}, {MQTT_TOPIC_VEHICLE}")
     print("=" * 60)
     
-    simulator = EgeTatbikatiSimulator(args.backend, args.interval)
+    simulator = EgeTatbikatiSimulator(args.broker_host, args.broker_port, args.interval)
+    
+    # Connect to MQTT
+    if not simulator.connect_mqtt():
+        print("\nFailed to connect to MQTT broker. Make sure Mosquitto is running.")
+        print("Run: docker compose up -d")
+        return
+    
+    # Initialize assets
     simulator.initialize()
     
     # Handle graceful shutdown
@@ -508,14 +570,17 @@ async def main():
     
     print("\n" + "=" * 60)
     print("Starting simulation... (Press Ctrl+C to stop)")
-    print("   Each unit sends data every 60 seconds")
+    print("Each unit sends data every 60 seconds via MQTT")
     print("=" * 60 + "\n")
     
-    await simulator.run_simulation_loop()
+    try:
+        await simulator.run_simulation_loop()
+    finally:
+        simulator.disconnect_mqtt()
     
     # Final stats
     print("\nFinal Statistics:")
-    print(f"   Total Messages Sent: {simulator.stats['messages_sent']:,}")
+    print(f"   Total Messages Published: {simulator.stats['messages_sent']:,}")
     print(f"   Total Errors: {simulator.stats['errors']}")
     print(f"   Total Cycles: {simulator.stats['cycles']}")
     if simulator.stats["start_time"]:
