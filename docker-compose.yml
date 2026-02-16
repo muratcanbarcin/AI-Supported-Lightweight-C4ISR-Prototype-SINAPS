@@ -37,6 +37,25 @@ services:
     networks:
       - c4isr-network
 
+  # -------------------------------------------------------------------
+  # Edge AI Middleware (IsolationForest anomaly detection + MQTT router)
+  # -------------------------------------------------------------------
+  middleware:
+    build: ./middleware
+    container_name: c4isr-middleware
+    restart: unless-stopped
+    environment:
+      MQTT_BROKER_HOST: c4isr-mqtt
+      MQTT_BROKER_PORT: 1883
+      MQTT_TOPIC: c4isr/telemetry
+      BACKEND_URL: http://c4isr-backend:8080/api/v1/telemetry
+      AI_SERVICE_URL: http://host.docker.internal:8000/analyze
+      LOG_LEVEL: INFO
+    depends_on:
+      - mosquitto
+    networks:
+      - c4isr-network
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: c4isr-pgadmin

@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
 ===============================================================================
-EGE TATBIKATI - LIVE SIMULATION ENGINE (MQTT VERSION)
+EGE TATBIKATI - LIVE SIMULATION ENGINE (MQTT — FIRE & FORGET)
 ===============================================================================
 Real-time tactical simulation for Aegean Exercise scenario.
-Publishes telemetry to MQTT broker for Spring Boot backend to consume.
+Publishes ALL telemetry to the unified MQTT topic `c4isr/telemetry`.
+The Middleware service subscribes, applies Edge AI anomaly detection, and
+routes messages to the Backend and/or AI Service automatically.
 
 Features:
 - 30 units (10 Drone, 10 Soldier, 10 Ground Vehicle)
 - Half in Izmir Barracks (IDLE) - minimal movement
 - Half in Aegean Exercise (EXERCISE) - active movement
 - Publishes to MQTT every 60 seconds (configurable)
-- Backend receives via MQTT -> AI Service -> Analysis
+- Fire-and-Forget: no HTTP, no direct backend calls
 
 Usage:
-    python wargame_sim.py [--interval SECONDS] [--broker HOST:PORT]
-    
+    python wargame_sim.py [--interval SECONDS] [--broker-host HOST] [--broker-port PORT]
+
 Default: 60 second intervals, localhost:1883
 ===============================================================================
 """
@@ -43,11 +45,8 @@ DEFAULT_BROKER_HOST = "localhost"
 DEFAULT_BROKER_PORT = 1883
 DEFAULT_INTERVAL = 60  # 1 minute
 
-# MQTT Topics (must match Spring Boot config)
+# MQTT Topic — unified for Middleware consumption
 MQTT_TOPIC_TELEMETRY = "c4isr/telemetry"
-MQTT_TOPIC_DRONE = "drone/events"
-MQTT_TOPIC_SOLDIER = "soldier/events"
-MQTT_TOPIC_VEHICLE = "vehicle/events"
 
 
 class AssetType(Enum):
@@ -171,13 +170,8 @@ class SimulatedAsset:
         }
     
     def get_mqtt_topic(self) -> str:
-        """Get the MQTT topic for this asset type."""
-        if self.asset_type == AssetType.DRONE:
-            return MQTT_TOPIC_DRONE
-        elif self.asset_type == AssetType.SOLDIER:
-            return MQTT_TOPIC_SOLDIER
-        else:
-            return MQTT_TOPIC_VEHICLE
+        """All telemetry goes to the unified topic for Middleware processing."""
+        return MQTT_TOPIC_TELEMETRY
 
 
 # =============================================================================
@@ -546,7 +540,7 @@ async def main():
     print("=" * 60)
     print(f"MQTT Broker: {args.broker_host}:{args.broker_port}")
     print(f"Interval: {args.interval}s ({args.interval/60:.1f} min)")
-    print(f"Topics: {MQTT_TOPIC_DRONE}, {MQTT_TOPIC_SOLDIER}, {MQTT_TOPIC_VEHICLE}")
+    print(f"Topic: {MQTT_TOPIC_TELEMETRY} (unified — Middleware routes)")
     print("=" * 60)
     
     simulator = EgeTatbikatiSimulator(args.broker_host, args.broker_port, args.interval)
@@ -570,7 +564,7 @@ async def main():
     
     print("\n" + "=" * 60)
     print("Starting simulation... (Press Ctrl+C to stop)")
-    print("Each unit sends data every 60 seconds via MQTT")
+    print("Each unit publishes to c4isr/telemetry — Middleware handles routing")
     print("=" * 60 + "\n")
     
     try:
