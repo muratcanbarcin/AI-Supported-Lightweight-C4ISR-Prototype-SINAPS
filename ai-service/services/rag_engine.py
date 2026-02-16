@@ -12,6 +12,7 @@ This module handles:
 """
 
 import time
+import json
 from typing import List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -118,13 +119,13 @@ class RAGEngine:
         
         # Generate embedding for the event description
         embedding = self._generate_embedding(event_description)
-        embedding_str = f"[{','.join(str(x) for x in embedding)}]"
+        embedding_str = json.dumps(embedding)  # Store as JSON text, not vector
         
-        # Insert into database
+        # Insert into database (using actual column names from seed schema)
         insert_query = """
             INSERT INTO tactical_memory 
-            (event_description, embedding, outcome, source_platform, threat_category, confidence_score, timestamp)
-            VALUES (%s, %s::vector, %s, %s, %s, %s, %s)
+            (event_description, embedding, outcome, source_id, event_type, timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
         """
         
@@ -135,9 +136,8 @@ class RAGEngine:
                     event_description,
                     embedding_str,
                     outcome,
-                    source_platform,
-                    threat_category,
-                    confidence_score,
+                    source_platform,   # maps to source_id column
+                    threat_category,   # maps to event_type column
                     datetime.utcnow()
                 )
             )
@@ -189,40 +189,33 @@ class RAGEngine:
         query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
         
         # Build the similarity search query
-        # Using <=> operator for cosine distance (1 - cosine_similarity)
-        # Lower distance = higher similarity
+        # Since pgvector is not installed, use simple text-based retrieval
+        # (ordered by most recent, filtered by source_id if applicable)
         base_query = """
             SELECT 
                 id,
                 event_description,
                 outcome,
-                source_platform,
-                threat_category,
-                timestamp,
-                1 - (embedding <=> %s::vector) AS similarity_score
+                source_id,
+                event_type,
+                timestamp
             FROM tactical_memory
-            WHERE embedding IS NOT NULL
+            WHERE event_description IS NOT NULL
         """
         
-        params = [query_embedding_str]
+        params = []
         
-        # Add threat category filter if specified
+        # Add source_id filter if specified (replaces threat_category_filter)
         if threat_category_filter:
-            base_query += " AND threat_category = %s"
-            params.append(threat_category_filter)
+            base_query += " AND (event_type = %s OR source_id = %s)"
+            params.extend([threat_category_filter, threat_category_filter])
         
-        # Filter by minimum similarity (convert to max distance)
-        if min_similarity > 0:
-            base_query += f" AND (1 - (embedding <=> %s::vector)) >= %s"
-            params.append(query_embedding_str)
-            params.append(min_similarity)
-        
-        # Order by similarity (ascending distance = descending similarity)
+        # Order by most recent and limit
         base_query += """
-            ORDER BY embedding <=> %s::vector
+            ORDER BY timestamp DESC NULLS LAST
             LIMIT %s
         """
-        params.extend([query_embedding_str, limit])
+        params.append(limit)
         
         results = []
         try:
@@ -235,10 +228,10 @@ class RAGEngine:
                         'id': row['id'],
                         'event_description': row['event_description'],
                         'outcome': row['outcome'],
-                        'source_platform': row['source_platform'],
-                        'threat_category': row['threat_category'],
+                        'source_id': row['source_id'],
+                        'event_type': row['event_type'],
                         'timestamp': row['timestamp'].isoformat() if row['timestamp'] else None,
-                        'similarity_score': round(float(row['similarity_score']), 4)
+                        'similarity_score': 0.8  # Placeholder since no pgvector
                     })
         except Exception as e:
             logger.warning(f"Database query failed, returning empty context: {e}")
@@ -262,7 +255,7 @@ class RAGEngine:
                 SELECT 
                     COUNT(*) as total_events,
                     COUNT(embedding) as events_with_embeddings,
-                    COUNT(DISTINCT threat_category) as unique_threat_categories,
+                    COUNT(DISTINCT event_type) as unique_event_types,
                     MIN(timestamp) as oldest_event,
                     MAX(timestamp) as newest_event
                 FROM tactical_memory
@@ -272,7 +265,7 @@ class RAGEngine:
             return {
                 'total_events': result['total_events'],
                 'events_with_embeddings': result['events_with_embeddings'],
-                'unique_threat_categories': result['unique_threat_categories'],
+                'unique_event_types': result['unique_event_types'],
                 'oldest_event': result['oldest_event'].isoformat() if result['oldest_event'] else None,
                 'newest_event': result['newest_event'].isoformat() if result['newest_event'] else None
             }
@@ -298,11 +291,11 @@ class RAGEngine:
         updated_count = 0
         for row in rows:
             embedding = self._generate_embedding(row['event_description'])
-            embedding_str = f"[{','.join(str(x) for x in embedding)}]"
+            embedding_str = json.dumps(embedding)
             
             with db_manager.get_cursor() as cursor:
                 cursor.execute(
-                    "UPDATE tactical_memory SET embedding = %s::vector WHERE id = %s",
+                    "UPDATE tactical_memory SET embedding = %s WHERE id = %s",
                     (embedding_str, row['id'])
                 )
             updated_count += 1

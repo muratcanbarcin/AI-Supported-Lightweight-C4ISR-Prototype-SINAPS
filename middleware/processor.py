@@ -39,7 +39,7 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 import numpy as np
 import requests
@@ -387,17 +387,34 @@ def _do_ai_forward(analysis_request: dict, entity_id: str, classification: str, 
         )
 
 
+# Per-asset cooldown tracker: {entity_id: last_dispatch_timestamp}
+_ai_cooldown: Dict[str, float] = {}
+_AI_COOLDOWN_SECONDS = 60  # Don't re-analyze same asset within 60s
+
+
 def forward_to_ai(raw_message: dict, classification: str, reason: str = ""):
     """
     Fire-and-forget: submit AI request to a background thread.
-    The MQTT processing pipeline continues immediately.
+    Includes per-asset cooldown to prevent flooding the LLM (~12s/inference).
     """
+    entity_id = raw_message.get("id", "UNKNOWN")
+
+    # Cooldown check — skip if same asset was dispatched recently
+    now = time.time()
+    last_dispatch = _ai_cooldown.get(entity_id, 0)
+    if (now - last_dispatch) < _AI_COOLDOWN_SECONDS:
+        remaining = int(_AI_COOLDOWN_SECONDS - (now - last_dispatch))
+        logger.debug(
+            "⏳ AI cooldown active — %s skipped (%ds remaining)", entity_id, remaining
+        )
+        return
+
     analysis_request = _build_ai_request(raw_message)
     if analysis_request is None:
         logger.warning("Unknown domain — skipping AI forward")
         return
 
-    entity_id = raw_message.get("id", "UNKNOWN")
+    _ai_cooldown[entity_id] = now
     _ai_executor.submit(_do_ai_forward, analysis_request, entity_id, classification, reason)
     logger.info(
         "🧠 AI analysis dispatched (async) — entity=%s classification=%s",

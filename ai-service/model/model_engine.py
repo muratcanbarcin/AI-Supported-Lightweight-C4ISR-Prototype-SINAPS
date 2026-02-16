@@ -577,29 +577,58 @@ Analyze this telemetry data and provide your assessment in the required JSON for
         """
         Fallback text-based parsing when JSON parsing fails.
         Extracts structured data from free-form text.
+        Always captures the full response as reasoning.
         """
-        decision = response
+        decision = "MONITOR"
         threat_level = ThreatLevel.UNKNOWN
         confidence = 0.5
-        reasoning = ""
+        # CRITICAL FIX: Use full response as reasoning instead of empty string
+        reasoning = response.strip()[:1000] if response.strip() else "AI response could not be parsed"
         
         lines = response.split('\n')
+        found_decision = False
+        found_threat = False
+        reasoning_parts = []
+        
         for line in lines:
             upper_line = line.strip().upper()
             
-            if "THREAT" in upper_line and ":" in line:
+            if not found_threat and "THREAT" in upper_line and ":" in line:
                 # Extract threat level from text
                 for t in ThreatLevel:
                     if t.value in upper_line:
                         threat_level = t
                         confidence = self._calculate_confidence(t)
+                        found_threat = True
                         break
             
-            elif upper_line.startswith("DECISION:"):
+            elif not found_decision and ("DECISION" in upper_line) and ":" in line:
                 decision = line.split(":", 1)[1].strip()
+                if decision:
+                    found_decision = True
             
-            elif upper_line.startswith("REASONING:"):
-                reasoning = line.split(":", 1)[1].strip()
+            elif "REASON" in upper_line and ":" in line:
+                reasoning_parts.append(line.split(":", 1)[1].strip())
+        
+        # If we found explicit reasoning lines, use those instead of full text
+        if reasoning_parts:
+            reasoning = " ".join(reasoning_parts)
+        
+        # Also try to extract threat from common patterns in the full text
+        if not found_threat:
+            upper_response = response.upper()
+            if "CRITICAL" in upper_response:
+                threat_level = ThreatLevel.CRITICAL
+                confidence = 0.85
+            elif "HIGH" in upper_response and ("THREAT" in upper_response or "RISK" in upper_response):
+                threat_level = ThreatLevel.HIGH
+                confidence = 0.80
+            elif "MEDIUM" in upper_response:
+                threat_level = ThreatLevel.MEDIUM
+                confidence = 0.75
+            elif "LOW" in upper_response:
+                threat_level = ThreatLevel.LOW
+                confidence = 0.80
         
         return decision, threat_level, confidence, reasoning
     
