@@ -1,22 +1,27 @@
 """
-RAG Engine - Retrieval-Augmented Generation for Tactical Memory
+RAG Engine — Retrieval-Augmented Generation for C4ISR Tactical Memory
 ============================================================================
-SECURITY: OFFLINE MODE - Models loaded from local directory only.
+SECURITY: OFFLINE MODE — Embedding model loaded from local directory only.
            No external network calls permitted.
 ============================================================================
 
-This module handles:
-1. Converting tactical events to vector embeddings (LOCAL MODEL)
-2. Storing events in PostgreSQL with pgvector
-3. Retrieving similar historical events for context-aware decisions
+Pipeline:
+    1. Convert tactical query to 384-dim embedding (all-MiniLM-L6-v2)
+    2. Search PostgreSQL pgvector with cosine similarity (<=> operator)
+    3. Return top-K engagement rules / historical context for Gemma prompt
+
+Schema (tactical_memory):
+    id          BIGSERIAL PRIMARY KEY
+    context     TEXT NOT NULL          — natural language rule / event
+    embedding   vector(384)           — all-MiniLM-L6-v2 output
+    category    VARCHAR(100)          — ENGAGEMENT_RULE, SOP, HISTORICAL_EVENT
+    source      VARCHAR(200)          — origin document / platform
+    created_at  TIMESTAMP
 """
 
 import time
-import json
-from typing import List, Optional, Tuple
-from datetime import datetime
+from typing import List, Optional
 from pathlib import Path
-import numpy as np
 from sentence_transformers import SentenceTransformer
 import structlog
 
@@ -25,284 +30,199 @@ from config.database import db_manager
 
 logger = structlog.get_logger(__name__)
 
-# Offline model path - NO INTERNET ACCESS
+# ── Offline model path — NO INTERNET ACCESS ──────────────────────────
 LOCAL_EMBEDDING_MODEL_PATH = Path("./local_models/embedding")
 
 
 class RAGEngine:
     """
-    Retrieval-Augmented Generation Engine for tactical decision support
-    
-    SECURITY: Uses locally stored SentenceTransformer model.
-              No external API calls or downloads permitted.
+    Retrieval-Augmented Generation engine backed by PostgreSQL + pgvector.
+
+    Usage:
+        rag_engine.initialize()                      # load embedding model
+        results = rag_engine.search("drone low battery", top_k=3)
+        # → [{"context": "If UAV battery < 20% ...", "score": 0.87}, ...]
     """
-    
+
     def __init__(self):
         self._model: Optional[SentenceTransformer] = None
         self._initialized: bool = False
-    
+
+    # ── Lifecycle ─────────────────────────────────────────────────────
+
     def initialize(self) -> None:
-        """Initialize the embedding model from LOCAL directory (air-gapped mode)"""
+        """Load the embedding model from local directory (air-gapped mode)."""
         if self._initialized:
             logger.info("RAG Engine already initialized")
             return
-        
-        # SECURITY CHECK: Verify local model exists
+
         if not LOCAL_EMBEDDING_MODEL_PATH.exists():
-            error_msg = (
-                f"OFFLINE MODELS NOT FOUND at {LOCAL_EMBEDDING_MODEL_PATH.absolute()}. "
-                "Run 'python download_models.py' on a machine with internet access, "
-                "then transfer the 'local_models' folder to this secure environment."
+            raise FileNotFoundError(
+                f"OFFLINE EMBEDDING MODEL NOT FOUND at {LOCAL_EMBEDDING_MODEL_PATH.absolute()}. "
+                "Run 'python download_models.py' on a machine with internet, "
+                "then transfer 'local_models/' to this secure environment."
             )
-            logger.error(error_msg)
-            raise FileNotFoundError(error_msg)
-        
-        try:
-            logger.info(
-                "Loading embedding model from LOCAL directory (OFFLINE MODE)",
-                model_path=str(LOCAL_EMBEDDING_MODEL_PATH.absolute())
-            )
-            # Load from local path - NO NETWORK CALLS
-            self._model = SentenceTransformer(str(LOCAL_EMBEDDING_MODEL_PATH))
-            self._initialized = True
-            logger.info(
-                "Embedding model loaded successfully (OFFLINE)",
-                embedding_dim=settings.EMBEDDING_DIMENSION
-            )
-        except Exception as e:
-            logger.error("Failed to load local embedding model", error=str(e))
-            raise
-    
-    def _ensure_initialized(self) -> None:
-        """Ensure the engine is initialized before use"""
+
+        logger.info(
+            "Loading embedding model (OFFLINE)",
+            path=str(LOCAL_EMBEDDING_MODEL_PATH.absolute()),
+        )
+        self._model = SentenceTransformer(str(LOCAL_EMBEDDING_MODEL_PATH))
+        self._initialized = True
+        logger.info(
+            "✅ Embedding model loaded",
+            dim=settings.EMBEDDING_DIMENSION,
+        )
+
+    def _ensure_ready(self) -> None:
         if not self._initialized or self._model is None:
             raise RuntimeError("RAG Engine not initialized. Call initialize() first.")
-    
-    def _generate_embedding(self, text: str) -> List[float]:
-        """
-        Generate embedding vector for given text
-        
-        Args:
-            text: Input text to embed
-            
-        Returns:
-            List of floats representing the embedding vector
-        """
-        self._ensure_initialized()
-        embedding = self._model.encode(text, convert_to_numpy=True)
-        return embedding.tolist()
-    
-    def ingest_event(
-        self,
-        event_description: str,
-        outcome: str,
-        source_platform: Optional[str] = None,
-        threat_category: Optional[str] = None,
-        confidence_score: float = 0.0
-    ) -> int:
-        """
-        Ingest a tactical event into memory with its embedding
-        
-        Args:
-            event_description: Description of the tactical event
-            outcome: The correct action/response taken
-            source_platform: Platform that detected the event
-            threat_category: Category of threat (HOSTILE, UNKNOWN, FRIENDLY)
-            confidence_score: Confidence in the outcome correctness
-            
-        Returns:
-            The ID of the inserted event
-        """
-        self._ensure_initialized()
-        
-        start_time = time.time()
-        
-        # Generate embedding for the event description
-        embedding = self._generate_embedding(event_description)
-        embedding_str = json.dumps(embedding)  # Store as JSON text, not vector
-        
-        # Insert into database (using actual column names from seed schema)
-        insert_query = """
-            INSERT INTO tactical_memory 
-            (event_description, embedding, outcome, source_id, event_type, timestamp)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id
-        """
-        
-        with db_manager.get_cursor() as cursor:
-            cursor.execute(
-                insert_query,
-                (
-                    event_description,
-                    embedding_str,
-                    outcome,
-                    source_platform,   # maps to source_id column
-                    threat_category,   # maps to event_type column
-                    datetime.utcnow()
-                )
-            )
-            result = cursor.fetchone()
-            event_id = result['id'] if result else None
-        
-        elapsed_ms = (time.time() - start_time) * 1000
-        
-        logger.info(
-            "Event ingested into tactical memory",
-            event_id=event_id,
-            description_length=len(event_description),
-            elapsed_ms=round(elapsed_ms, 2)
-        )
-        
-        return event_id
-    
-    def retrieve_context(
+
+    # ── Core: embed ───────────────────────────────────────────────────
+
+    def _embed(self, text: str) -> List[float]:
+        """Generate 384-dim embedding vector for *text*."""
+        self._ensure_ready()
+        return self._model.encode(text, convert_to_numpy=True).tolist()
+
+    # ── Core: search (pgvector cosine similarity) ────────────────────
+
+    def search(
         self,
         query_text: str,
-        limit: int = 3,
-        min_similarity: float = 0.0,
-        threat_category_filter: Optional[str] = None
+        top_k: int = 3,
+        category_filter: Optional[str] = None,
     ) -> List[dict]:
         """
-        Retrieve similar historical events using cosine similarity search
-        
+        Semantic search over tactical_memory using pgvector cosine distance.
+
         Args:
-            query_text: The query to find similar events for
-            limit: Maximum number of results to return
-            min_similarity: Minimum similarity score threshold (0-1)
-            threat_category_filter: Optional filter by threat category
-            
+            query_text:       Natural language query
+            top_k:            Maximum results to return
+            category_filter:  Optional — restrict to a specific category
+
         Returns:
-            List of similar events with their details and similarity scores
-            Returns empty list if database is not available (graceful degradation)
+            List of dicts with keys: context, category, source, score
         """
-        self._ensure_initialized()
-        
-        # Check if database is available
+        self._ensure_ready()
+
+        # Graceful degradation when DB is not available
         if db_manager._pool is None:
-            logger.debug("Database not available - returning empty context (demo mode)")
+            logger.debug("DB not available — returning empty context (demo mode)")
             return []
-        
-        start_time = time.time()
-        
-        # Generate query embedding
-        query_embedding = self._generate_embedding(query_text)
-        query_embedding_str = f"[{','.join(str(x) for x in query_embedding)}]"
-        
-        # Build the similarity search query
-        # Since pgvector is not installed, use simple text-based retrieval
-        # (ordered by most recent, filtered by source_id if applicable)
-        base_query = """
-            SELECT 
+
+        t0 = time.time()
+        query_vec = self._embed(query_text)
+
+        # pgvector format: '[0.1, 0.2, ...]'
+        vec_literal = "[" + ",".join(f"{v:.8f}" for v in query_vec) + "]"
+
+        # ── Build SQL ────────────────────────────────────────────────
+        # <=> = cosine distance   (lower = more similar)
+        # score = 1 - distance    (higher = more similar, range 0–1)
+        sql = """
+            SELECT
                 id,
-                event_description,
-                outcome,
-                source_id,
-                event_type,
-                timestamp
+                context,
+                category,
+                source,
+                1 - (embedding <=> %s::vector) AS score
             FROM tactical_memory
-            WHERE event_description IS NOT NULL
+            WHERE embedding IS NOT NULL
         """
-        
-        params = []
-        
-        # Add source_id filter if specified (replaces threat_category_filter)
-        if threat_category_filter:
-            base_query += " AND (event_type = %s OR source_id = %s)"
-            params.extend([threat_category_filter, threat_category_filter])
-        
-        # Order by most recent and limit
-        base_query += """
-            ORDER BY timestamp DESC NULLS LAST
+        params: list = [vec_literal]
+
+        if category_filter:
+            sql += " AND category = %s"
+            params.append(category_filter)
+
+        sql += """
+            ORDER BY embedding <=> %s::vector
             LIMIT %s
         """
-        params.append(limit)
-        
-        results = []
+        params.extend([vec_literal, top_k])
+
+        # ── Execute ──────────────────────────────────────────────────
+        results: List[dict] = []
         try:
-            with db_manager.get_cursor() as cursor:
-                cursor.execute(base_query, params)
-                rows = cursor.fetchall()
-                
-                for row in rows:
+            with db_manager.get_cursor() as cur:
+                cur.execute(sql, params)
+                for row in cur.fetchall():
                     results.append({
-                        'id': row['id'],
-                        'event_description': row['event_description'],
-                        'outcome': row['outcome'],
-                        'source_id': row['source_id'],
-                        'event_type': row['event_type'],
-                        'timestamp': row['timestamp'].isoformat() if row['timestamp'] else None,
-                        'similarity_score': 0.8  # Placeholder since no pgvector
+                        "context":  row["context"],
+                        "category": row["category"],
+                        "source":   row["source"],
+                        "score":    round(float(row["score"]), 4),
                     })
-        except Exception as e:
-            logger.warning(f"Database query failed, returning empty context: {e}")
+        except Exception as exc:
+            logger.warning(f"pgvector search failed — returning empty: {exc}")
             return []
-        
-        elapsed_ms = (time.time() - start_time) * 1000
-        
+
+        elapsed = (time.time() - t0) * 1000
         logger.info(
-            "Context retrieved from tactical memory",
-            query_length=len(query_text),
-            results_found=len(results),
-            elapsed_ms=round(elapsed_ms, 2)
+            "RAG search complete",
+            query=query_text[:80],
+            hits=len(results),
+            top_score=results[0]["score"] if results else 0,
+            elapsed_ms=round(elapsed, 1),
         )
-        
         return results
-    
+
+    # ── Ingest (used by seed_doctrine.py & /ingest endpoint) ─────────
+
+    def ingest(
+        self,
+        context: str,
+        category: str = "ENGAGEMENT_RULE",
+        source: str = "MANUAL",
+    ) -> int:
+        """
+        Insert a single doctrine / event into tactical_memory with embedding.
+
+        Returns:
+            Inserted row ID
+        """
+        self._ensure_ready()
+
+        vec = self._embed(context)
+        vec_literal = "[" + ",".join(f"{v:.8f}" for v in vec) + "]"
+
+        sql = """
+            INSERT INTO tactical_memory (context, embedding, category, source)
+            VALUES (%s, %s::vector, %s, %s)
+            RETURNING id
+        """
+        with db_manager.get_cursor() as cur:
+            cur.execute(sql, (context, vec_literal, category, source))
+            row = cur.fetchone()
+            return row["id"] if row else -1
+
+    # ── Stats / Health ───────────────────────────────────────────────
+
     def get_memory_stats(self) -> dict:
-        """Get statistics about the tactical memory"""
-        with db_manager.get_cursor() as cursor:
-            cursor.execute("""
-                SELECT 
-                    COUNT(*) as total_events,
-                    COUNT(embedding) as events_with_embeddings,
-                    COUNT(DISTINCT event_type) as unique_event_types,
-                    MIN(timestamp) as oldest_event,
-                    MAX(timestamp) as newest_event
+        """Return counts and metadata about tactical_memory table."""
+        if db_manager._pool is None:
+            return {"status": "database_unavailable"}
+
+        with db_manager.get_cursor() as cur:
+            cur.execute("""
+                SELECT
+                    COUNT(*)                        AS total_rows,
+                    COUNT(embedding)                AS rows_with_embedding,
+                    COUNT(DISTINCT category)        AS unique_categories,
+                    MIN(created_at)                 AS oldest,
+                    MAX(created_at)                 AS newest
                 FROM tactical_memory
             """)
-            result = cursor.fetchone()
-            
+            r = cur.fetchone()
             return {
-                'total_events': result['total_events'],
-                'events_with_embeddings': result['events_with_embeddings'],
-                'unique_event_types': result['unique_event_types'],
-                'oldest_event': result['oldest_event'].isoformat() if result['oldest_event'] else None,
-                'newest_event': result['newest_event'].isoformat() if result['newest_event'] else None
+                "total_rows":          r["total_rows"],
+                "rows_with_embedding": r["rows_with_embedding"],
+                "unique_categories":   r["unique_categories"],
+                "oldest": r["oldest"].isoformat() if r["oldest"] else None,
+                "newest": r["newest"].isoformat() if r["newest"] else None,
             }
-    
-    def update_missing_embeddings(self) -> int:
-        """
-        Update embeddings for any events that don't have them
-        
-        Returns:
-            Number of embeddings updated
-        """
-        self._ensure_initialized()
-        
-        # Get events without embeddings
-        with db_manager.get_cursor() as cursor:
-            cursor.execute("""
-                SELECT id, event_description 
-                FROM tactical_memory 
-                WHERE embedding IS NULL
-            """)
-            rows = cursor.fetchall()
-        
-        updated_count = 0
-        for row in rows:
-            embedding = self._generate_embedding(row['event_description'])
-            embedding_str = json.dumps(embedding)
-            
-            with db_manager.get_cursor() as cursor:
-                cursor.execute(
-                    "UPDATE tactical_memory SET embedding = %s WHERE id = %s",
-                    (embedding_str, row['id'])
-                )
-            updated_count += 1
-        
-        logger.info(f"Updated {updated_count} missing embeddings")
-        return updated_count
 
 
-# Global RAG engine instance
+# ── Global singleton ─────────────────────────────────────────────────
 rag_engine = RAGEngine()

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # Default uses localhost for local dev; use 'c4isr-db' for Docker network
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL", 
-        "postgresql://admin:password@localhost:5432/c4isr_db"
+        "postgresql://admin:password@localhost:5433/c4isr_db"
     )
     
     # For Docker internal network

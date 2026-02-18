@@ -15,10 +15,10 @@
     NETWORK MODE: AIR-GAPPED / OFFLINE OPERATION
     MODEL SOURCE: LOCAL DIRECTORY ONLY (./local_models/)
     
-    ARCHITECTURE: Polymorphic Discriminated Union
+    ARCHITECTURE: Polymorphic Discriminated Union + RAG Pipeline
     - Automatic schema validation based on 'type' field
     - DroneTelemetry | SoldierTelemetry | VehicleTelemetry
-    - Context-aware LLM analysis without hardcoded rules
+    - Context-aware LLM analysis with pgvector engagement-rule retrieval
 
 ============================================================================
 """
@@ -60,12 +60,12 @@ logger = structlog.get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan - initialize and cleanup resources"""
-    logger.info("Starting C4ISR AI Microservice (Polymorphic Architecture)...")
+    logger.info("Starting C4ISR AI Microservice (Polymorphic + RAG Pipeline)...")
     
     db_initialized = False
     rag_initialized = False
     
-    # Step 1: Initialize database connection (optional - for RAG vector storage)
+    # Step 1: Initialize database connection (for pgvector RAG)
     try:
         initialize_database(use_docker_network=False)
         db_initialized = True
@@ -73,29 +73,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Database init failed (RAG retrieval disabled): {e}")
     
-    # Step 2: Initialize RAG engine embedding model (ALWAYS - required for telemetry summary)
-    # Note: RAG engine loads the embedding model for text processing
-    # Database is only needed for vector storage/retrieval which is optional
+    # Step 2: Initialize RAG engine embedding model
     try:
         rag_engine.initialize()
         rag_initialized = True
-        logger.info("✅ RAG Engine (embedding model) initialized successfully")
+        logger.info("✅ RAG Engine (all-MiniLM-L6-v2) initialized")
     except Exception as e:
         logger.warning(f"⚠️ RAG Engine init failed: {e}")
     
-    # Step 3: Initialize Model engine (optional - may require GPU)
+    # Step 3: Initialize Model engine (Gemma-2-9b-it)
     try:
         model_engine.initialize()
-        logger.info("✅ Model Engine initialized successfully")
+        logger.info("✅ Model Engine (Gemma-2-9b-it) initialized")
     except Exception as e:
-        logger.warning(f"⚠️ Model Engine init failed (GPU may be required): {e}")
+        logger.warning(f"⚠️ Model Engine init failed (GPU required): {e}")
     
-    # Log startup summary
+    # Startup summary
     logger.info(
         "Startup complete",
         database=db_initialized,
         rag=rag_initialized,
-        model="initialized"
+        model="initialized",
     )
     
     yield
@@ -112,69 +110,25 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="C4ISR AI Microservice",
     description="""
-## Tactical Decision Support with Polymorphic Telemetry Analysis
+## Tactical Decision Support with RAG + Polymorphic Telemetry Analysis
 
-This microservice provides AI-powered situational awareness for military C4ISR systems.
+### Pipeline
+```
+Telemetry ─→ Text Summary ─→ pgvector Search ─→ Top-K Rules ─→ Gemma Prompt ─→ JSON Decision
+```
 
-### Architecture
-Uses **Discriminated Unions** for automatic schema validation:
-- The `type` field determines which schema is used
-- FastAPI automatically validates the correct model
-
-### Supported Telemetry Types
-
+### Supported Types
 | Type | Description | Key Fields |
 |------|-------------|------------|
 | `drone` | UAV operational data | altitude, speed, battery_level, mode |
 | `soldier` | Personnel vitals | vitals (hr_bpm, spo2), status |
 | `vehicle` | Ground assets | speed, fuel_pct, vehicle_type |
-
-### Example Requests
-
-**Drone Telemetry:**
-```json
-{
-    "type": "drone",
-    "source_id": "UAV-ALPHA-01",
-    "latitude": 39.92,
-    "longitude": 32.85,
-    "altitude": 150.0,
-    "speed": 12.5,
-    "battery_level": 78.5,
-    "mode": "AUTO"
-}
-```
-
-**Soldier Telemetry:**
-```json
-{
-    "type": "soldier",
-    "source_id": "ALPHA-2-ACTUAL",
-    "latitude": 39.92,
-    "longitude": 32.85,
-    "vitals": {"hr_bpm": 85, "spo2": 97.5},
-    "status": "ACTIVE"
-}
-```
-
-**Vehicle Telemetry:**
-```json
-{
-    "type": "vehicle",
-    "source_id": "TANK-BRAVO-03",
-    "latitude": 39.93,
-    "longitude": 32.86,
-    "speed": 35.0,
-    "fuel_pct": 82.0,
-    "vehicle_type": "TANK"
-}
-```
     """,
-    version="3.0.0",
-    lifespan=lifespan
+    version="4.0.0",
+    lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -185,112 +139,101 @@ app.add_middleware(
 
 
 # ============================================================================
-#                           HEALTH & INFO ENDPOINTS
+#                           HEALTH & INFO
 # ============================================================================
 
 @app.get("/health", tags=["System"])
 async def health_check():
-    """Health check endpoint for load balancers and monitoring"""
     return {
         "status": "healthy",
         "service": "c4isr-ai-microservice",
-        "version": "3.0.0",
-        "architecture": "polymorphic-discriminated-union"
+        "version": "4.0.0",
+        "architecture": "polymorphic-rag-pipeline",
     }
 
 
 @app.get("/info", tags=["System"])
 async def service_info():
-    """Get service information and current status"""
     return {
         "service": settings.APP_NAME,
-        "version": "3.0.0",
-        "architecture": "Polymorphic Discriminated Union",
+        "version": "4.0.0",
+        "architecture": "Polymorphic + RAG Pipeline",
         "model": model_engine.get_model_info(),
         "rag_model": settings.EMBEDDING_MODEL,
         "supported_types": ["drone", "soldier", "vehicle"],
-        "endpoint_docs": "/docs"
+        "endpoint_docs": "/docs",
     }
 
 
 # ============================================================================
-#                           ANALYSIS ENDPOINT (POLYMORPHIC)
+#                  ANALYZE ENDPOINT  (RAG-augmented)
 # ============================================================================
 
 @app.post("/analyze", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_telemetry(request: AnalysisRequest):
     """
-    Analyze telemetry data and provide tactical decision.
-    
-    This endpoint uses **Discriminated Unions** for automatic schema validation.
-    The `type` field in the request body determines which schema is used:
-    
-    - `type: "drone"` → DroneTelemetry schema
-    - `type: "soldier"` → SoldierTelemetry schema  
-    - `type: "vehicle"` → VehicleTelemetry schema
-    
-    The AI analyzes the data for anomalies and threats based on:
-    - Military operational norms
-    - Physiological health indicators
-    - Equipment operational parameters
-    
-    **No hardcoded rules** - relies on LLM contextual understanding.
+    RAG-augmented tactical analysis pipeline:
+
+    1. Convert telemetry → natural-language summary
+    2. pgvector cosine search → top-K engagement rules
+    3. Build Gemma prompt:  System + Context(rules) + Situation(telemetry)
+    4. Parse JSON response → AnalysisResponse
     """
     start_time = time.time()
-    
-    # Extract telemetry from request
+
     telemetry = request.telemetry
-    
-    # Extract entity info from the validated model
     entity_type = telemetry.type
     entity_id = telemetry.source_id
-    
+
     logger.info(
-        f"Analyzing {entity_type} telemetry",
+        f"Analyzing {entity_type} telemetry (RAG pipeline)",
         entity_id=entity_id,
-        entity_type=entity_type
+        entity_type=entity_type,
     )
-    
-    # Step 1: Retrieve historical context from RAG (if enabled)
-    context_items = []
+
+    # ── Step 1: Create telemetry summary for RAG query ───────────────
+    telemetry_summary = _create_telemetry_summary(telemetry)
+
+    # ── Step 2: RAG retrieval — engagement rules from pgvector ───────
+    context_items: list[ContextItem] = []
     if request.include_context:
         try:
-            # Create a text summary for similarity search
-            telemetry_summary = _create_telemetry_summary(telemetry)
-            
-            raw_context = rag_engine.retrieve_context(
+            raw_context = rag_engine.search(
                 query_text=telemetry_summary,
-                limit=request.max_context_items
+                top_k=request.max_context_items,
             )
             context_items = [
                 ContextItem(
-                    event_description=c['event_description'],
-                    outcome=c['outcome'],
-                    similarity_score=c['similarity_score'],
-                    timestamp=c.get('timestamp')
-                ) for c in raw_context
+                    event_description=c["context"],
+                    outcome=c.get("category", ""),
+                    similarity_score=c["score"],
+                    timestamp=None,
+                )
+                for c in raw_context
             ]
+            logger.info(
+                "RAG context retrieved",
+                hits=len(context_items),
+                top_score=context_items[0].similarity_score if context_items else 0,
+            )
         except Exception as e:
-            logger.warning(f"RAG retrieval failed: {e}")
-    
-    # Step 2: Generate AI decision
+            logger.warning(f"RAG retrieval failed (continuing without context): {e}")
+
+    # ── Step 3: AI decision — Gemma with RAG context ─────────────────
     try:
-        # Pass the validated Pydantic model directly to model engine
-        # The model_engine will use model_dump_json() for proper serialization
         decision, threat_level, confidence, reasoning = model_engine.generate_decision(
             telemetry_data=telemetry,
-            retrieved_context=[c.model_dump() for c in context_items]
+            retrieved_context=[c.model_dump() for c in context_items],
         )
     except Exception as e:
         logger.error(f"Model generation failed: {e}")
-        # Fallback response
-        decision = f"Unable to generate decision for {entity_type} - model unavailable"
+        decision = f"Unable to generate decision for {entity_type} — model unavailable"
         threat_level = ThreatLevel.UNKNOWN
         confidence = 0.0
         reasoning = str(e)
-    
+
     elapsed_ms = (time.time() - start_time) * 1000
-    
+
     return AnalysisResponse(
         decision=decision,
         threat_level=threat_level,
@@ -300,80 +243,74 @@ async def analyze_telemetry(request: AnalysisRequest):
         entity_id=entity_id,
         context_used=context_items,
         processing_time_ms=round(elapsed_ms, 2),
-        model_version=settings.MODEL_NAME
+        model_version=settings.MODEL_NAME,
     )
 
 
+# ============================================================================
+#                     TELEMETRY → TEXT SUMMARY
+# ============================================================================
+
 def _create_telemetry_summary(telemetry: TelemetryInput) -> str:
     """
-    Create a natural language summary of telemetry for RAG similarity search.
-    Handles each telemetry type appropriately.
-    
-    Note: Fields may be enums or plain strings - access safely.
+    Convert polymorphic telemetry to a natural-language summary
+    optimised for cosine similarity against engagement rules.
+
+    Examples:
+        "Drone UAV-01 altitude 150m speed 12.5m/s battery 18% mode AUTO ..."
+        "Soldier ALPHA-2 heart rate 185 BPM SpO2 88% status INJURED ..."
     """
     entity_type = telemetry.type
     entity_id = telemetry.source_id
-    
     parts = [f"{entity_type.title()} {entity_id}"]
-    
+
     if isinstance(telemetry, DroneTelemetry):
         parts.append(f"altitude {telemetry.altitude}m")
         parts.append(f"speed {telemetry.speed}m/s")
         parts.append(f"battery {telemetry.battery_level}%")
-        # Safe enum access - get .value if enum, otherwise use as-is
-        mode_str = getattr(telemetry.mode, 'value', telemetry.mode)
+        mode_str = getattr(telemetry.mode, "value", telemetry.mode)
         parts.append(f"mode {mode_str}")
-        
+
     elif isinstance(telemetry, SoldierTelemetry):
         parts.append(f"heart rate {telemetry.vitals.hr_bpm} BPM")
         parts.append(f"SpO2 {telemetry.vitals.spo2}%")
-        # status is now a plain str, no .value needed
         parts.append(f"status {telemetry.status}")
         if telemetry.vitals.stress_index is not None:
             parts.append(f"stress {telemetry.vitals.stress_index:.2f}")
-            
+
     elif isinstance(telemetry, VehicleTelemetry):
-        # Safe enum access for vehicle_type
-        vtype_str = getattr(telemetry.vehicle_type, 'value', telemetry.vehicle_type)
+        vtype_str = getattr(telemetry.vehicle_type, "value", telemetry.vehicle_type)
         parts.append(f"type {vtype_str}")
         parts.append(f"speed {telemetry.speed} km/h")
         parts.append(f"fuel {telemetry.fuel_pct}%")
         if telemetry.health_pct is not None:
             parts.append(f"health {telemetry.health_pct}%")
-    
-    # Add position info
+
     parts.append(f"at ({telemetry.latitude:.4f}, {telemetry.longitude:.4f})")
-    
     return ", ".join(parts)
 
 
 # ============================================================================
-#                           INGEST ENDPOINT (RAG Memory)
+#                  INGEST ENDPOINT  (Add Rules / Events to Memory)
 # ============================================================================
 
 @app.post("/ingest", response_model=IngestResponse, tags=["Memory"])
 async def ingest_event(request: IngestRequest):
     """
-    Ingest a confirmed tactical event into memory for future RAG retrieval.
-    
-    Events stored here will be used to provide historical context
-    for future analyses, enabling pattern recognition and
-    precedent-based decision support.
+    Ingest a new engagement rule or tactical event into pgvector memory.
+    The text is embedded automatically and stored for future RAG retrieval.
     """
     try:
-        event_id = rag_engine.ingest_event(
-            event_description=request.event_description,
-            outcome=request.outcome,
-            source_platform=request.source_platform,
-            threat_category=request.threat_category,
-            confidence_score=request.confidence_score
+        event_id = rag_engine.ingest(
+            context=request.event_description,
+            category=request.threat_category or "ENGAGEMENT_RULE",
+            source=request.source_platform or "API",
         )
-        
         return IngestResponse(
             success=True,
             event_id=event_id,
-            message="Event successfully ingested into tactical memory",
-            embedding_generated=True
+            message="Event ingested into tactical memory (pgvector)",
+            embedding_generated=True,
         )
     except Exception as e:
         logger.error(f"Ingest failed: {e}")
@@ -382,7 +319,7 @@ async def ingest_event(request: IngestRequest):
 
 @app.get("/memory/stats", tags=["Memory"])
 async def get_memory_stats():
-    """Get statistics about tactical memory (RAG database)"""
+    """Get statistics about the tactical memory (pgvector RAG store)."""
     try:
         return rag_engine.get_memory_stats()
     except Exception as e:
@@ -401,31 +338,24 @@ def _run_training(request: TrainingRequest):
         epochs=request.epochs,
         learning_rate=request.learning_rate,
         batch_size=request.batch_size,
-        adapter_name=request.save_adapter_name
+        adapter_name=request.save_adapter_name,
     )
 
 
 @app.post("/train", response_model=TrainingResponse, tags=["Training"])
 async def start_training(request: TrainingRequest, background_tasks: BackgroundTasks):
-    """
-    Start LoRA fine-tuning as a background task.
-    
-    This enables domain-specific adaptation of the base model
-    using tactical training examples from your operational environment.
-    """
+    """Start LoRA fine-tuning as a background task."""
     from datetime import datetime
-    
+
     job_id = f"train_{request.save_adapter_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
-    # Add training to background tasks
     background_tasks.add_task(_run_training, request)
-    
+
     return TrainingResponse(
         job_id=job_id,
         status=TrainingStatus.PENDING,
         message=f"Training queued with {len(request.training_examples)} examples",
         started_at=datetime.utcnow(),
-        estimated_duration_minutes=len(request.training_examples) * request.epochs * 0.5
+        estimated_duration_minutes=len(request.training_examples) * request.epochs * 0.5,
     )
 
 
@@ -445,21 +375,27 @@ async def get_training_status(job_id: str):
 @app.post("/debug/validate", tags=["Debug"])
 async def debug_validate_telemetry(request: AnalysisRequest):
     """
-    Debug endpoint to validate telemetry parsing without running the AI model.
-    
-    Useful for testing:
-    - Discriminated union schema validation
-    - Field extraction and type detection
-    - JSON serialization output
+    Debug: validate telemetry parsing + show RAG search results
+    without running the LLM.
     """
     telemetry = request.telemetry
+    summary = _create_telemetry_summary(telemetry)
+
+    # Run RAG search for debugging
+    rag_results = []
+    try:
+        rag_results = rag_engine.search(summary, top_k=3)
+    except Exception:
+        pass
+
     return {
         "validated": True,
         "entity_type": telemetry.type,
         "entity_id": telemetry.source_id,
         "model_class": telemetry.__class__.__name__,
         "serialized_json": telemetry.model_dump_json(indent=2),
-        "summary_for_rag": _create_telemetry_summary(telemetry)
+        "summary_for_rag": summary,
+        "rag_search_results": rag_results,
     }
 
 
@@ -469,9 +405,10 @@ async def debug_validate_telemetry(request: AnalysisRequest):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "main:app",
         host=settings.API_HOST,
         port=settings.API_PORT,
-        reload=settings.DEBUG
+        reload=settings.DEBUG,
     )

@@ -446,25 +446,39 @@ class ModelEngine:
         context: List[Dict[str, Any]]
     ) -> str:
         """
-        Build a context-aware analysis prompt for the LLM.
+        Build a RAG-augmented analysis prompt for the LLM.
         
-        The prompt includes:
-        1. System persona (tactical analyst)
-        2. Historical context from RAG (if available)
-        3. Full telemetry data as JSON
+        Structure:
+            1. System persona (paranoid tactical analyst)
+            2. Retrieved engagement rules from pgvector (if available)
+            3. Full telemetry data as JSON
+            4. Instruction
         """
-        # Format historical context
+        # ── Format retrieved engagement rules ────────────────────────
         if context:
-            context_lines = []
+            rule_lines = []
             for i, c in enumerate(context, 1):
-                event = c.get('event_description', 'Unknown event')
-                outcome = c.get('outcome', 'Unknown outcome')
-                context_lines.append(f"  {i}. Event: {event}\n     Outcome: {outcome}")
-            context_str = "## HISTORICAL CONTEXT (Similar Past Events)\n" + "\n".join(context_lines)
+                rule_text = c.get('event_description', 'Unknown')
+                score = c.get('similarity_score', 0)
+                category = c.get('outcome', 'UNKNOWN')
+                rule_lines.append(
+                    f"  RULE {i} (relevance: {score:.0%}, category: {category}):\n"
+                    f"    {rule_text}"
+                )
+            context_str = (
+                "## APPLICABLE ENGAGEMENT RULES (Retrieved from Tactical Memory)\n"
+                "The following rules were retrieved by semantic similarity search.\n"
+                "You MUST consider these rules in your analysis.\n\n"
+                + "\n\n".join(rule_lines)
+            )
         else:
-            context_str = "## HISTORICAL CONTEXT\nNo relevant historical events found."
+            context_str = (
+                "## ENGAGEMENT RULES\n"
+                "No matching engagement rules found in tactical memory.\n"
+                "Use your standard military doctrine knowledge."
+            )
         
-        # Build the full prompt
+        # ── Assemble prompt ──────────────────────────────────────────
         user_message = f"""{TACTICAL_ANALYST_SYSTEM_PROMPT}
 
 {context_str}
@@ -476,7 +490,7 @@ Entity Type: {entity_type.upper()}
 {telemetry_json}
 ```
 
-Analyze this telemetry data and provide your assessment in the required JSON format."""
+Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactical assessment in the required JSON format."""
         
         # Apply chat template
         messages = [{"role": "user", "content": user_message}]

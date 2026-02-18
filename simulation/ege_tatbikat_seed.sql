@@ -62,20 +62,9 @@ CREATE TABLE tactical_analysis (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tactical Memory table (for AI context retrieval)
--- Note: embedding stored as TEXT (JSON array) since pgvector is not installed
-CREATE TABLE tactical_memory (
-    id BIGSERIAL PRIMARY KEY,
-    event_type VARCHAR(100),
-    event_description TEXT,
-    source_id VARCHAR(100),
-    location geometry(Point, 4326),
-    timestamp TIMESTAMP,
-    outcome TEXT,
-    lessons_learned TEXT,
-    embedding TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- Tactical Memory table — CREATED BY init-vector.sql (Docker entrypoint)
+-- Schema: id, context TEXT, embedding vector(384), category, source, created_at
+-- Doctrine is seeded by: python seed_doctrine.py
 
 -- ============================================================================
 -- CREATE INDEXES
