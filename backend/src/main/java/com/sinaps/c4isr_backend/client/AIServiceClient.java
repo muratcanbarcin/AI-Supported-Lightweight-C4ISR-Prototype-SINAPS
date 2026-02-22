@@ -388,6 +388,57 @@ public class AIServiceClient {
     }
 
     /**
+     * Send a conversational chat query to the AI service (RAG-augmented).
+     * 
+     * This method forwards the user's question to the Python AI microservice's
+     * /chat endpoint, which performs RAG retrieval + Gemma generation.
+     *
+     * @param query The user's question
+     * @return Mono<Map> containing { response, cited_rule, rag_hits, processing_time_ms }
+     */
+    public Mono<Map<String, Object>> chatAsync(String query) {
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("query", query);
+
+        log.info("Sending chat request to AI Service: {}", query.length() > 80 ? query.substring(0, 80) + "..." : query);
+
+        return webClient.post()
+                .uri("/chat")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(Duration.ofSeconds(120)) // Chat + RAG + LLM can take longer
+                .map(body -> {
+                    try {
+                        return objectMapper.readValue(body,
+                                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    } catch (Exception e) {
+                        Map<String, Object> fallback = new HashMap<>();
+                        fallback.put("response", body);
+                        fallback.put("cited_rule", "");
+                        fallback.put("rag_hits", 0);
+                        fallback.put("processing_time_ms", 0.0);
+                        return fallback;
+                    }
+                })
+                .doOnSuccess(result ->
+                        log.info("Chat response received, rag_hits: {}, processing_time: {}ms",
+                                result.get("rag_hits"), result.get("processing_time_ms")))
+                .doOnError(error ->
+                        log.error("Chat request failed: {}", error.getMessage()))
+                .onErrorResume(error -> {
+                    Map<String, Object> errorResult = new HashMap<>();
+                    errorResult.put("response",
+                            "AI servisi su anda yanit veremiyor. Hata: " + error.getMessage());
+                    errorResult.put("cited_rule", "");
+                    errorResult.put("rag_hits", 0);
+                    errorResult.put("processing_time_ms", 0.0);
+                    return Mono.just(errorResult);
+                });
+    }
+
+    /**
      * Health check for the AI service.
      * 
      * @return Mono<Boolean> true if service is available

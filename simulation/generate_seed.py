@@ -7,6 +7,7 @@ Generates SQL seed file for PostgreSQL with:
 - 30 units total (10 Drone, 10 Soldier, 10 Vehicle)
 - Half in Izmir Barracks (IDLE)
 - Half in Aegean Exercise Zone (EXERCISE)
+- Tasks, System Logs, AI Analyses for the new v2 tables
 
 Usage:
     python generate_seed.py
@@ -26,6 +27,63 @@ from enum import Enum
 # =============================================================================
 
 OUTPUT_FILE = Path(__file__).parent / "ege_tatbikat_seed.sql"
+
+
+# =============================================================================
+# SEED TEMPLATES FOR NEW TABLES
+# =============================================================================
+
+# Task templates per asset type
+TASK_TEMPLATES = {
+    "DRONE": [
+        ("Kesif Ucusu", "Hedef bolgesinde alçak irtifa kesif ucusu gerceklestir", "IN_PROGRESS"),
+        ("Gozetleme Gorevi", "Sinir hattinda 24 saat gozetleme gorevi", "PENDING"),
+        ("Fotograf Haritalama", "Tatbikat bolgesinin hava fotograflarini cek", "COMPLETED"),
+        ("Konvoy Takibi", "Mavi kuvvet konvoyunu havadan takip et", "IN_PROGRESS"),
+        ("Gece Gorevi", "Gece termal kamera ile bolge taramasi", "PENDING"),
+    ],
+    "SOLDIER": [
+        ("Devriye Gorevi", "Kuzey sektor devriye hattinda yuruyus", "IN_PROGRESS"),
+        ("Nobet Gorevi", "Kisla ana giris nobet gorevi", "IN_PROGRESS"),
+        ("Tatbikat - Baskin", "Simule edilmis baskin tatbikati", "COMPLETED"),
+        ("Ilk Yardim Egitimi", "Saha ilk yardim egitimi katilimi", "PENDING"),
+        ("Kesif Timi", "Ileri kesif noktasina intikal", "IN_PROGRESS"),
+    ],
+    "VEHICLE": [
+        ("Konvoy Harekati", "Alfa noktasindan Bravo noktasina malzeme taşima", "IN_PROGRESS"),
+        ("Arazi Manevra", "Tatbikat bolgesinde taktik manevra", "IN_PROGRESS"),
+        ("Hedef Atisi", "Atis poligonunda hedef atisi", "COMPLETED"),
+        ("Bakim Kontrol", "Periyodik bakim ve teknik kontrol", "PENDING"),
+        ("Muharebe Destek", "Piyade birligine yakin destek gorevi", "PENDING"),
+    ],
+}
+
+# System log event templates
+SYSTEM_LOG_TEMPLATES = [
+    ("CONNECTION_ESTABLISHED", "Sistem baglantisi basariyla kuruldu"),
+    ("MODE_CHANGE", "Operasyonel mod degisikligi: {old_mode} -> {new_mode}"),
+    ("BATTERY_WARNING", "Batarya seviyesi kritik: %{level}"),
+    ("GPS_LOCK", "GPS sinyali kilitlendi, konum dogrulandi"),
+    ("FIRMWARE_UPDATE", "Firmware guncelleme tamamlandi v2.1.4"),
+    ("SENSOR_CALIBRATION", "Sensor kalibrasyonu tamamlandi"),
+    ("HEARTBEAT", "Sistem saglik kontrolu basarili"),
+    ("MISSION_START", "Gorev basladi"),
+    ("MISSION_COMPLETE", "Gorev basariyla tamamlandi"),
+]
+
+# AI Analysis templates
+AI_ANALYSIS_TEMPLATES = [
+    ("LOW", "Normal operasyonel aktivite, tehdit tespit edilmedi", False),
+    ("LOW", "Rutin devriye hareketi, anomali yok", False),
+    ("MEDIUM", "Beklenmeyen hiz degisimi tespit edildi, izleme onerisi", False),
+    ("MEDIUM", "Rota sapmasi tespit edildi, operatorun dikkatine sunuldu", True),
+    ("HIGH", "Kritik bolgeye yaklasma tespit edildi, acil onlem alinmali", True),
+    ("HIGH", "Anormal biyometrik degerler, personel saglik kontrolu gerekli", True),
+    ("CRITICAL", "Olasi dusman temasi, birlik alarma gecirilmeli", True),
+    ("LOW", "Standart tatbikat harekati, veriler normal sinirlar icinde", False),
+    ("MEDIUM", "Yakit/batarya seviyesi dusuk, ikmal planlanmali", True),
+    ("LOW", "Cevre kosullari normal, gorev devam edebilir", False),
+]
 
 
 class AssetType(Enum):
@@ -221,6 +279,9 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- CLEAN DATABASE (Drop all data)
 -- ============================================================================
 
+DROP TABLE IF EXISTS ai_analyses CASCADE;
+DROP TABLE IF EXISTS system_logs CASCADE;
+DROP TABLE IF EXISTS tasks CASCADE;
 DROP TABLE IF EXISTS tactical_memory CASCADE;
 DROP TABLE IF EXISTS tactical_analysis CASCADE;
 DROP TABLE IF EXISTS telemetry CASCADE;
@@ -235,7 +296,7 @@ CREATE TABLE assets (
     id VARCHAR(100) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     type VARCHAR(50) NOT NULL CHECK (type IN ('DRONE', 'SOLDIER', 'VEHICLE', 'SENSOR')),
-    status VARCHAR(50) DEFAULT 'ONLINE' CHECK (status IN ('ONLINE', 'WARNING', 'OFFLINE', 'IDLE', 'EXERCISE', 'PATROL', 'COMBAT')),
+    status VARCHAR(50) DEFAULT 'ONLINE' CHECK (status IN ('ONLINE', 'WARNING', 'OFFLINE', 'IDLE', 'EXERCISE', 'PATROL', 'COMBAT', 'STOPPED')),
     alignment VARCHAR(20) DEFAULT 'FRIEND' CHECK (alignment IN ('FRIEND', 'FOE', 'UNKNOWN')),
     last_latitude DOUBLE PRECISION,
     last_longitude DOUBLE PRECISION,
@@ -284,6 +345,35 @@ CREATE TABLE tactical_memory (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Tasks table (v2)
+CREATE TABLE tasks (
+    id SERIAL PRIMARY KEY,
+    asset_id VARCHAR(50),
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'PENDING',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- System Logs table (v2)
+CREATE TABLE system_logs (
+    id SERIAL PRIMARY KEY,
+    asset_id VARCHAR(50),
+    event_type VARCHAR(100),
+    message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- AI Analyses table (v2)
+CREATE TABLE ai_analyses (
+    id SERIAL PRIMARY KEY,
+    asset_id VARCHAR(50),
+    threat_level VARCHAR(50),
+    recommendation TEXT,
+    is_alert BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ============================================================================
 -- CREATE INDEXES
 -- ============================================================================
@@ -294,6 +384,12 @@ CREATE INDEX idx_telemetry_source_timestamp ON telemetry(source_id, timestamp DE
 CREATE INDEX idx_telemetry_location ON telemetry USING GIST(location);
 CREATE INDEX idx_assets_type ON assets(type);
 CREATE INDEX idx_assets_status ON assets(status);
+CREATE INDEX idx_tasks_asset_id ON tasks(asset_id);
+CREATE INDEX idx_tasks_status ON tasks(status);
+CREATE INDEX idx_system_logs_asset_id ON system_logs(asset_id);
+CREATE INDEX idx_system_logs_event_type ON system_logs(event_type);
+CREATE INDEX idx_ai_analyses_asset_id ON ai_analyses(asset_id);
+CREATE INDEX idx_ai_analyses_is_alert ON ai_analyses(is_alert);
 
 -- ============================================================================
 -- INSERT ASSETS (30 Total)
@@ -352,6 +448,14 @@ VALUES ('{escape_sql_string(asset.id)}', '{escape_sql_string(asset.name)}', '{as
 VALUES ('{escape_sql_string(asset.id)}', '{asset.asset_type.value}', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint({asset.longitude}, {asset.latitude}), 4326), {asset.altitude}, {asset.speed}, {asset.battery_level}, '{payload_json}'::jsonb);
 """
     
+    # ========================================================================
+    # NEW v2 TABLES: Tasks, System Logs, AI Analyses
+    # ========================================================================
+    
+    sql += generate_tasks_sql(assets)
+    sql += generate_system_logs_sql(assets)
+    sql += generate_ai_analyses_sql(assets)
+    
     sql += """
 -- ============================================================================
 -- SUMMARY
@@ -364,12 +468,20 @@ DECLARE
     drone_count INTEGER;
     soldier_count INTEGER;
     vehicle_count INTEGER;
+    task_count INTEGER;
+    log_count INTEGER;
+    analysis_count INTEGER;
+    alert_count INTEGER;
 BEGIN
     SELECT COUNT(*) INTO asset_count FROM assets;
     SELECT COUNT(*) INTO telemetry_count FROM telemetry;
     SELECT COUNT(*) INTO drone_count FROM assets WHERE type = 'DRONE';
     SELECT COUNT(*) INTO soldier_count FROM assets WHERE type = 'SOLDIER';
     SELECT COUNT(*) INTO vehicle_count FROM assets WHERE type = 'VEHICLE';
+    SELECT COUNT(*) INTO task_count FROM tasks;
+    SELECT COUNT(*) INTO log_count FROM system_logs;
+    SELECT COUNT(*) INTO analysis_count FROM ai_analyses;
+    SELECT COUNT(*) INTO alert_count FROM ai_analyses WHERE is_alert = TRUE;
     
     RAISE NOTICE 'EGE TATBIKATI Database seeded!';
     RAISE NOTICE '   Total Assets: %', asset_count;
@@ -377,9 +489,97 @@ BEGIN
     RAISE NOTICE '   - Soldiers: %', soldier_count;
     RAISE NOTICE '   - Vehicles: %', vehicle_count;
     RAISE NOTICE '   Initial Telemetry: %', telemetry_count;
+    RAISE NOTICE '   Tasks: %', task_count;
+    RAISE NOTICE '   System Logs: %', log_count;
+    RAISE NOTICE '   AI Analyses: % (Alerts: %)', analysis_count, alert_count;
 END $$;
 """
     
+    return sql
+
+
+def generate_tasks_sql(assets: List[Asset]) -> str:
+    """Generate INSERT statements for tasks table."""
+    sql = """
+-- ============================================================================
+-- INSERT TASKS (v2)
+-- ============================================================================
+
+"""
+    for asset in assets:
+        # Each EXERCISE asset gets 1-2 tasks, IDLE assets get 1 pending task
+        templates = TASK_TEMPLATES.get(asset.asset_type.value, TASK_TEMPLATES["DRONE"])
+        if asset.status == OperationalStatus.EXERCISE:
+            chosen = random.sample(templates, min(2, len(templates)))
+        else:
+            # IDLE assets get a single PENDING task
+            pending_tasks = [t for t in templates if t[2] == "PENDING"]
+            chosen = [random.choice(pending_tasks)] if pending_tasks else [templates[0]]
+        
+        for title, description, status in chosen:
+            sql += f"""INSERT INTO tasks (asset_id, title, description, status)
+VALUES ('{escape_sql_string(asset.id)}', '{escape_sql_string(title)}', '{escape_sql_string(description)}', '{status}');
+"""
+    return sql
+
+
+def generate_system_logs_sql(assets: List[Asset]) -> str:
+    """Generate INSERT statements for system_logs table."""
+    sql = """
+-- ============================================================================
+-- INSERT SYSTEM LOGS (v2)
+-- ============================================================================
+
+"""
+    for asset in assets:
+        # Every asset gets a CONNECTION_ESTABLISHED log
+        sql += f"""INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('{escape_sql_string(asset.id)}', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
+"""
+        # EXERCISE assets get 2-3 extra event logs
+        if asset.status == OperationalStatus.EXERCISE:
+            extra_events = random.sample(SYSTEM_LOG_TEMPLATES[1:], random.randint(2, 3))
+            for event_type, message_template in extra_events:
+                message = message_template.format(
+                    old_mode="IDLE", new_mode="EXERCISE",
+                    level=random.randint(10, 25)
+                )
+                sql += f"""INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('{escape_sql_string(asset.id)}', '{escape_sql_string(event_type)}', '{escape_sql_string(message)}');
+"""
+        else:
+            # IDLE assets get a HEARTBEAT
+            sql += f"""INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('{escape_sql_string(asset.id)}', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
+"""
+    return sql
+
+
+def generate_ai_analyses_sql(assets: List[Asset]) -> str:
+    """Generate INSERT statements for ai_analyses table."""
+    sql = """
+-- ============================================================================
+-- INSERT AI ANALYSES (v2)
+-- ============================================================================
+
+"""
+    for asset in assets:
+        # EXERCISE assets get 2-3 analyses (some with alerts)
+        # IDLE assets get 1 LOW-threat analysis
+        if asset.status == OperationalStatus.EXERCISE:
+            count = random.randint(2, 3)
+            # Ensure at least one is HIGH/CRITICAL for some exercise assets
+            chosen = random.sample(AI_ANALYSIS_TEMPLATES, min(count, len(AI_ANALYSIS_TEMPLATES)))
+        else:
+            # Idle: just a single LOW analysis
+            low_templates = [t for t in AI_ANALYSIS_TEMPLATES if t[0] == "LOW"]
+            chosen = [random.choice(low_templates)]
+        
+        for threat_level, recommendation, is_alert in chosen:
+            alert_val = "TRUE" if is_alert else "FALSE"
+            sql += f"""INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
+VALUES ('{escape_sql_string(asset.id)}', '{threat_level}', '{escape_sql_string(recommendation)}', {alert_val});
+"""
     return sql
 
 
@@ -407,6 +607,7 @@ def main():
     print(f"\n   Drones: {len([a for a in assets if a.asset_type == AssetType.DRONE])}")
     print(f"   Soldiers: {len([a for a in assets if a.asset_type == AssetType.SOLDIER])}")
     print(f"   Vehicles: {len([a for a in assets if a.asset_type == AssetType.VEHICLE])}")
+    print(f"\n   + Tasks, System Logs, AI Analyses (v2 tables)")
     
     # Generate SQL
     print("\nGenerating SQL...")

@@ -439,6 +439,127 @@ class ModelEngine:
         # Parse the structured response
         return self._parse_json_response(response_text)
     
+    # ========================================================================
+    #                     CHAT / CONVERSATIONAL GENERATION
+    # ========================================================================
+    
+    def generate_chat_response(
+        self,
+        query: str,
+        rag_context: List[Dict[str, Any]],
+        max_new_tokens: int = 1024
+    ) -> str:
+        """
+        Generate a conversational response using the Military AI Assistant persona.
+        
+        Unlike generate_decision() which returns structured JSON, this method
+        returns free-form natural language suitable for chat UI.
+        
+        Args:
+            query:           The commander's question / message
+            rag_context:     List of RAG search results (context, category, source, score)
+            max_new_tokens:  Maximum tokens to generate
+            
+        Returns:
+            Free-form text response string
+        """
+        if not self._initialized:
+            raise RuntimeError("Model not initialized. Call initialize() first.")
+        
+        start_time = time.time()
+        
+        # ── Build RAG context block ──────────────────────────────────
+        if rag_context:
+            context_lines = []
+            for i, c in enumerate(rag_context, 1):
+                rule_text = c.get("context", c.get("event_description", ""))
+                score = c.get("score", c.get("similarity_score", 0))
+                category = c.get("category", c.get("outcome", ""))
+                context_lines.append(
+                    f"  Kural {i} (benzerlik: {score:.0%}, kategori: {category}):\n"
+                    f"    {rule_text}"
+                )
+            context_block = (
+                "Asagidaki TSK Doktrini/Angajman Kurallari taktik hafizadan alinmistir.\n"
+                "Cevabinda bu kurallari dikkate al.\n\n"
+                + "\n\n".join(context_lines)
+            )
+        else:
+            context_block = (
+                "Taktik hafizada bu soruyla ilgili spesifik bir doktrin/kural bulunamadi.\n"
+                "Genel askeri bilgini kullan ancak spesifik bir kural bulunamadigini belirt."
+            )
+        
+        # ── Build conversational prompt ──────────────────────────────
+        system_message = """Sen bir Askeri Yapay Zeka Asistani'sin. C4ISR komuta merkezinde gorev yapiyorsun.
+
+## GOREV TANIMI
+- Komutanin sorularina taktik, operasyonel ve stratejik duzeyde cevap ver.
+- Cevaplarin net, eyleme donustrulebilir ve askeri terminolojiye uygun olmali.
+- TSK doktrin ve kurallarina uygun cevaplar ver.
+- Eger taktik hafizadan alinan kurallar soruyla ilgiliyse, bunlari dogrudan cevabina dahil et.
+- Eger kurallar ilgisiz ise, genel askeri bilgilerini kullan ve spesifik bir doktrin kurali bulunamadigini belirt.
+- Turkce cevap ver.
+
+## FORMAT
+- Cevaplarin profesyonel ve ozlu olmali.
+- Gerektiginde madde isaretleri ve numaralandirilmis listeler kullan.
+- Kritik bilgileri vurgula."""
+        
+        user_message = f"""{system_message}
+
+## TAKTIK HAFIZADAN ALINAN BAGIAM
+{context_block}
+
+## KOMUTANIN SORUSU
+{query}
+
+Yukaridaki doktrin baglami ve soruya gore cevabini ver:"""
+        
+        # ── Apply Gemma chat template ────────────────────────────────
+        messages = [{"role": "user", "content": user_message}]
+        prompt = self._tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+        
+        # ── Tokenize & generate ──────────────────────────────────────
+        inputs = self._tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=2048
+        ).to("cuda")
+        
+        with torch.no_grad():
+            outputs = self._model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=True,
+                temperature=0.8,
+                top_p=0.9,
+                repetition_penalty=1.1,
+                pad_token_id=self._tokenizer.pad_token_id
+            )
+        
+        # Decode response (skip input tokens)
+        response_text = self._tokenizer.decode(
+            outputs[0][inputs['input_ids'].shape[1]:],
+            skip_special_tokens=True
+        ).strip()
+        
+        inference_time = time.time() - start_time
+        logger.info(
+            "Chat response generated",
+            query=query[:80],
+            response_length=len(response_text),
+            inference_time_s=f"{inference_time:.2f}",
+            rag_hits=len(rag_context),
+        )
+        
+        return response_text
+    
     def _build_analysis_prompt(
         self,
         telemetry_json: str,

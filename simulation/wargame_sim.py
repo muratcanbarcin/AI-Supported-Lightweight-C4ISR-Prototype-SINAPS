@@ -30,11 +30,19 @@ import argparse
 import signal
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from enum import Enum
 
 # MQTT Client
 import paho.mqtt.client as mqtt
+
+# HTTP client for Backend REST API (v2 tables)
+try:
+    import aiohttp
+    HAS_AIOHTTP = True
+except ImportError:
+    HAS_AIOHTTP = False
+    print("[WARN] aiohttp not installed. v2 table seeding disabled. Install: pip install aiohttp")
 
 
 # =============================================================================
@@ -44,9 +52,65 @@ import paho.mqtt.client as mqtt
 DEFAULT_BROKER_HOST = "localhost"
 DEFAULT_BROKER_PORT = 1883
 DEFAULT_INTERVAL = 60  # 1 minute
+DEFAULT_BACKEND_URL = "http://localhost:8080"  # Spring Boot backend
 
 # MQTT Topic — unified for Middleware consumption
 MQTT_TOPIC_TELEMETRY = "c4isr/telemetry"
+
+# How often (in cycles) to seed v2 tables
+V2_SEED_EVERY_N_CYCLES = 3  # Every 3 cycles
+
+
+# =============================================================================
+# V2 TABLE TEMPLATES (Tasks, System Logs, AI Analyses)
+# =============================================================================
+
+V2_TASK_TEMPLATES = {
+    "drone": [
+        ("Kesif Ucusu", "Hedef bolgesinde alcak irtifa kesif ucusu gerceklestir"),
+        ("Gozetleme Gorevi", "Sinir hattinda gozetleme gorevi"),
+        ("Fotograf Haritalama", "Tatbikat bolgesinin hava fotograflarini cek"),
+        ("Konvoy Takibi", "Mavi kuvvet konvoyunu havadan takip et"),
+        ("Gece Tarama", "Gece termal kamera ile bolge taramasi"),
+    ],
+    "soldier": [
+        ("Devriye Gorevi", "Kuzey sektor devriye hattinda yuruyus"),
+        ("Nobet Gorevi", "Kisla ana giris nobet gorevi"),
+        ("Tatbikat Baskin", "Simule edilmis baskin tatbikati"),
+        ("Kesif Timi", "Ileri kesif noktasina intikal"),
+        ("Ilk Yardim", "Saha ilk yardim egitimi katilimi"),
+    ],
+    "vehicle": [
+        ("Konvoy Harekati", "Alfa noktasindan Bravo noktasina malzeme tasima"),
+        ("Arazi Manevra", "Tatbikat bolgesinde taktik manevra"),
+        ("Hedef Atisi", "Atis poligonunda hedef atisi"),
+        ("Muharebe Destek", "Piyade birligine yakin destek gorevi"),
+        ("Bakim Kontrol", "Periyodik bakim ve teknik kontrol"),
+    ],
+}
+
+V2_LOG_EVENTS = [
+    ("HEARTBEAT", "Sistem saglik kontrolu basarili"),
+    ("MODE_CHANGE", "Operasyonel mod degisikligi tamamlandi"),
+    ("GPS_LOCK", "GPS sinyali kilitlendi, konum dogrulandi"),
+    ("SENSOR_CALIBRATION", "Sensor kalibrasyonu tamamlandi"),
+    ("MISSION_START", "Gorev basladi"),
+    ("MISSION_COMPLETE", "Gorev basariyla tamamlandi"),
+    ("BATTERY_WARNING", "Batarya seviyesi dusuk"),
+    ("CONNECTION_RESTORED", "Baglanti yeniden kuruldu"),
+]
+
+V2_AI_TEMPLATES = [
+    ("LOW", "Normal operasyonel aktivite, tehdit tespit edilmedi", False),
+    ("LOW", "Rutin devriye hareketi, anomali yok", False),
+    ("MEDIUM", "Beklenmeyen hiz degisimi tespit edildi, izleme onerisi", False),
+    ("MEDIUM", "Rota sapmasi tespit edildi, operatorun dikkatine sunuldu", True),
+    ("HIGH", "Kritik bolgeye yaklasma tespit edildi, acil onlem alinmali", True),
+    ("HIGH", "Anormal biyometrik degerler, personel saglik kontrolu gerekli", True),
+    ("CRITICAL", "Olasi dusman temasi, birlik alarma gecirilmeli", True),
+    ("LOW", "Standart tatbikat harekati, veriler normal sinirlar icinde", False),
+    ("MEDIUM", "Yakit/batarya seviyesi dusuk, ikmal planlanmali", True),
+]
 
 
 class AssetType(Enum):
@@ -429,20 +493,25 @@ def on_publish(client, userdata, mid, properties=None):
 # =============================================================================
 
 class EgeTatbikatiSimulator:
-    """Main simulation engine with MQTT publishing."""
+    """Main simulation engine with MQTT publishing and v2 table seeding."""
     
-    def __init__(self, broker_host: str, broker_port: int, interval: float):
+    def __init__(self, broker_host: str, broker_port: int, interval: float, backend_url: str = DEFAULT_BACKEND_URL):
         self.broker_host = broker_host
         self.broker_port = broker_port
         self.interval = interval
+        self.backend_url = backend_url
         self.assets: List[SimulatedAsset] = []
         self.running = False
         self.mqtt_client: mqtt.Client = None
+        self.http_session: Optional[Any] = None
         self.stats = {
             "messages_sent": 0,
             "errors": 0,
             "start_time": None,
             "cycles": 0,
+            "v2_tasks_posted": 0,
+            "v2_logs_posted": 0,
+            "v2_analyses_posted": 0,
         }
     
     def connect_mqtt(self) -> bool:
@@ -522,10 +591,128 @@ class EgeTatbikatiSimulator:
         for asset in self.assets:
             self.publish_telemetry(asset)
     
+    # =========================================================================
+    # V2 TABLE SEEDING (Tasks, System Logs, AI Analyses via REST API)
+    # =========================================================================
+    
+    async def init_http_session(self):
+        """Initialize aiohttp session for backend REST calls."""
+        if HAS_AIOHTTP and self.http_session is None:
+            self.http_session = aiohttp.ClientSession()
+    
+    async def close_http_session(self):
+        """Close aiohttp session."""
+        if self.http_session:
+            await self.http_session.close()
+            self.http_session = None
+    
+    async def post_random_task(self, asset: SimulatedAsset):
+        """POST a random task for an asset to /api/v1/tasks."""
+        if not self.http_session:
+            return
+        try:
+            templates = V2_TASK_TEMPLATES.get(asset.asset_type.value, V2_TASK_TEMPLATES["drone"])
+            title, description = random.choice(templates)
+            status = random.choice(["PENDING", "IN_PROGRESS"])
+            
+            payload = {
+                "assetId": asset.id,
+                "title": title,
+                "description": description,
+                "status": status,
+            }
+            async with self.http_session.post(
+                f"{self.backend_url}/api/v1/tasks",
+                json=payload, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status == 200:
+                    self.stats["v2_tasks_posted"] += 1
+        except Exception as e:
+            if self.stats["errors"] < 3:
+                print(f"\n[V2-TASK] Error posting task for {asset.id}: {e}")
+    
+    async def post_system_log(self, asset: SimulatedAsset, event_type: str = None, message: str = None):
+        """POST a system log entry for an asset."""
+        if not self.http_session:
+            return
+        try:
+            if event_type is None or message is None:
+                evt, msg = random.choice(V2_LOG_EVENTS)
+                event_type = event_type or evt
+                message = message or msg
+            
+            payload = {
+                "assetId": asset.id,
+                "eventType": event_type,
+                "message": message,
+            }
+            async with self.http_session.post(
+                f"{self.backend_url}/api/v1/system-logs",
+                json=payload, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status == 200:
+                    self.stats["v2_logs_posted"] += 1
+        except Exception:
+            pass  # Silent — don't flood console
+    
+    async def post_ai_analysis(self, asset: SimulatedAsset):
+        """POST an AI analysis record for an asset."""
+        if not self.http_session:
+            return
+        try:
+            # Exercise assets more likely to get HIGH/CRITICAL
+            if asset.status == OperationalStatus.EXERCISE:
+                template = random.choice(V2_AI_TEMPLATES)
+            else:
+                # IDLE: always LOW
+                low_only = [t for t in V2_AI_TEMPLATES if t[0] == "LOW"]
+                template = random.choice(low_only)
+            
+            threat_level, recommendation, is_alert = template
+            
+            payload = {
+                "assetId": asset.id,
+                "threatLevel": threat_level,
+                "recommendation": recommendation,
+                "isAlert": is_alert,
+            }
+            async with self.http_session.post(
+                f"{self.backend_url}/api/v1/ai-analyses",
+                json=payload, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status == 200:
+                    self.stats["v2_analyses_posted"] += 1
+        except Exception:
+            pass  # Silent
+    
+    async def seed_v2_tables(self):
+        """Seed v2 tables with data for a random subset of assets."""
+        if not HAS_AIOHTTP or not self.http_session:
+            return
+        
+        # Pick 3-6 random assets to seed per cycle
+        subset = random.sample(self.assets, min(random.randint(3, 6), len(self.assets)))
+        
+        tasks = []
+        for asset in subset:
+            # ~50% chance each type of v2 record
+            if random.random() < 0.4:
+                tasks.append(self.post_random_task(asset))
+            if random.random() < 0.6:
+                tasks.append(self.post_system_log(asset))
+            if random.random() < 0.5:
+                tasks.append(self.post_ai_analysis(asset))
+        
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+    
     async def run_simulation_loop(self):
         """Main async simulation loop."""
         self.running = True
         self.stats["start_time"] = datetime.now()
+        
+        # Init HTTP session for v2 table seeding
+        await self.init_http_session()
         
         while self.running:
             self.stats["cycles"] += 1
@@ -537,14 +724,23 @@ class EgeTatbikatiSimulator:
             # Publish telemetry via MQTT
             self.publish_all_telemetry()
             
+            # Seed v2 tables every N cycles
+            if HAS_AIOHTTP and self.stats["cycles"] % V2_SEED_EVERY_N_CYCLES == 0:
+                await self.seed_v2_tables()
+            
             # Print status
             elapsed = (datetime.now() - self.stats["start_time"]).total_seconds()
             elapsed_min = elapsed / 60
             
+            v2_total = (self.stats["v2_tasks_posted"] + 
+                        self.stats["v2_logs_posted"] + 
+                        self.stats["v2_analyses_posted"])
+            
             print(f"\rCycle {self.stats['cycles']:03d} | "
-                  f"Published: {self.stats['messages_sent']:,} | "
-                  f"Errors: {self.stats['errors']} | "
-                  f"Runtime: {elapsed_min:.1f} min | "
+                  f"MQTT: {self.stats['messages_sent']:,} | "
+                  f"v2: {v2_total} (T:{self.stats['v2_tasks_posted']}/L:{self.stats['v2_logs_posted']}/A:{self.stats['v2_analyses_posted']}) | "
+                  f"Err: {self.stats['errors']} | "
+                  f"{elapsed_min:.1f}min | "
                   f"Next in {self.interval}s...", end="", flush=True)
             
             # Wait for next cycle
@@ -552,6 +748,8 @@ class EgeTatbikatiSimulator:
             sleep_time = max(0, self.interval - cycle_duration)
             await asyncio.sleep(sleep_time)
         
+        # Cleanup
+        await self.close_http_session()
         print("\n\nSimulation stopped.")
     
     def stop(self):
@@ -564,24 +762,29 @@ class EgeTatbikatiSimulator:
 # =============================================================================
 
 async def main():
-    parser = argparse.ArgumentParser(description="Ege Tatbikati Simulation (MQTT)")
+    parser = argparse.ArgumentParser(description="Ege Tatbikati Simulation (MQTT + v2 REST)")
     parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL,
                         help=f"Update interval in seconds (default: {DEFAULT_INTERVAL})")
     parser.add_argument("--broker-host", type=str, default=DEFAULT_BROKER_HOST,
                         help=f"MQTT broker host (default: {DEFAULT_BROKER_HOST})")
     parser.add_argument("--broker-port", type=int, default=DEFAULT_BROKER_PORT,
                         help=f"MQTT broker port (default: {DEFAULT_BROKER_PORT})")
+    parser.add_argument("--backend-url", type=str, default=DEFAULT_BACKEND_URL,
+                        help=f"Backend REST URL (default: {DEFAULT_BACKEND_URL})")
     args = parser.parse_args()
     
     print("=" * 60)
-    print("EGE TATBIKATI SIMULATION ENGINE (MQTT)")
+    print("EGE TATBIKATI SIMULATION ENGINE (MQTT + v2 REST)")
     print("=" * 60)
     print(f"MQTT Broker: {args.broker_host}:{args.broker_port}")
+    print(f"Backend URL: {args.backend_url}")
     print(f"Interval: {args.interval}s ({args.interval/60:.1f} min)")
     print(f"Topic: {MQTT_TOPIC_TELEMETRY} (unified — Middleware routes)")
+    print(f"v2 Table Seeding: {'ENABLED' if HAS_AIOHTTP else 'DISABLED (install aiohttp)'}")
+    print(f"v2 Seed Frequency: Every {V2_SEED_EVERY_N_CYCLES} cycles")
     print("=" * 60)
     
-    simulator = EgeTatbikatiSimulator(args.broker_host, args.broker_port, args.interval)
+    simulator = EgeTatbikatiSimulator(args.broker_host, args.broker_port, args.interval, args.backend_url)
     
     # Connect to MQTT
     if not simulator.connect_mqtt():
@@ -603,6 +806,8 @@ async def main():
     print("\n" + "=" * 60)
     print("Starting simulation... (Press Ctrl+C to stop)")
     print("Each unit publishes to c4isr/telemetry — Middleware handles routing")
+    if HAS_AIOHTTP:
+        print(f"v2 tables (tasks/logs/analyses) seeded every {V2_SEED_EVERY_N_CYCLES} cycles via REST")
     print("=" * 60 + "\n")
     
     try:
@@ -612,7 +817,10 @@ async def main():
     
     # Final stats
     print("\nFinal Statistics:")
-    print(f"   Total Messages Published: {simulator.stats['messages_sent']:,}")
+    print(f"   MQTT Messages Published: {simulator.stats['messages_sent']:,}")
+    print(f"   v2 Tasks Posted: {simulator.stats['v2_tasks_posted']}")
+    print(f"   v2 System Logs Posted: {simulator.stats['v2_logs_posted']}")
+    print(f"   v2 AI Analyses Posted: {simulator.stats['v2_analyses_posted']}")
     print(f"   Total Errors: {simulator.stats['errors']}")
     print(f"   Total Cycles: {simulator.stats['cycles']}")
     if simulator.stats["start_time"]:

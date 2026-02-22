@@ -166,6 +166,82 @@ async def service_info():
 
 
 # ============================================================================
+#                  CHAT ENDPOINT  (RAG-augmented conversational AI)
+# ============================================================================
+
+from pydantic import BaseModel as PydanticBaseModel, Field
+
+
+class ChatRequest(PydanticBaseModel):
+    """Request body for the /chat endpoint."""
+    query: str = Field(..., min_length=1, max_length=2000, description="Commander's question")
+
+
+class ChatResponse(PydanticBaseModel):
+    """Response body for the /chat endpoint."""
+    response: str = Field(..., description="AI-generated military assistant response")
+    cited_rule: str = Field(default="", description="Top retrieved doctrine/context used in the response")
+    rag_hits: int = Field(default=0, description="Number of RAG context items found")
+    processing_time_ms: float = Field(default=0.0, description="Total processing time in ms")
+
+
+@app.post("/chat", response_model=ChatResponse, tags=["Chat"])
+async def chat_with_ai(request: ChatRequest):
+    """
+    RAG-augmented conversational AI endpoint for the AI Assistant page.
+
+    Pipeline:
+        1. Embed the commander's query
+        2. Search pgvector tactical_memory for relevant doctrine / rules
+        3. Build prompt:  Military AI Assistant persona + retrieved context + query
+        4. Generate free-form response via local Gemma model
+        5. Return response + cited rule(s)
+    """
+    start_time = time.time()
+
+    query = request.query.strip()
+    logger.info("Chat request received", query=query[:80])
+
+    # ── Step 1: RAG retrieval — search doctrine from pgvector ─────────
+    rag_results = []
+    cited_rule = ""
+    try:
+        rag_results = rag_engine.search(query_text=query, top_k=3)
+        if rag_results:
+            # Top result becomes the cited rule
+            cited_rule = rag_results[0].get("context", "")
+            logger.info(
+                "RAG context for chat",
+                hits=len(rag_results),
+                top_score=rag_results[0].get("score", 0),
+            )
+    except Exception as e:
+        logger.warning(f"RAG retrieval failed for chat (continuing without context): {e}")
+
+    # ── Step 2: Generate conversational response via Gemma ────────────
+    try:
+        response_text = model_engine.generate_chat_response(
+            query=query,
+            rag_context=rag_results,
+        )
+    except Exception as e:
+        logger.error(f"Chat generation failed: {e}")
+        response_text = (
+            "Yapay zeka modeli su anda yanitlama kapasitesinde degil. "
+            "Lutfen daha sonra tekrar deneyin veya sistem yoneticisine basvurun."
+        )
+
+    elapsed_ms = (time.time() - start_time) * 1000
+
+    return ChatResponse(
+        response=response_text,
+        cited_rule=cited_rule,
+        rag_hits=len(rag_results),
+        processing_time_ms=round(elapsed_ms, 2),
+    )
+
+
+# ============================================================================
 #                  ANALYZE ENDPOINT  (RAG-augmented)
 # ============================================================================
 
