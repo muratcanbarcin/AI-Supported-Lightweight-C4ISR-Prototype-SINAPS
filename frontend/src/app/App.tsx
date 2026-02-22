@@ -14,7 +14,7 @@
  */
 
 import { useState, useEffect, createContext, useContext, useCallback } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams, useSearchParams, NavLink } from 'react-router-dom';
 
 // Layout Components
 import { TopNavBar } from '@/features/navigation/TopNavBar';
@@ -278,11 +278,7 @@ function MainLayout() {
             {/* Map View */}
             <Route
               path="/map"
-              element={
-                <div className="absolute inset-0 z-0">
-                  <MapView onOpenProfile={handleOpenProfile} />
-                </div>
-              }
+              element={<MapViewWrapper onOpenProfile={handleOpenProfile} />}
             />
 
             {/* Telemetry / Live Feed */}
@@ -392,6 +388,21 @@ function AssetProfileWrapper({ onFocusAsset }: { onFocusAsset: (id: string) => v
         onBack={() => navigate(-1)}
         onFocusAsset={onFocusAsset}
       />
+    </div>
+  );
+}
+
+// =============================================================================
+// MAP VIEW WRAPPER (reads ?focus=assetId from URL)
+// =============================================================================
+
+function MapViewWrapper({ onOpenProfile }: { onOpenProfile: (id: string) => void }) {
+  const [searchParams] = useSearchParams();
+  const focusId = searchParams.get('focus');
+
+  return (
+    <div className="absolute inset-0 z-0">
+      <MapView onOpenProfile={onOpenProfile} focusedAssetId={focusId} />
     </div>
   );
 }

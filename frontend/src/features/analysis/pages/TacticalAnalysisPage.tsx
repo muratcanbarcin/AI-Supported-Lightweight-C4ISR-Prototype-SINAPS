@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { mockAssets, AssetSummary, UAVDetails, SoldierDetails, VehicleDetails } from '../../../services/mockData';
+import { useAssets } from '@/hooks/useAssets';
+import type { AssetSummary, UAVDetails, SoldierDetails, VehicleDetails } from '@/types';
 import { fetchTacticalAnalyses, type AiAnalysisDTO } from '@/services/api';
 
 export function TacticalAnalysisPage() {
+    const { assets } = useAssets();
     const [selectedItem, setSelectedItem] = useState<AssetSummary | null>(null);
     const [tacticalAnalyses, setTacticalAnalyses] = useState<AiAnalysisDTO[]>([]);
     const [analysesLoading, setAnalysesLoading] = useState(true);
@@ -166,7 +168,7 @@ export function TacticalAnalysisPage() {
                     </h2>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                    {mockAssets.map(item => (
+                    {assets.map(item => (
                         <button
                             key={item.id}
                             onClick={() => setSelectedItem(item)}
@@ -191,8 +193,8 @@ export function TacticalAnalysisPage() {
 
             {/* Main Content: Detailed Analysis */}
             <div className="flex-1 p-8 overflow-y-auto relative">
-                {/* AI Analyses from Backend - Always visible */}
-                {tacticalAnalyses.length > 0 && !selectedItem && (
+                {/* AI Analyses from Backend - Always visible at top */}
+                {tacticalAnalyses.length > 0 && (
                     <div className="max-w-4xl mx-auto mb-8">
                         <div className="flex items-center gap-2 mb-4">
                             <div className="w-1 h-5 bg-rose-500"></div>

@@ -153,25 +153,10 @@ function formatLastSeen(timestamp: string): string {
   return 'Eski veri';
 }
 
-function formatAssetName(sourceId: string, type: DisplayAssetType): string {
-  // Try to extract a nice name from sourceId
-  // e.g., "UAV-01" -> "HS-01", "SOLDIER-01" -> "Piyade-01"
-  
-  const match = sourceId.match(/(\d+)$/);
-  const num = match ? match[1].padStart(2, '0') : '01';
-  
-  switch (type) {
-    case 'UAV':
-      return `HS-${num}`;
-    case 'SOLDIER':
-      return `Piyade-${num}`;
-    case 'GROUND_VEHICLE':
-      return `Araç-${num}`;
-    case 'WEARABLE':
-      return `Sensör-${num}`;
-    default:
-      return sourceId;
-  }
+function formatAssetName(sourceId: string, _type: DisplayAssetType): string {
+  // Return the real DB source_id as the display name.
+  // DB has proper names like TB2-ALFA-01, SAT-TIM-01, ALTAY-01, etc.
+  return sourceId;
 }
 
 function buildAssetDetails(

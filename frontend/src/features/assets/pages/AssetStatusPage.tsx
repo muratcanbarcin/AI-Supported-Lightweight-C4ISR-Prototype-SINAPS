@@ -116,8 +116,8 @@ export function AssetStatusPage({ onOpenProfile }: AssetStatusPageProps) {
                 {/* Coordinates HUD */}
                 <div className="bg-[#0b1120] p-3 mb-6 border-l-2 border-slate-700 relative font-mono text-xs">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-slate-500 uppercase tracking-wider text-[9px]">SİSTEM SAATİ</span>
-                    <span className="text-slate-300 tracking-wider">14:23:05</span>
+                    <span className="text-slate-500 uppercase tracking-wider text-[9px]">SON GÖRÜLME</span>
+                    <span className="text-slate-300 tracking-wider">{asset.lastSeen || 'VERİ YOK'}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-slate-500 uppercase tracking-wider text-[9px]">KONUM</span>
@@ -196,13 +196,17 @@ export function AssetStatusPage({ onOpenProfile }: AssetStatusPageProps) {
                 {/* Footer Info */}
                 <div className="mt-6 pt-4 border-t border-dashed border-slate-700/50 flex items-center justify-between">
                   <div className="flex flex-col">
-                    <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">GÖREV ID</span>
-                    <span className="text-xs text-slate-300 font-bold font-mono">MSN-{Math.floor(Math.random() * 900) + 100}</span>
+                    <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">BİRİM ID</span>
+                    <span className="text-xs text-slate-300 font-bold font-mono">{asset.id}</span>
                   </div>
                   <div className="flex flex-col items-end">
                     <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">DURUM</span>
-                    <span className={`text-xs font-bold tracking-wider ${asset.status === 'ONLINE' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      {asset.status === 'ONLINE' ? 'ONLINE' : 'BAĞLANTI YOK'}
+                    <span className={`text-xs font-bold tracking-wider ${
+                      asset.status === 'ONLINE' ? 'text-emerald-400' :
+                      asset.status === 'WARNING' ? 'text-amber-400' :
+                      'text-sky-400'
+                    }`}>
+                      {asset.status}
                     </span>
                   </div>
                 </div>

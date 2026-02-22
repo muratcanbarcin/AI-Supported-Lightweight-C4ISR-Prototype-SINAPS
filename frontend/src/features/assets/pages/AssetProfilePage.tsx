@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { useAssets } from "@/hooks/useAssets";
-import { fetchSystemLogs, postEmergencyStop, type SystemLogDTO } from "@/services/api";
+import { fetchSystemLogs, postEmergencyStop, createTask, type SystemLogDTO } from "@/services/api";
 import type { UAVDetails, SoldierDetails, VehicleDetails } from "@/types";
 
 interface AssetProfilePageProps {
@@ -11,6 +12,7 @@ interface AssetProfilePageProps {
 }
 
 export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfilePageProps) {
+    const navigate = useNavigate();
     const { assets } = useAssets();
     const asset = assets.find((a) => a.id === assetId);
     const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -40,23 +42,26 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
         }
     }, [assetId]);
 
-    const handleAssignTask = () => {
+    const handleAssignTask = async () => {
         if (!asset || !newTaskTitle) return;
 
-        // In a real app, this would call an API. Here we mutate the mock directly for demo purposes.
-        if (!asset.tasks) asset.tasks = [];
-
-        asset.tasks.unshift({
-            id: `t-new-${Date.now()}`,
-            title: newTaskTitle,
-            status: "PENDING",
-            priority: newTaskPriority,
-        });
-
-        // Reset and close
-        setNewTaskTitle("");
-        setNewTaskDescription("");
-        setIsTaskModalOpen(false);
+        try {
+            await createTask({
+                assetId: assetId,
+                title: newTaskTitle,
+                description: newTaskDescription,
+            });
+            setToast('Görev başarıyla atandı.');
+            setTimeout(() => setToast(null), 4000);
+        } catch (err) {
+            console.error('[AssetProfile] Task creation failed:', err);
+            setToast('Görev atanamadı. Bağlantı kontrol edin.');
+            setTimeout(() => setToast(null), 4000);
+        } finally {
+            setNewTaskTitle("");
+            setNewTaskDescription("");
+            setIsTaskModalOpen(false);
+        }
     };
 
     const handleAiAssist = () => {
@@ -76,9 +81,8 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
     };
 
     const handleFocusOnMap = () => {
-        if (onFocusAsset) {
-            onFocusAsset(assetId);
-        }
+        // Navigate to map page and pass asset coordinates for centering
+        navigate(`/map?focus=${assetId}`);
     };
 
     const handleSendMessage = () => {
@@ -265,10 +269,10 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
                             <i className="fa-solid fa-signal text-slate-600"></i>
                         </div>
                         <div className="text-lg font-mono text-white font-bold">
-                            {asset.details.signalQuality}% <span className="text-[10px] text-slate-500 font-sans tracking-wide">RSSI</span>
+                            {asset.details.signalQuality}% <span className="text-[10px] text-slate-500 font-sans tracking-wide">RSSI (mock)</span>
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono">
-                            ~{asset.details.latency}ms
+                            ~{asset.details.latency}ms (mock)
                         </div>
                     </div>
                 </div>
@@ -326,18 +330,18 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
 
                             {/* Attitude Indicators (Textual for now) */}
                             <div className="bg-slate-800/40 p-6 border border-sky-500/20 rounded-sm">
-                                <h3 className="text-sky-400 font-bold tracking-widest mb-4 flex items-center gap-2"><i className="fa-solid fa-arrows-spin"></i> ORYANTASYON</h3>
+                                <h3 className="text-sky-400 font-bold tracking-widest mb-4 flex items-center gap-2"><i className="fa-solid fa-arrows-spin"></i> ORYANTASYON <span className="text-[10px] text-slate-600 font-normal">(mock)</span></h3>
                                 <div className="space-y-4">
                                     <div className="bg-black/40 p-3 border border-slate-700 flex justify-between items-center">
-                                        <span className="text-xs text-slate-400 font-bold">YUNUSLAMA</span>
+                                        <span className="text-xs text-slate-400 font-bold">YUNUSLAMA (mock)</span>
                                         <span className="text-lg font-mono text-white">{uavParams.pitch}°</span>
                                     </div>
                                     <div className="bg-black/40 p-3 border border-slate-700 flex justify-between items-center">
-                                        <span className="text-xs text-slate-400 font-bold">YUVARLANMA</span>
+                                        <span className="text-xs text-slate-400 font-bold">YUVARLANMA (mock)</span>
                                         <span className="text-lg font-mono text-white">{uavParams.roll}°</span>
                                     </div>
                                     <div className="bg-black/40 p-3 border border-slate-700 flex justify-between items-center">
-                                        <span className="text-xs text-slate-400 font-bold">VOLTAJ DENGESİ</span>
+                                        <span className="text-xs text-slate-400 font-bold">VOLTAJ DENGESİ (mock)</span>
                                         <span className="text-lg font-mono text-white">{uavParams.voltage}V</span>
                                     </div>
                                 </div>
@@ -377,7 +381,7 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
                                 <h3 className="text-orange-400 font-bold tracking-widest mb-4 flex items-center gap-2"><i className="fa-solid fa-person-running"></i> FİZİKSEL DURUM</h3>
                                 <div className="space-y-4">
                                     <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                                        <span className="text-xs text-slate-400">STRES SEVİYESİ</span>
+                                        <span className="text-xs text-slate-400">STRES SEVİYESİ (mock)</span>
                                         <div className="w-32 bg-slate-700 h-2 rounded-full overflow-hidden">
                                             <div
                                                 className={`h-full ${soldierParams.stressScore > 0.5 ? 'bg-red-500' : 'bg-green-500'}`}
@@ -386,11 +390,11 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
                                         </div>
                                     </div>
                                     <div className="flex justify-between items-prefix mt-2">
-                                        <span className="text-xs text-slate-400">POZİSYON</span>
+                                        <span className="text-xs text-slate-400">POZİSYON (mock)</span>
                                         <span className="text-lg font-bold text-white uppercase">{soldierParams.bodyPosture}</span>
                                     </div>
                                     <div className="flex justify-between items-prefix mt-2">
-                                        <span className="text-xs text-slate-400">ADIM SAYISI</span>
+                                        <span className="text-xs text-slate-400">ADIM SAYISI (mock)</span>
                                         <span className="text-lg font-mono text-white">{soldierParams.steps}</span>
                                     </div>
                                 </div>
@@ -409,8 +413,8 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
                                         <div className="text-3xl font-bold text-white font-mono">{vehicleParams.speed} <span className="text-sm">KM/H</span></div>
                                     </div>
                                     <div>
-                                        <div className="text-xs text-slate-500 uppercase tracking-wider">DEVİR / RPM</div>
-                                        <div className="text-3xl font-bold text-white font-mono">2450</div>
+                                        <div className="text-xs text-slate-500 uppercase tracking-wider">DEVİR / RPM (mock)</div>
+                                        <div className="text-3xl font-bold text-white font-mono">2450 <span className="text-sm text-slate-600">(mock)</span></div>
                                     </div>
                                     <div>
                                         <div className="text-xs text-slate-500 uppercase tracking-wider">MOTOR ISISI</div>
@@ -439,11 +443,11 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
 
                                 <div className="grid grid-cols-2 gap-4 mt-6">
                                     <div className="bg-black/40 p-3 border border-slate-700">
-                                        <div className="text-[10px] text-slate-500">YAĞ BASINCI</div>
+                                        <div className="text-[10px] text-slate-500">YAĞ BASINCI (mock)</div>
                                         <div className="text-xl font-bold text-white font-mono">{vehicleParams.oilPressure} PSI</div>
                                     </div>
                                     <div className="bg-black/40 p-3 border border-slate-700">
-                                        <div className="text-[10px] text-slate-500">ODOMETRE</div>
+                                        <div className="text-[10px] text-slate-500">ODOMETRE (mock)</div>
                                         <div className="text-xl font-bold text-white font-mono">{vehicleParams.odometer} KM</div>
                                     </div>
                                 </div>
@@ -521,9 +525,11 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
                             </button>
                             <button
                                 onClick={handleSendMessage}
-                                className="w-full bg-slate-700/30 hover:bg-slate-700/50 text-slate-300 border border-slate-600 py-3 uppercase text-xs font-bold tracking-widest transition-colors flex items-center justify-center gap-2"
+                                disabled
+                                title="Mesaj sistemi henüz aktif değil"
+                                className="w-full bg-slate-700/30 text-slate-500 border border-slate-600 py-3 uppercase text-xs font-bold tracking-widest flex items-center justify-center gap-2 cursor-not-allowed opacity-50"
                             >
-                                <i className="fa-solid fa-envelope"></i> Mesaj Gönder
+                                <i className="fa-solid fa-envelope"></i> Mesaj Gönder (henüz aktif değil)
                             </button>
                             <button
                                 onClick={handleEmergencyStop}
