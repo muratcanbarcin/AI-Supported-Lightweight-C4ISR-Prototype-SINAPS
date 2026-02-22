@@ -1,24 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
-
-interface AlertSuggestion {
-    id: string;
-    title: string;
-    action: string;
-}
+import { sendAiChat } from '@/services/api';
 
 interface Message {
     id: string;
     sender: 'USER' | 'AI';
     text: string;
     timestamp: string;
-    suggestions?: AlertSuggestion[];
+    citedRule?: string;
+    ragHits?: number;
+    processingTime?: number;
 }
 
 const INITIAL_MESSAGES: Message[] = [
     {
         id: '1',
         sender: 'AI',
-        text: 'Merhaba Komutanım. SINAPS Yapay Zeka Asistanı hizmetinizde. Bölgesel durum analizi, risk değerlendirmesi veya operasyonel öneriler için bana danışabilirsiniz.',
+        text: 'Merhaba Komutanım. SINAPS Yapay Zeka Asistanı hizmetinizde. Bölgesel durum analizi, risk değerlendirmesi veya operasyonel öneriler için bana danışabilirsiniz. (RAG destekli Gemma-2 modeli aktif)',
         timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
     }
 ];
@@ -37,8 +34,8 @@ export function AIPage() {
         scrollToBottom();
     }, [messages, isTyping]);
 
-    const handleSend = () => {
-        if (!input.trim()) return;
+    const handleSend = async () => {
+        if (!input.trim() || isTyping) return;
 
         const userMsg: Message = {
             id: Date.now().toString(),
@@ -48,35 +45,35 @@ export function AIPage() {
         };
 
         setMessages(prev => [...prev, userMsg]);
+        const query = input;
         setInput('');
         setIsTyping(true);
 
-        // Mock AI Response
-        setTimeout(() => {
-            let aiText = "Anlaşıldı. Veriler analiz ediliyor...";
-            let suggestions: AlertSuggestion[] | undefined;
-
-            if (input.toLowerCase().includes('durum') || input.toLowerCase().includes('rapor')) {
-                aiText = "Bölgede şu an 3 aktif devriye ve 2 İHA görevi icra ediliyor. Kuzey sektöründe şüpheli hareketlilik tespiti üzerine alarm seviyesi 'SARI' olarak güncellenmiştir.";
-                suggestions = [
-                    { id: 's1', title: 'İHA Yönlendir', action: 'Kuzey sektörüne ilave İHA' },
-                    { id: 's2', title: 'Devriye Artır', action: 'Sınır hattı devriye sıklığı' }
-                ];
-            } else if (input.toLowerCase().includes('tehdit')) {
-                aiText = "Son 1 saat içinde 2 adet tanımlanamayan sivil araç sınır hattına yaklaşmıştır. Görüntü analizi tehdit unsuru taşımadıklarını öngörmektedir (%85 güven).";
-            }
+        try {
+            const data = await sendAiChat(query);
 
             const aiMsg: Message = {
                 id: (Date.now() + 1).toString(),
                 sender: 'AI',
-                text: aiText,
+                text: data.response,
                 timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-                suggestions
+                citedRule: data.cited_rule,
+                ragHits: data.rag_hits,
+                processingTime: data.processing_time_ms,
             };
 
             setMessages(prev => [...prev, aiMsg]);
+        } catch (err) {
+            const errorMsg: Message = {
+                id: (Date.now() + 1).toString(),
+                sender: 'AI',
+                text: 'Bağlantı hatası. AI servisi şu an yanıt veremiyor. Lütfen daha sonra tekrar deneyin.',
+                timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
+            };
+            setMessages(prev => [...prev, errorMsg]);
+        } finally {
             setIsTyping(false);
-        }, 1500);
+        }
     };
 
     return (
@@ -93,7 +90,7 @@ export function AIPage() {
                         <h2 className="text-xl font-bold text-white uppercase tracking-[0.2em] font-sans italic">YAPAY ZEKA ASİSTANI</h2>
                         <div className="flex items-center gap-2">
                             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                            <span className="text-xs text-slate-400 font-mono tracking-wider">ÇEVRİMİÇİ - SİSTEME BAĞLI</span>
+                            <span className="text-xs text-slate-400 font-mono tracking-wider">ÇEVRİMİÇİ — GEMMA-2 + RAG AKTİF</span>
                         </div>
                     </div>
                 </div>
@@ -130,18 +127,32 @@ export function AIPage() {
 
                                         {msg.text}
 
-                                        {/* Suggestions */}
-                                        {msg.suggestions && (
-                                            <div className="mt-3 pt-3 border-t border-slate-700/30 space-y-2">
-                                                <div className="text-[10px] text-sky-400 font-bold uppercase tracking-wider mb-2">ÖNERİLEN AKSİYONLAR:</div>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {msg.suggestions.map(s => (
-                                                        <button key={s.id} className="text-xs bg-sky-900/30 hover:bg-sky-500/20 border border-sky-500/30 hover:border-sky-400 text-sky-100 px-3 py-1.5 rounded-sm transition-all flex items-center gap-2">
-                                                            <i className="fa-solid fa-angle-right text-[10px]"></i>
-                                                            {s.title}
-                                                        </button>
-                                                    ))}
-                                                </div>
+                                        {/* RAG Cited Rule */}
+                                        {msg.citedRule && (
+                                            <div className="mt-3 pt-3 border-t border-slate-700/30">
+                                                <blockquote className="text-xs text-slate-400 italic border-l-2 border-sky-500/40 pl-3 leading-relaxed">
+                                                    <span className="text-sky-400/70 font-bold not-italic text-[10px] uppercase tracking-wider">Referans Kural:</span>
+                                                    <br />
+                                                    {msg.citedRule}
+                                                </blockquote>
+                                            </div>
+                                        )}
+
+                                        {/* RAG Meta */}
+                                        {msg.sender === 'AI' && (msg.ragHits !== undefined || msg.processingTime !== undefined) && (
+                                            <div className="mt-2 flex items-center gap-3 text-[9px] text-slate-600 font-mono">
+                                                {msg.ragHits !== undefined && (
+                                                    <span className="flex items-center gap-1">
+                                                        <i className="fa-solid fa-database text-[8px]"></i>
+                                                        RAG: {msg.ragHits} belge
+                                                    </span>
+                                                )}
+                                                {msg.processingTime !== undefined && (
+                                                    <span className="flex items-center gap-1">
+                                                        <i className="fa-solid fa-clock text-[8px]"></i>
+                                                        {(msg.processingTime / 1000).toFixed(1)}s
+                                                    </span>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -154,10 +165,16 @@ export function AIPage() {
 
                         {isTyping && (
                             <div className="flex justify-start">
-                                <div className="bg-slate-800/60 border border-slate-700/50 p-4 rounded-sm rounded-tl-none flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 bg-sky-500 rounded-full animate-bounce delay-0"></div>
-                                    <div className="w-1.5 h-1.5 bg-sky-500 rounded-full animate-bounce delay-150"></div>
-                                    <div className="w-1.5 h-1.5 bg-sky-500 rounded-full animate-bounce delay-300"></div>
+                                <div className="flex flex-col gap-1 items-start">
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest px-1">SINAPS AI</span>
+                                    <div className="bg-slate-800/60 border border-slate-700/50 p-4 rounded-sm rounded-tl-none flex items-center gap-3">
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-1.5 h-1.5 bg-sky-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                            <div className="w-1.5 h-1.5 bg-sky-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                            <div className="w-1.5 h-1.5 bg-sky-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                        </div>
+                                        <span className="text-[10px] text-slate-500 font-mono animate-pulse">RAG sorgulanıyor & model yanıt üretiyor...</span>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -173,13 +190,15 @@ export function AIPage() {
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                                 placeholder="Komut veya soru giriniz..."
-                                className="flex-1 bg-slate-800/50 border border-slate-700 text-slate-200 p-3 text-sm focus:outline-none focus:border-sky-500/50 transition-colors rounded-sm shadow-inner placeholder:text-slate-600 font-mono"
+                                disabled={isTyping}
+                                className="flex-1 bg-slate-800/50 border border-slate-700 text-slate-200 p-3 text-sm focus:outline-none focus:border-sky-500/50 transition-colors rounded-sm shadow-inner placeholder:text-slate-600 font-mono disabled:opacity-50"
                             />
                             <button
                                 onClick={handleSend}
-                                className="bg-sky-600 hover:bg-sky-500 text-white w-12 flex items-center justify-center rounded-sm transition-colors shadow-lg"
+                                disabled={isTyping || !input.trim()}
+                                className="bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white w-12 flex items-center justify-center rounded-sm transition-colors shadow-lg"
                             >
-                                <i className="fa-solid fa-paper-plane"></i>
+                                {isTyping ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-paper-plane"></i>}
                             </button>
                         </div>
                     </div>

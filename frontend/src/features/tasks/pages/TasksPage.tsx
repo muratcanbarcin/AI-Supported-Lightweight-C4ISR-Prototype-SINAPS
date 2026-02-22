@@ -1,83 +1,120 @@
-import { useState } from 'react';
-import { mockAssets } from '@/services/mockData';
-
-interface Task {
-    id: string;
-    name: string;
-    description: string;
-    assignedUnitId: string | null;
-    status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
-    createdAt: string;
-}
-
-const INITIAL_TASKS: Task[] = [
-    {
-        id: 'TSK-001',
-        name: 'Bölge Keşfi - Kuzey',
-        description: 'Kuzey sektöründe şüpheli hareketlilik tespiti için İHA keşfi.',
-        assignedUnitId: 'UAV-01',
-        status: 'IN_PROGRESS',
-        createdAt: '10:45',
-    },
-    {
-        id: 'TSK-002',
-        name: 'Mühimmat İkmali',
-        description: 'Piyade-01 birliğine mühimmat desteği sağlanması.',
-        assignedUnitId: null,
-        status: 'PENDING',
-        createdAt: '11:20',
-    },
-];
+import { useState, useEffect, useCallback } from 'react';
+import { fetchTasks, createTask, fetchAssets } from '@/services/api';
+import type { TaskDTO } from '@/services/api';
+import type { Asset } from '@/types';
 
 export function TasksPage() {
-    const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
+    const [tasks, setTasks] = useState<TaskDTO[]>([]);
+    const [assets, setAssets] = useState<Asset[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'LIST' | 'CREATE'>('LIST');
 
     // Form State
-    const [taskName, setTaskName] = useState('');
+    const [taskTitle, setTaskTitle] = useState('');
     const [taskDesc, setTaskDesc] = useState('');
-    const [selectedUnit, setSelectedUnit] = useState<string>('');
-    const [isAiGenerating, setIsAiGenerating] = useState(false);
+    const [selectedAssetId, setSelectedAssetId] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [toast, setToast] = useState<string | null>(null);
 
-    const handleCreateTask = () => {
-        if (!taskName || !taskDesc) return;
+    const loadTasks = useCallback(async () => {
+        try {
+            const data = await fetchTasks();
+            setTasks(data);
+        } catch (err) {
+            console.error('[TasksPage] Failed to fetch tasks:', err);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
 
-        const newTask: Task = {
-            id: `TSK-${Math.floor(Math.random() * 9000) + 1000}`,
-            name: taskName,
-            description: taskDesc,
-            assignedUnitId: selectedUnit || null,
-            status: 'PENDING',
-            createdAt: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
-        };
+    const loadAssets = useCallback(async () => {
+        try {
+            const data = await fetchAssets();
+            setAssets(data);
+        } catch (err) {
+            console.error('[TasksPage] Failed to fetch assets:', err);
+        }
+    }, []);
 
-        setTasks([newTask, ...tasks]);
+    useEffect(() => {
+        loadTasks();
+        loadAssets();
+    }, [loadTasks, loadAssets]);
 
-        // Reset form
-        setTaskName('');
-        setTaskDesc('');
-        setSelectedUnit('');
-        setActiveTab('LIST');
+    const handleCreateTask = async () => {
+        if (!taskTitle || !taskDesc) return;
+
+        setIsSubmitting(true);
+        try {
+            await createTask({
+                assetId: selectedAssetId || undefined,
+                title: taskTitle,
+                description: taskDesc,
+            });
+            setToast('Görev başarıyla oluşturuldu.');
+            setTimeout(() => setToast(null), 3000);
+
+            // Reset form
+            setTaskTitle('');
+            setTaskDesc('');
+            setSelectedAssetId('');
+            setActiveTab('LIST');
+
+            // Reload tasks
+            await loadTasks();
+        } catch (err) {
+            console.error('[TasksPage] Failed to create task:', err);
+            setToast('Görev oluşturulamadı.');
+            setTimeout(() => setToast(null), 3000);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    const handleAiAssist = () => {
-        setIsAiGenerating(true);
-        // Simulate AI delay
-        setTimeout(() => {
-            const aiSuggestions = [
-                "Sınır hattı boyunca devriye atılarak olası sızma girişimlerinin tespit edilmesi ve raporlanması.",
-                "Belirlenen koordinatlarda şüpheli hareketlilik gözlemlenen bölgenin termal kameralarla taraması.",
-                "Dost birliklerin intikali sırasında güvenlik koridoru oluşturulması ve havadan gözetleme desteği.",
-                "Kritik mühimmat ve yaşam malzemelerinin ileri hat birliklerine güvenli bir şekilde ulaştırılması."
-            ];
-            const randomSuggestion = aiSuggestions[Math.floor(Math.random() * aiSuggestions.length)];
-            setTaskDesc(randomSuggestion);
-            setIsAiGenerating(false);
-        }, 1500);
+    const getStatusLabel = (status: string) => {
+        switch (status) {
+            case 'IN_PROGRESS': return 'SÜRÜYOR';
+            case 'COMPLETED': return 'TAMAMLANDI';
+            case 'CANCELLED': return 'İPTAL';
+            default: return 'BEKLİYOR';
+        }
+    };
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'IN_PROGRESS': return 'border-amber-500/30 bg-amber-500/10 text-amber-400';
+            case 'COMPLETED': return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400';
+            case 'CANCELLED': return 'border-red-500/30 bg-red-500/10 text-red-400';
+            default: return 'border-slate-500/30 bg-slate-500/10 text-slate-400';
+        }
+    };
+
+    const formatCreatedAt = (iso: string) => {
+        try {
+            const d = new Date(iso);
+            return d.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        } catch {
+            return iso;
+        }
+    };
+
+    const getAssetIcon = (assetId: string) => {
+        if (assetId.toUpperCase().includes('DRONE') || assetId.toUpperCase().includes('UAV')) return 'fa-plane';
+        if (assetId.toUpperCase().includes('SOLDIER') || assetId.toUpperCase().includes('PER')) return 'fa-person-rifle';
+        if (assetId.toUpperCase().includes('VEHICLE') || assetId.toUpperCase().includes('VEH')) return 'fa-truck-pickup';
+        return 'fa-circle-dot';
     };
 
     return (
         <div className="h-full overflow-y-auto bg-slate-900/80 p-8 pt-24 custom-scrollbar font-sans relative">
+
+            {/* Toast */}
+            {toast && (
+                <div className="fixed top-20 right-6 z-50 bg-emerald-600 text-white px-5 py-3 rounded-sm shadow-lg text-sm font-bold tracking-wider flex items-center gap-2 animate-pulse">
+                    <i className="fa-solid fa-check-circle"></i> {toast}
+                </div>
+            )}
+
             <div className="max-w-4xl mx-auto">
 
                 {/* Header */}
@@ -115,49 +152,54 @@ export function TasksPage() {
                     {/* TASK LIST VIEW */}
                     {activeTab === 'LIST' && (
                         <div className="space-y-4">
-                            {tasks.map(task => {
-                                const assignedAsset = mockAssets.find(a => a.id === task.assignedUnitId);
-
-                                return (
+                            {isLoading ? (
+                                <div className="flex items-center justify-center py-20">
+                                    <i className="fa-solid fa-spinner fa-spin text-sky-500 text-2xl mr-3"></i>
+                                    <span className="text-slate-400 font-mono">Görevler yükleniyor...</span>
+                                </div>
+                            ) : tasks.length === 0 ? (
+                                <div className="text-center py-20">
+                                    <i className="fa-solid fa-clipboard-list text-4xl text-slate-600 mb-4"></i>
+                                    <p className="text-slate-500 text-sm">Henüz görev bulunmuyor.</p>
+                                </div>
+                            ) : (
+                                tasks.map(task => (
                                     <div key={task.id} className="bg-slate-800/30 border border-slate-700/50 p-4 hover:bg-slate-800/50 transition-colors group relative overflow-hidden">
                                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-sky-500 to-transparent opacity-50 group-hover:opacity-100 transition-opacity"></div>
 
                                         <div className="flex justify-between items-start mb-2">
                                             <div>
                                                 <div className="flex items-center gap-3 mb-1">
-                                                    <h3 className="text-lg font-bold text-slate-100 tracking-wider font-sans uppercase">{task.name}</h3>
-                                                    <span className={`text-[10px] px-2 py-0.5 rounded-sm font-bold tracking-widest border ${task.status === 'IN_PROGRESS' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' :
-                                                        task.status === 'COMPLETED' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400' :
-                                                            'border-slate-500/30 bg-slate-500/10 text-slate-400'
-                                                        }`}>
-                                                        {task.status === 'IN_PROGRESS' ? 'SÜRÜYOR' : task.status === 'COMPLETED' ? 'TAMAMLANDI' : 'BEKLİYOR'}
+                                                    <h3 className="text-lg font-bold text-slate-100 tracking-wider font-sans uppercase">{task.title}</h3>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-sm font-bold tracking-widest border ${getStatusColor(task.status)}`}>
+                                                        {getStatusLabel(task.status)}
                                                     </span>
                                                 </div>
-                                                <p className="text-sm text-slate-400 font-sans">{task.description}</p>
+                                                <p className="text-sm text-slate-400 font-sans">{task.description || '—'}</p>
                                             </div>
                                             <div className="text-right">
                                                 <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">OLUŞTURULMA</div>
-                                                <div className="text-sm font-mono text-slate-300">{task.createdAt}</div>
+                                                <div className="text-sm font-mono text-slate-300">{formatCreatedAt(task.createdAt)}</div>
                                             </div>
                                         </div>
 
                                         <div className="mt-4 pt-3 border-t border-slate-700/30 flex items-center justify-between">
                                             <div className="flex items-center gap-2">
                                                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">ATANAN BİRİM:</span>
-                                                {assignedAsset ? (
+                                                {task.assetId ? (
                                                     <div className="flex items-center gap-2 text-xs font-bold text-sky-400 bg-sky-900/20 px-2 py-1 rounded-sm border border-sky-500/20">
-                                                        <i className={`fa-solid ${assignedAsset.type === 'UAV' ? 'fa-plane' : assignedAsset.type === 'SOLDIER' ? 'fa-person-rifle' : 'fa-truck-pickup'}`}></i>
-                                                        {assignedAsset.name}
+                                                        <i className={`fa-solid ${getAssetIcon(task.assetId)}`}></i>
+                                                        {task.assetId}
                                                     </div>
                                                 ) : (
                                                     <span className="text-xs text-slate-500 italic">Atama Bekliyor</span>
                                                 )}
                                             </div>
-                                            <div className="text-[10px] text-slate-600 font-mono tracking-widest">{task.id}</div>
+                                            <div className="text-[10px] text-slate-600 font-mono tracking-widest">TSK-{String(task.id).padStart(3, '0')}</div>
                                         </div>
                                     </div>
-                                );
-                            })}
+                                ))
+                            )}
                         </div>
                     )}
 
@@ -166,13 +208,41 @@ export function TasksPage() {
                         <div className="max-w-xl mx-auto py-4 font-sans">
                             <div className="space-y-6">
 
+                                {/* Asset ID Input */}
+                                <div>
+                                    <label className="block text-xs font-bold text-sky-500 uppercase tracking-widest mb-2">VARLIK ID (İSTEĞE BAĞLI)</label>
+                                    <input
+                                        type="text"
+                                        value={selectedAssetId}
+                                        onChange={(e) => setSelectedAssetId(e.target.value)}
+                                        className="w-full bg-[#0b1120] border border-slate-700 text-slate-200 p-3 text-sm focus:outline-none focus:border-sky-500/50 transition-colors rounded-sm shadow-inner placeholder:text-slate-600"
+                                        placeholder="Örn: TB2-ALFA-01"
+                                    />
+                                    {assets.length > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {assets.map(a => (
+                                                <button
+                                                    key={a.id}
+                                                    onClick={() => setSelectedAssetId(selectedAssetId === a.id ? '' : a.id)}
+                                                    className={`text-[10px] px-2 py-1 rounded-sm border transition-all ${selectedAssetId === a.id
+                                                        ? 'bg-sky-500/20 border-sky-500 text-sky-400'
+                                                        : 'bg-slate-800/40 border-slate-700 text-slate-500 hover:border-slate-500'
+                                                        }`}
+                                                >
+                                                    {a.id}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
                                 {/* Name Input */}
                                 <div>
                                     <label className="block text-xs font-bold text-sky-500 uppercase tracking-widest mb-2">GÖREV ADI</label>
                                     <input
                                         type="text"
-                                        value={taskName}
-                                        onChange={(e) => setTaskName(e.target.value)}
+                                        value={taskTitle}
+                                        onChange={(e) => setTaskTitle(e.target.value)}
                                         className="w-full bg-[#0b1120] border border-slate-700 text-slate-200 p-3 text-sm focus:outline-none focus:border-sky-500/50 transition-colors rounded-sm shadow-inner placeholder:text-slate-600"
                                         placeholder="Örn: Sınır Güvenliği Devriyesi"
                                     />
@@ -181,50 +251,13 @@ export function TasksPage() {
                                 {/* Description Input */}
                                 <div>
                                     <label className="block text-xs font-bold text-sky-500 uppercase tracking-widest mb-2">AÇIKLAMA</label>
-                                    <div className="relative">
-                                        <textarea
-                                            value={taskDesc}
-                                            onChange={(e) => setTaskDesc(e.target.value)}
-                                            rows={4}
-                                            className="w-full bg-[#0b1120] border border-slate-700 text-slate-200 p-3 text-sm focus:outline-none focus:border-sky-500/50 transition-colors rounded-sm shadow-inner placeholder:text-slate-600 resize-none pb-10"
-                                            placeholder="Görev detaylarını ve hedeflerini belirtiniz..."
-                                        />
-                                        <button
-                                            onClick={handleAiAssist}
-                                            disabled={isAiGenerating}
-                                            className="absolute bottom-2 right-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 text-[10px] font-bold px-3 py-1.5 border border-purple-500/50 rounded-sm flex items-center gap-2 transition-colors disabled:opacity-50"
-                                        >
-                                            {isAiGenerating ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-wand-magic-sparkles"></i>}
-                                            AI DESTEĞİ İLE OLUŞTUR
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Assignment Dropdown */}
-                                <div>
-                                    <label className="block text-xs font-bold text-sky-500 uppercase tracking-widest mb-2">BİRİM ATA (İSTEĞE BAĞLI)</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {mockAssets.map(asset => (
-                                            <button
-                                                key={asset.id}
-                                                onClick={() => setSelectedUnit(selectedUnit === asset.id ? '' : asset.id)}
-                                                className={`
-                                  flex items-center gap-3 p-3 border transition-all rounded-sm text-left
-                                  ${selectedUnit === asset.id
-                                                        ? 'bg-sky-500/20 border-sky-500 text-white shadow-[0_0_10px_rgba(14,165,233,0.3)]'
-                                                        : 'bg-slate-800/40 border-slate-700 text-slate-400 hover:border-slate-500 hover:bg-slate-700/40'}
-                               `}
-                                            >
-                                                <div className={`w-8 h-8 flex items-center justify-center rounded-sm bg-black/20 text-lg`}>
-                                                    <i className={`fa-solid ${asset.type === 'UAV' ? 'fa-plane' : asset.type === 'SOLDIER' ? 'fa-person-rifle' : 'fa-truck-pickup'}`}></i>
-                                                </div>
-                                                <div>
-                                                    <div className="text-sm font-bold uppercase tracking-wider">{asset.name}</div>
-                                                    <div className="text-[10px] text-slate-500 font-mono">{asset.type}</div>
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
+                                    <textarea
+                                        value={taskDesc}
+                                        onChange={(e) => setTaskDesc(e.target.value)}
+                                        rows={4}
+                                        className="w-full bg-[#0b1120] border border-slate-700 text-slate-200 p-3 text-sm focus:outline-none focus:border-sky-500/50 transition-colors rounded-sm shadow-inner placeholder:text-slate-600 resize-none"
+                                        placeholder="Görev detaylarını ve hedeflerini belirtiniz..."
+                                    />
                                 </div>
 
                                 {/* Action Buttons */}
@@ -237,15 +270,15 @@ export function TasksPage() {
                                     </button>
                                     <button
                                         onClick={handleCreateTask}
-                                        disabled={!taskName || !taskDesc}
+                                        disabled={!taskTitle || !taskDesc || isSubmitting}
                                         className={`
                             px-8 py-2.5 text-xs font-bold text-white uppercase tracking-widest transition-all shadow-lg flex items-center gap-2
-                            ${(!taskName || !taskDesc)
+                            ${(!taskTitle || !taskDesc || isSubmitting)
                                                 ? 'bg-slate-700 cursor-not-allowed opacity-50'
                                                 : 'bg-sky-600 hover:bg-sky-500 hover:shadow-[0_0_15px_rgba(14,165,233,0.4)]'}
                          `}
                                     >
-                                        <i className="fa-solid fa-plus"></i>
+                                        {isSubmitting ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-plus"></i>}
                                         OLUŞTUR
                                     </button>
                                 </div>

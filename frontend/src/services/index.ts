@@ -5,6 +5,8 @@
  */
 
 export { default as api, checkBackendHealth, isConnectionError, AUTH_TOKEN_KEY, AUTH_USER_KEY } from './api';
+export { fetchTasks, createTask, fetchTacticalAnalyses, fetchAlertAnalyses, fetchSystemLogs, sendAiChat, postEmergencyStop } from './api';
+export type { TaskDTO, AiAnalysisDTO, SystemLogDTO, AiChatResponse } from './api';
 export { default as authService } from './authService';
 export { default as telemetryService } from './telemetryService';
 export { default as alarmService } from './alarmService';

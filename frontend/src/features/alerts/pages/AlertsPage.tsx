@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { useAlerts } from '@/hooks/useAlerts';
 import { ConnectionWarning } from '@/features/control/ConnectionWarning';
+import { fetchAlertAnalyses, type AiAnalysisDTO } from '@/services/api';
 import type { AlertItem } from '@/types';
 interface AlertsPageProps { }
 
@@ -23,6 +25,39 @@ const CornerBrackets = ({ colorClass }: { colorClass: string }) => {
 export function AlertsPage({ }: AlertsPageProps) {
   const { alerts, connectionStatus, isLoading } = useAlerts();
 
+  // AI-based alerts from /api/v1/ai-analyses?isAlert=true
+  const [aiAlerts, setAiAlerts] = useState<AiAnalysisDTO[]>([]);
+  const [aiAlertsLoading, setAiAlertsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchAlertAnalyses()
+      .then(data => setAiAlerts(data))
+      .catch(err => console.warn('[AlertsPage] AI alert fetch failed:', err))
+      .finally(() => setAiAlertsLoading(false));
+  }, []);
+
+  const formatDate = (iso: string) => {
+    try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+    catch { return iso; }
+  };
+
+  const getThreatIcon = (level: string) => {
+    switch (level?.toUpperCase()) {
+      case 'CRITICAL': case 'HIGH': return 'fa-triangle-exclamation';
+      case 'MEDIUM': return 'fa-exclamation-circle';
+      default: return 'fa-info-circle';
+    }
+  };
+
+  const getThreatColors = (level: string) => {
+    switch (level?.toUpperCase()) {
+      case 'CRITICAL': return { bg: 'bg-red-950/30', border: 'border-red-500/30', text: 'text-red-500', badge: 'bg-red-500/20' };
+      case 'HIGH': return { bg: 'bg-rose-950/30', border: 'border-rose-500/30', text: 'text-rose-500', badge: 'bg-rose-500/20' };
+      case 'MEDIUM': return { bg: 'bg-amber-950/30', border: 'border-amber-500/30', text: 'text-amber-500', badge: 'bg-amber-500/20' };
+      default: return { bg: 'bg-cyan-950/30', border: 'border-cyan-500/30', text: 'text-cyan-500', badge: 'bg-cyan-500/20' };
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto bg-slate-900/80 p-8 pt-24 custom-scrollbar font-sans">
       {/* Connection Warning */}
@@ -35,6 +70,51 @@ export function AlertsPage({ }: AlertsPageProps) {
           <h2 className="text-xl font-bold text-white uppercase tracking-[0.2em] font-sans italic">SİSTEM UYARILARI</h2>
         </div>
 
+        {/* AI Analysis Alerts Section */}
+        {aiAlerts.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center gap-2 mb-4">
+              <i className="fa-solid fa-brain text-sky-500"></i>
+              <h3 className="text-sm font-bold text-sky-400 uppercase tracking-widest">AI ANALİZ UYARILARI</h3>
+              <span className="text-[10px] bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded-full font-bold">{aiAlerts.length}</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+              {aiAlerts.slice(0, 8).map(analysis => {
+                const colors = getThreatColors(analysis.threatLevel);
+                return (
+                  <div key={analysis.id} className={`${colors.bg} backdrop-blur-md p-5 border ${colors.border} relative flex gap-4 group hover:bg-opacity-50 transition-all`}>
+                    <CornerBrackets colorClass={analysis.threatLevel?.toUpperCase() === 'HIGH' || analysis.threatLevel?.toUpperCase() === 'CRITICAL' ? 'red' : analysis.threatLevel?.toUpperCase() === 'MEDIUM' ? 'amber' : 'cyan'} />
+
+                    <div className={`w-12 h-12 ${colors.badge} flex items-center justify-center flex-shrink-0 border ${colors.border}`}>
+                      <i className={`fa-solid ${getThreatIcon(analysis.threatLevel)} ${colors.text} animate-pulse`}></i>
+                    </div>
+
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] px-2 py-0.5 font-bold uppercase tracking-widest border rounded-sm ${colors.border} ${colors.text} ${colors.badge}`}>
+                            {analysis.threatLevel}
+                          </span>
+                          <span className="text-xs text-slate-400 font-mono">{analysis.assetId}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">{formatDate(analysis.createdAt)}</span>
+                      </div>
+                      <p className="text-sm text-slate-200 leading-relaxed">{analysis.recommendation}</p>
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-dashed border-slate-700/50">
+                        <div className={`w-1.5 h-1.5 rounded-full ${colors.text} bg-current`}></div>
+                        <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">
+                          AI ANALYSIS ID: <span className="text-slate-400">#AI-{String(analysis.id).padStart(3, '0')}</span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* System-Level Alerts (from useAlerts hook / alarmService) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {alerts.map((alert) => {
             // Determine styles based on severity

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useAssets } from "@/hooks/useAssets";
+import { fetchSystemLogs, postEmergencyStop, type SystemLogDTO } from "@/services/api";
 import type { UAVDetails, SoldierDetails, VehicleDetails } from "@/types";
 
 interface AssetProfilePageProps {
@@ -22,6 +23,22 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
     const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
     const [messageText, setMessageText] = useState("");
     const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
+    const [isEmergencySending, setIsEmergencySending] = useState(false);
+    const [toast, setToast] = useState<string | null>(null);
+
+    // System logs from backend
+    const [systemLogs, setSystemLogs] = useState<SystemLogDTO[]>([]);
+    const [logsLoading, setLogsLoading] = useState(true);
+
+    useEffect(() => {
+        if (assetId) {
+            setLogsLoading(true);
+            fetchSystemLogs(assetId)
+                .then(data => setSystemLogs(data))
+                .catch(err => console.warn('[AssetProfile] Failed to fetch logs:', err))
+                .finally(() => setLogsLoading(false));
+        }
+    }, [assetId]);
 
     const handleAssignTask = () => {
         if (!asset || !newTaskTitle) return;
@@ -80,8 +97,23 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
         setIsEmergencyModalOpen(true);
     };
 
-    const handleEmergencyStopConfirm = () => {
-        setIsEmergencyModalOpen(false);
+    const handleEmergencyStopConfirm = async () => {
+        setIsEmergencySending(true);
+        try {
+            await postEmergencyStop(assetId);
+            setToast('Acil durdurma başarıyla iletildi.');
+            setTimeout(() => setToast(null), 4000);
+            // Reload system logs to show the new entry
+            const newLogs = await fetchSystemLogs(assetId);
+            setSystemLogs(newLogs);
+        } catch (err) {
+            console.error('[AssetProfile] Emergency stop failed:', err);
+            setToast('Acil durdurma iletilemiyor. Bağlantı kontrol edin.');
+            setTimeout(() => setToast(null), 4000);
+        } finally {
+            setIsEmergencySending(false);
+            setIsEmergencyModalOpen(false);
+        }
     };
 
     if (!asset) {
@@ -137,6 +169,13 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
 
     return (
         <div className="h-full overflow-y-auto bg-slate-900/95 backdrop-blur-xl pt-20 px-8 pb-8 font-sans custom-scrollbar">
+
+            {/* Toast Notification */}
+            {toast && (
+                <div className="fixed top-20 right-6 z-50 bg-emerald-600 text-white px-5 py-3 rounded-sm shadow-lg text-sm font-bold tracking-wider flex items-center gap-2 animate-pulse">
+                    <i className="fa-solid fa-check-circle"></i> {toast}
+                </div>
+            )}
 
             {/* Header / Top Bar */}
             <div className="max-w-7xl mx-auto mb-8 flex items-center justify-between border-b border-slate-700/50 pb-6">
@@ -495,17 +534,33 @@ export function AssetProfilePage({ assetId, onBack, onFocusAsset }: AssetProfile
                         </div>
                     </div>
 
-                    {/* Event Log Mockup */}
+                    {/* System Log from Backend */}
                     <div className="bg-slate-900 border border-slate-700/50 flex flex-col h-[400px]">
-                        <div className="p-3 bg-slate-800/50 border-b border-slate-700/50">
+                        <div className="p-3 bg-slate-800/50 border-b border-slate-700/50 flex items-center justify-between">
                             <h3 className="text-xs font-bold text-slate-400 tracking-widest uppercase">SİSTEM GÜNLÜĞÜ</h3>
+                            <span className="text-[9px] text-slate-600 font-mono">{systemLogs.length} kayıt</span>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-[10px] custom-scrollbar">
-                            <div className="text-slate-500">[14:24:01] <span className="text-emerald-500">SYSTEM_CHECK_OK</span></div>
-                            <div className="text-slate-500">[14:23:45] <span className="text-sky-500">TELEMETRY_SYNC</span> data packet received</div>
-                            <div className="text-slate-500">[14:22:10] <span className="text-slate-300">WAYPOINT_REACHED</span> index: 4</div>
-                            <div className="text-slate-500">[14:15:22] <span className="text-amber-500">SIGNAL_WARN</span> rssi drop detected</div>
-                            <div className="text-slate-500">[14:10:05] <span className="text-emerald-500">MISSION_START</span> id: OP-Alpha</div>
+                            {logsLoading ? (
+                                <div className="flex items-center gap-2 text-slate-500">
+                                    <i className="fa-solid fa-spinner fa-spin"></i> Loglar yükleniyor...
+                                </div>
+                            ) : systemLogs.length === 0 ? (
+                                <div className="text-slate-600 italic">Bu varlık için log kaydı bulunmuyor.</div>
+                            ) : (
+                                systemLogs.map(log => {
+                                    const time = new Date(log.createdAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                                    const eventColor = log.eventType === 'EMERGENCY_STOP' ? 'text-red-500'
+                                        : log.eventType.includes('WARN') ? 'text-amber-500'
+                                        : log.eventType.includes('OK') || log.eventType.includes('COMPLETE') ? 'text-emerald-500'
+                                        : 'text-sky-500';
+                                    return (
+                                        <div key={log.id} className="text-slate-500">
+                                            [{time}] <span className={eventColor}>{log.eventType}</span> {log.message}
+                                        </div>
+                                    );
+                                })
+                            )}
                         </div>
                     </div>
 

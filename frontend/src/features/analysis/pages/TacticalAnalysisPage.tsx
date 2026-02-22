@@ -1,8 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { mockAssets, AssetSummary, UAVDetails, SoldierDetails, VehicleDetails } from '../../../services/mockData';
+import { fetchTacticalAnalyses, type AiAnalysisDTO } from '@/services/api';
 
 export function TacticalAnalysisPage() {
     const [selectedItem, setSelectedItem] = useState<AssetSummary | null>(null);
+    const [tacticalAnalyses, setTacticalAnalyses] = useState<AiAnalysisDTO[]>([]);
+    const [analysesLoading, setAnalysesLoading] = useState(true);
+
+    useEffect(() => {
+        fetchTacticalAnalyses()
+            .then(data => setTacticalAnalyses(data))
+            .catch(err => console.error('[TacticalAnalysis] Failed to fetch:', err))
+            .finally(() => setAnalysesLoading(false));
+    }, []);
 
     // Helper to generate simulated local threats for the demo, since it's not in the base model yet
     const getLocalThreats = (asset: AssetSummary) => {
@@ -13,6 +23,20 @@ export function TacticalAnalysisPage() {
     };
 
     const threats = selectedItem ? getLocalThreats(selectedItem) : [];
+
+    const getThreatColor = (level: string) => {
+        switch (level?.toUpperCase()) {
+            case 'CRITICAL': return 'border-red-500 bg-red-500/10 text-red-400';
+            case 'HIGH': return 'border-rose-500 bg-rose-500/10 text-rose-400';
+            case 'MEDIUM': return 'border-amber-500 bg-amber-500/10 text-amber-400';
+            default: return 'border-slate-500 bg-slate-500/10 text-slate-400';
+        }
+    };
+
+    const formatDate = (iso: string) => {
+        try { return new Date(iso).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+        catch { return iso; }
+    };
 
     const renderStats = (asset: AssetSummary) => {
         if (asset.type === 'SOLDIER') {
@@ -167,8 +191,40 @@ export function TacticalAnalysisPage() {
 
             {/* Main Content: Detailed Analysis */}
             <div className="flex-1 p-8 overflow-y-auto relative">
+                {/* AI Analyses from Backend - Always visible */}
+                {tacticalAnalyses.length > 0 && !selectedItem && (
+                    <div className="max-w-4xl mx-auto mb-8">
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="w-1 h-5 bg-rose-500"></div>
+                            <h3 className="text-lg font-bold text-white uppercase tracking-[0.2em]">AI TAKTİKSEL ANALİZ GEÇMİŞİ</h3>
+                            <span className="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full font-bold tracking-wider ml-2">{tacticalAnalyses.length} KAYIT</span>
+                        </div>
+                        <div className="space-y-3">
+                            {tacticalAnalyses.slice(0, 10).map(analysis => (
+                                <div key={analysis.id} className={`bg-slate-800/40 border p-4 rounded-sm ${getThreatColor(analysis.threatLevel)}`}>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="flex items-center gap-3">
+                                            <span className={`text-[10px] px-2 py-0.5 font-bold uppercase tracking-widest border rounded-sm ${getThreatColor(analysis.threatLevel)}`}>
+                                                {analysis.threatLevel}
+                                            </span>
+                                            <span className="text-xs text-slate-400 font-mono">{analysis.assetId}</span>
+                                        </div>
+                                        <span className="text-[10px] text-slate-500 font-mono">{formatDate(analysis.createdAt)}</span>
+                                    </div>
+                                    <p className="text-sm text-slate-300 leading-relaxed">{analysis.recommendation}</p>
+                                    {analysis.isAlert && (
+                                        <div className="mt-2 flex items-center gap-1 text-[10px] text-amber-400 font-bold uppercase tracking-widest">
+                                            <i className="fa-solid fa-triangle-exclamation"></i> UYARI OLARAK İŞARETLENDİ
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {!selectedItem ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-600 opacity-50">
+                    <div className={`h-${tacticalAnalyses.length > 0 ? 'auto py-12' : 'full'} flex flex-col items-center justify-center text-slate-600 opacity-50`}>
                         <i className="fa-solid fa-satellite-dish text-6xl mb-4"></i>
                         <p className="text-lg font-mono">Veri analizi için sol panelden birim seçin</p>
                     </div>

@@ -250,6 +250,122 @@ export function getErrorMessage(error: unknown): string {
 }
 
 // =============================================================================
+// TASKS API
+// =============================================================================
+
+export interface TaskDTO {
+  id: number;
+  assetId: string | null;
+  title: string;
+  description: string | null;
+  status: string;
+  createdAt: string;
+}
+
+/**
+ * Fetch all tasks (most recent first).
+ * GET /api/v1/tasks
+ */
+export async function fetchTasks(): Promise<TaskDTO[]> {
+  const response = await api.get<TaskDTO[]>('/tasks');
+  return response.data;
+}
+
+/**
+ * Create a new task.
+ * POST /api/v1/tasks
+ */
+export async function createTask(task: { assetId?: string; title: string; description?: string }): Promise<TaskDTO> {
+  const response = await api.post<TaskDTO>('/tasks', task);
+  return response.data;
+}
+
+// =============================================================================
+// AI ANALYSES API
+// =============================================================================
+
+export interface AiAnalysisDTO {
+  id: number;
+  assetId: string;
+  threatLevel: string;
+  recommendation: string;
+  isAlert: boolean;
+  createdAt: string;
+}
+
+/**
+ * Fetch tactical AI analyses.
+ * GET /api/v1/ai-analyses/tactical
+ */
+export async function fetchTacticalAnalyses(): Promise<AiAnalysisDTO[]> {
+  const response = await api.get<AiAnalysisDTO[]>('/ai-analyses/tactical');
+  return response.data;
+}
+
+/**
+ * Fetch alerts (AI analyses flagged as alerts).
+ * GET /api/v1/ai-analyses?isAlert=true
+ */
+export async function fetchAlertAnalyses(): Promise<AiAnalysisDTO[]> {
+  const response = await api.get<AiAnalysisDTO[]>('/ai-analyses', { params: { isAlert: true } });
+  return response.data;
+}
+
+// =============================================================================
+// SYSTEM LOGS API
+// =============================================================================
+
+export interface SystemLogDTO {
+  id: number;
+  assetId: string;
+  eventType: string;
+  message: string;
+  createdAt: string;
+}
+
+/**
+ * Fetch system logs for a specific asset.
+ * GET /api/v1/system-logs/{assetId}
+ */
+export async function fetchSystemLogs(assetId: string): Promise<SystemLogDTO[]> {
+  const response = await api.get<SystemLogDTO[]>(`/system-logs/${assetId}`);
+  return response.data;
+}
+
+// =============================================================================
+// AI CHAT API (RAG-augmented)
+// =============================================================================
+
+export interface AiChatResponse {
+  response: string;
+  cited_rule?: string;
+  rag_hits?: number;
+  processing_time_ms?: number;
+}
+
+/**
+ * Send a conversational chat query to the AI assistant.
+ * POST /api/v1/ai/chat
+ */
+export async function sendAiChat(query: string): Promise<AiChatResponse> {
+  const response = await api.post<AiChatResponse>('/ai/chat', { query }, { timeout: 120000 });
+  return response.data;
+}
+
+// =============================================================================
+// ASSET ACTIONS API
+// =============================================================================
+
+/**
+ * Initiate emergency stop for an asset.
+ * POST /api/v1/assets/{id}/emergency-stop
+ */
+export async function postEmergencyStop(assetId: string): Promise<{ success: boolean; message: string }> {
+  const response = await api.post<{ success: boolean; message: string }>(`/assets/${assetId}/emergency-stop`);
+  return response.data;
+}
+
+// =============================================================================
 // DEFAULT EXPORT
 // =============================================================================
 
