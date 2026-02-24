@@ -464,7 +464,7 @@ class ModelEngine:
             max_new_tokens:  Maximum tokens to generate (default 250 for conciseness)
             
         Returns:
-            Free-form Turkish text response string
+            Free-form text response string
         """
         if not self._initialized:
             raise RuntimeError("Model not initialized. Call initialize() first.")
@@ -479,24 +479,26 @@ class ModelEngine:
                 if rule_text:
                     doctrine_lines.append(f"- {rule_text}")
             doctrine_block = "\n".join(doctrine_lines)
-            doctrine_instruction = (
-                f"[DOKTRİN]\n{doctrine_block}\n\n"
-                "Yukaridaki doktrin soruyla alakali. Cevabini bu doktrine dayandirarak ver."
+            doctrine_section = (
+                f"[DOCTRINE]\n{doctrine_block}\n\n"
+                "The above doctrine is relevant to this question. Base your answer on it."
             )
         else:
-            doctrine_instruction = (
-                "[DOKTRİN]\nBu soru icin taktik hafizada ilgili doktrin bulunamadi.\n"
-                "Genel askeri bilgini kullanarak cevap ver."
+            doctrine_section = (
+                "[DOCTRINE]\n"
+                "No specific doctrine found for this question in tactical memory.\n"
+                "Use your general military knowledge to answer."
             )
         
-        # ── Chat-specific prompt (anti-JSON, conversational) ─────────
+        # ── Chat-specific prompt (English, anti-JSON, conversational) ──
         prompt_text = (
-            "Sen TSK Karargahinda gorevli bir Yapay Zeka Kurmay Asistanisin.\n"
-            "Kullanicinin sorusuna kisa, net ve askeri bir dille Turkce cevap ver.\n"
-            "SADECE METIN uret, asla JSON uretme. Kisa paragraflar ve madde isaretleri kullan.\n\n"
-            f"{doctrine_instruction}\n\n"
-            f"[SORU]\n{query}\n\n"
-            "[CEVAP]"
+            "You are a Military Staff AI Assistant at a C4ISR command center.\n"
+            "Answer the user's question concisely in a military style.\n"
+            "IMPORTANT: Produce ONLY plain text. NEVER output JSON.\n"
+            "Use short paragraphs and bullet points when needed.\n\n"
+            f"{doctrine_section}\n\n"
+            f"[QUESTION]\n{query}\n\n"
+            "[ANSWER]"
         )
         
         # ── Apply Gemma chat template ────────────────────────────────
@@ -533,16 +535,25 @@ class ModelEngine:
         ).strip()
         
         # ── Post-processing ──────────────────────────────────────────
+        # Log raw model output for debugging
+        raw_output = response_text
+        logger.info("Raw chat model output", raw_text=raw_output[:300])
+        
         # 1. Strip any JSON artifacts the model might still produce
         response_text = self._strip_json_artifacts(response_text)
         # 2. Detect & truncate degenerate repetition
         response_text = self._clean_repetitive_output(response_text)
+        
+        # 3. Final safety: if post-processing emptied it, use raw output
+        if not response_text or len(response_text) < 10:
+            response_text = raw_output
         
         inference_time = time.time() - start_time
         logger.info(
             "Chat response generated",
             query=query[:80],
             response_length=len(response_text),
+            raw_length=len(raw_output),
             inference_time_s=f"{inference_time:.2f}",
             rag_hits=len(rag_context),
         )
@@ -555,36 +566,41 @@ class ModelEngine:
         Remove JSON-like artifacts from chat responses.
         The LoRA adapter is trained for JSON output, so it sometimes
         produces { "key": "value" } fragments in chat mode.
+        
+        IMPORTANT: Only strip JSON if meaningful text remains after removal.
         """
         if not text:
             return text
         
         import re
         
-        # If the entire response is a JSON block, extract meaningful content
+        # If the entire response is a JSON block, try to extract meaningful content
         text_stripped = text.strip()
         if text_stripped.startswith("{") and text_stripped.endswith("}"):
-            # Try to extract any readable text content from the JSON
             try:
                 import json
                 parsed = json.loads(text_stripped)
                 # Look for text-like values in the parsed JSON
                 for key in ["response", "cevap", "answer", "text", "recommendation",
                             "reasoning", "decision", "content", "message"]:
-                    if key in parsed and isinstance(parsed[key], str):
+                    if key in parsed and isinstance(parsed[key], str) and len(parsed[key]) > 5:
                         return parsed[key]
                 # If no known key found, return all string values joined
-                text_values = [v for v in parsed.values() if isinstance(v, str) and len(v) > 20]
+                text_values = [v for v in parsed.values() if isinstance(v, str) and len(v) > 10]
                 if text_values:
                     return "\n".join(text_values)
             except (json.JSONDecodeError, Exception):
                 pass
+            # If we can't parse the JSON, return the original text as-is
+            # (better than returning nothing)
+            return text
         
-        # Remove inline JSON fragments like { "key": "value", ... }
+        # Remove inline JSON fragments ONLY if substantial text remains
         cleaned = re.sub(r'\{[^{}]{5,}\}', '', text)
-        if cleaned.strip():
+        if cleaned.strip() and len(cleaned.strip()) > 30:
             return cleaned.strip()
         
+        # If removal would leave too little text, keep original
         return text
 
     @staticmethod
@@ -609,7 +625,7 @@ class ModelEngine:
                 if truncated.strip():
                     return truncated.strip()
                 else:
-                    return "Model yanit uretirken hata olustu. Lutfen sorunuzu farkli sekilde sorun."
+                    return "The model encountered a generation error. Please rephrase your question."
         
         # Check for phrase repetition (2-3 word phrases repeating)
         text_len = len(text)

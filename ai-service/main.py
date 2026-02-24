@@ -250,8 +250,8 @@ async def chat_with_ai(request: ChatRequest):
     except Exception as e:
         logger.error(f"Chat generation failed: {e}")
         response_text = (
-            "Yapay zeka modeli su anda yanitlama kapasitesinde degil. "
-            "Lutfen daha sonra tekrar deneyin veya sistem yoneticisine basvurun."
+            "The AI model is currently unable to respond. "
+            "Please try again later or contact the system administrator."
         )
 
     elapsed_ms = (time.time() - start_time) * 1000
