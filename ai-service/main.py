@@ -185,17 +185,22 @@ class ChatResponse(PydanticBaseModel):
     processing_time_ms: float = Field(default=0.0, description="Total processing time in ms")
 
 
+# Minimum cosine similarity for RAG context to be considered "relevant"
+RAG_RELEVANCE_THRESHOLD = 0.35
+
+
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat_with_ai(request: ChatRequest):
     """
-    RAG-augmented conversational AI endpoint for the AI Assistant page.
+    Smart RAG-augmented conversational AI endpoint.
 
     Pipeline:
         1. Embed the commander's query
         2. Search pgvector tactical_memory for relevant doctrine / rules
-        3. Build prompt:  Military AI Assistant persona + retrieved context + query
-        4. Generate free-form response via local Gemma model
-        5. Return response + cited rule(s)
+        3. **FILTER**: Only keep RAG results above relevance threshold
+        4. Build chat-specific prompt (explicitly non-JSON, conversational)
+        5. Generate concise free-form response via local Gemma model
+        6. Return response + cited rule (if relevant)
     """
     start_time = time.time()
 
@@ -203,26 +208,44 @@ async def chat_with_ai(request: ChatRequest):
     logger.info("Chat request received", query=query[:80])
 
     # ── Step 1: RAG retrieval — search doctrine from pgvector ─────────
-    rag_results = []
+    raw_rag_results = []
     cited_rule = ""
     try:
-        rag_results = rag_engine.search(query_text=query, top_k=3)
-        if rag_results:
-            # Top result becomes the cited rule
-            cited_rule = rag_results[0].get("context", "")
-            logger.info(
-                "RAG context for chat",
-                hits=len(rag_results),
-                top_score=rag_results[0].get("score", 0),
-            )
+        raw_rag_results = rag_engine.search(query_text=query, top_k=3)
     except Exception as e:
         logger.warning(f"RAG retrieval failed for chat (continuing without context): {e}")
 
-    # ── Step 2: Generate conversational response via Gemma ────────────
+    # ── Step 2: Smart RAG filtering — only keep genuinely relevant results
+    relevant_rag = []
+    if raw_rag_results:
+        top_score = raw_rag_results[0].get("score", 0)
+        if top_score >= RAG_RELEVANCE_THRESHOLD:
+            # RAG is relevant — keep results above threshold
+            relevant_rag = [
+                r for r in raw_rag_results
+                if r.get("score", 0) >= RAG_RELEVANCE_THRESHOLD
+            ]
+            cited_rule = relevant_rag[0].get("context", "") if relevant_rag else ""
+            logger.info(
+                "RAG context RELEVANT for chat",
+                raw_hits=len(raw_rag_results),
+                relevant_hits=len(relevant_rag),
+                top_score=round(top_score, 4),
+            )
+        else:
+            # RAG results are below threshold — discard to prevent hallucination
+            logger.info(
+                "RAG context DISCARDED (below threshold)",
+                raw_hits=len(raw_rag_results),
+                top_score=round(top_score, 4),
+                threshold=RAG_RELEVANCE_THRESHOLD,
+            )
+
+    # ── Step 3: Generate conversational response via Gemma ────────────
     try:
         response_text = model_engine.generate_chat_response(
             query=query,
-            rag_context=rag_results,
+            rag_context=relevant_rag,  # Only pass relevant context
         )
     except Exception as e:
         logger.error(f"Chat generation failed: {e}")
@@ -236,7 +259,7 @@ async def chat_with_ai(request: ChatRequest):
     return ChatResponse(
         response=response_text,
         cited_rule=cited_rule,
-        rag_hits=len(rag_results),
+        rag_hits=len(relevant_rag),
         processing_time_ms=round(elapsed_ms, 2),
     )
 

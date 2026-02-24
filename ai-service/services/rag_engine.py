@@ -89,6 +89,45 @@ class RAGEngine:
         self._ensure_ready()
         return self._model.encode(text, convert_to_numpy=True).tolist()
 
+    # ── Schema detection ─────────────────────────────────────────────
+
+    _col_context: str = "context"
+    _col_category: str = "category"
+    _col_source: str = "source"
+    _schema_detected: bool = False
+
+    def _detect_schema(self) -> None:
+        """
+        Detect whether the tactical_memory table uses Variant A
+        (context/category/source) or Variant B (event_description/event_type/source_id).
+        Called once, result is cached.
+        """
+        if self._schema_detected or db_manager._pool is None:
+            return
+        try:
+            with db_manager.get_cursor() as cur:
+                cur.execute("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'tactical_memory'
+                """)
+                cols = {row["column_name"] for row in cur.fetchall()}
+
+            if "event_description" in cols and "context" not in cols:
+                self._col_context = "event_description"
+                self._col_category = "event_type"
+                self._col_source = "source_id"
+                logger.info("Schema detected: tsk_seed variant (event_description)")
+            else:
+                self._col_context = "context"
+                self._col_category = "category"
+                self._col_source = "source"
+                logger.info("Schema detected: init-vector variant (context)")
+
+            self._schema_detected = True
+        except Exception as exc:
+            logger.warning(f"Schema detection failed, using defaults: {exc}")
+
     # ── Core: search (pgvector cosine similarity) ────────────────────
 
     def search(
@@ -115,22 +154,24 @@ class RAGEngine:
             logger.debug("DB not available — returning empty context (demo mode)")
             return []
 
+        # Detect column names on first use
+        self._detect_schema()
+
         t0 = time.time()
         query_vec = self._embed(query_text)
 
         # pgvector format: '[0.1, 0.2, ...]'
         vec_literal = "[" + ",".join(f"{v:.8f}" for v in query_vec) + "]"
 
-        # ── Build SQL ────────────────────────────────────────────────
+        # ── Build SQL (using detected column names) ───────────────────
         # <=> = cosine distance   (lower = more similar)
         # score = 1 - distance    (higher = more similar, range 0–1)
-        # COALESCE handles both schema variants (context vs event_description)
-        sql = """
+        sql = f"""
             SELECT
                 id,
-                COALESCE(context, event_description) AS context,
-                COALESCE(category, event_type) AS category,
-                COALESCE(source, source_id) AS source,
+                {self._col_context} AS context,
+                {self._col_category} AS category,
+                {self._col_source} AS source,
                 1 - (embedding <=> %s::vector) AS score
             FROM tactical_memory
             WHERE embedding IS NOT NULL
@@ -138,7 +179,7 @@ class RAGEngine:
         params: list = [vec_literal]
 
         if category_filter:
-            sql += " AND COALESCE(category, event_type) = %s"
+            sql += f" AND {self._col_category} = %s"
             params.append(category_filter)
 
         sql += """
@@ -188,12 +229,13 @@ class RAGEngine:
             Inserted row ID
         """
         self._ensure_ready()
+        self._detect_schema()
 
         vec = self._embed(context)
         vec_literal = "[" + ",".join(f"{v:.8f}" for v in vec) + "]"
 
-        sql = """
-            INSERT INTO tactical_memory (context, embedding, category, source)
+        sql = f"""
+            INSERT INTO tactical_memory ({self._col_context}, embedding, {self._col_category}, {self._col_source})
             VALUES (%s, %s::vector, %s, %s)
             RETURNING id
         """

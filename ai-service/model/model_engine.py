@@ -447,89 +447,72 @@ class ModelEngine:
         self,
         query: str,
         rag_context: List[Dict[str, Any]],
-        max_new_tokens: int = 1024
+        max_new_tokens: int = 250
     ) -> str:
         """
-        Generate a conversational response using the Military AI Assistant persona.
+        Chat-specific generation pipeline optimized for conversational responses.
         
-        Unlike generate_decision() which returns structured JSON, this method
-        returns free-form natural language suitable for chat UI.
+        Key design decisions (countering LoRA fine-tuning bias):
+        - Explicitly instructs model to produce PLAIN TEXT only, never JSON
+        - Smart doctrine: only references RAG context if provided (pre-filtered)
+        - Low temperature (0.3) for deterministic, focused responses
+        - Limited tokens (250) for concise military-style answers
         
         Args:
             query:           The commander's question / message
-            rag_context:     List of RAG search results (context, category, source, score)
-            max_new_tokens:  Maximum tokens to generate
+            rag_context:     Pre-filtered RAG results (only relevant ones, may be empty)
+            max_new_tokens:  Maximum tokens to generate (default 250 for conciseness)
             
         Returns:
-            Free-form text response string
+            Free-form Turkish text response string
         """
         if not self._initialized:
             raise RuntimeError("Model not initialized. Call initialize() first.")
         
         start_time = time.time()
         
-        # ── Build RAG context block ──────────────────────────────────
+        # ── Build doctrine block (only if RAG passed relevant results) ──
         if rag_context:
-            context_lines = []
-            for i, c in enumerate(rag_context, 1):
+            doctrine_lines = []
+            for c in rag_context:
                 rule_text = c.get("context", c.get("event_description", ""))
-                score = c.get("score", c.get("similarity_score", 0))
-                category = c.get("category", c.get("outcome", ""))
-                context_lines.append(
-                    f"  Kural {i} (benzerlik: {score:.0%}, kategori: {category}):\n"
-                    f"    {rule_text}"
-                )
-            context_block = (
-                "Asagidaki TSK Doktrini/Angajman Kurallari taktik hafizadan alinmistir.\n"
-                "Cevabinda bu kurallari dikkate al.\n\n"
-                + "\n\n".join(context_lines)
+                if rule_text:
+                    doctrine_lines.append(f"- {rule_text}")
+            doctrine_block = "\n".join(doctrine_lines)
+            doctrine_instruction = (
+                f"[DOKTRİN]\n{doctrine_block}\n\n"
+                "Yukaridaki doktrin soruyla alakali. Cevabini bu doktrine dayandirarak ver."
             )
         else:
-            context_block = (
-                "Taktik hafizada bu soruyla ilgili spesifik bir doktrin/kural bulunamadi.\n"
-                "Genel askeri bilgini kullan ancak spesifik bir kural bulunamadigini belirt."
+            doctrine_instruction = (
+                "[DOKTRİN]\nBu soru icin taktik hafizada ilgili doktrin bulunamadi.\n"
+                "Genel askeri bilgini kullanarak cevap ver."
             )
         
-        # ── Build conversational prompt ──────────────────────────────
-        system_message = """Sen bir Askeri Yapay Zeka Asistani'sin. C4ISR komuta merkezinde gorev yapiyorsun.
-
-## GOREV TANIMI
-- Komutanin sorularina taktik, operasyonel ve stratejik duzeyde cevap ver.
-- Cevaplarin net, eyleme donustrulebilir ve askeri terminolojiye uygun olmali.
-- TSK doktrin ve kurallarina uygun cevaplar ver.
-- Eger taktik hafizadan alinan kurallar soruyla ilgiliyse, bunlari dogrudan cevabina dahil et.
-- Eger kurallar ilgisiz ise, genel askeri bilgilerini kullan ve spesifik bir doktrin kurali bulunamadigini belirt.
-- Turkce cevap ver.
-
-## FORMAT
-- Cevaplarin profesyonel ve ozlu olmali.
-- Gerektiginde madde isaretleri ve numaralandirilmis listeler kullan.
-- Kritik bilgileri vurgula."""
-        
-        user_message = f"""{system_message}
-
-## TAKTIK HAFIZADAN ALINAN BAGIAM
-{context_block}
-
-## KOMUTANIN SORUSU
-{query}
-
-Yukaridaki doktrin baglami ve soruya gore cevabini ver:"""
+        # ── Chat-specific prompt (anti-JSON, conversational) ─────────
+        prompt_text = (
+            "Sen TSK Karargahinda gorevli bir Yapay Zeka Kurmay Asistanisin.\n"
+            "Kullanicinin sorusuna kisa, net ve askeri bir dille Turkce cevap ver.\n"
+            "SADECE METIN uret, asla JSON uretme. Kisa paragraflar ve madde isaretleri kullan.\n\n"
+            f"{doctrine_instruction}\n\n"
+            f"[SORU]\n{query}\n\n"
+            "[CEVAP]"
+        )
         
         # ── Apply Gemma chat template ────────────────────────────────
-        messages = [{"role": "user", "content": user_message}]
+        messages = [{"role": "user", "content": prompt_text}]
         prompt = self._tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True
         )
         
-        # ── Tokenize & generate ──────────────────────────────────────
+        # ── Tokenize & generate (speed-optimized) ────────────────────
         inputs = self._tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=2048
+            max_length=768
         ).to("cuda")
         
         with torch.no_grad():
@@ -537,9 +520,9 @@ Yukaridaki doktrin baglami ve soruya gore cevabini ver:"""
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=True,
-                temperature=0.8,
-                top_p=0.9,
-                repetition_penalty=1.1,
+                temperature=0.3,
+                top_p=0.85,
+                repetition_penalty=1.3,
                 pad_token_id=self._tokenizer.pad_token_id
             )
         
@@ -548,6 +531,12 @@ Yukaridaki doktrin baglami ve soruya gore cevabini ver:"""
             outputs[0][inputs['input_ids'].shape[1]:],
             skip_special_tokens=True
         ).strip()
+        
+        # ── Post-processing ──────────────────────────────────────────
+        # 1. Strip any JSON artifacts the model might still produce
+        response_text = self._strip_json_artifacts(response_text)
+        # 2. Detect & truncate degenerate repetition
+        response_text = self._clean_repetitive_output(response_text)
         
         inference_time = time.time() - start_time
         logger.info(
@@ -559,6 +548,86 @@ Yukaridaki doktrin baglami ve soruya gore cevabini ver:"""
         )
         
         return response_text
+
+    @staticmethod
+    def _strip_json_artifacts(text: str) -> str:
+        """
+        Remove JSON-like artifacts from chat responses.
+        The LoRA adapter is trained for JSON output, so it sometimes
+        produces { "key": "value" } fragments in chat mode.
+        """
+        if not text:
+            return text
+        
+        import re
+        
+        # If the entire response is a JSON block, extract meaningful content
+        text_stripped = text.strip()
+        if text_stripped.startswith("{") and text_stripped.endswith("}"):
+            # Try to extract any readable text content from the JSON
+            try:
+                import json
+                parsed = json.loads(text_stripped)
+                # Look for text-like values in the parsed JSON
+                for key in ["response", "cevap", "answer", "text", "recommendation",
+                            "reasoning", "decision", "content", "message"]:
+                    if key in parsed and isinstance(parsed[key], str):
+                        return parsed[key]
+                # If no known key found, return all string values joined
+                text_values = [v for v in parsed.values() if isinstance(v, str) and len(v) > 20]
+                if text_values:
+                    return "\n".join(text_values)
+            except (json.JSONDecodeError, Exception):
+                pass
+        
+        # Remove inline JSON fragments like { "key": "value", ... }
+        cleaned = re.sub(r'\{[^{}]{5,}\}', '', text)
+        if cleaned.strip():
+            return cleaned.strip()
+        
+        return text
+
+    @staticmethod
+    def _clean_repetitive_output(text: str) -> str:
+        """
+        Detect and truncate degenerate repetitive output from the model.
+        If a word/phrase repeats more than 5 times consecutively, truncate there.
+        """
+        if not text:
+            return text
+        
+        words = text.split()
+        if len(words) < 10:
+            return text
+        
+        # Check for single-word repetition (e.g., "Below Below Below...")
+        for i in range(len(words) - 5):
+            word = words[i]
+            if all(words[i + j] == word for j in range(1, 6)):
+                # Found 6+ consecutive repetitions — truncate before them
+                truncated = " ".join(words[:i])
+                if truncated.strip():
+                    return truncated.strip()
+                else:
+                    return "Model yanit uretirken hata olustu. Lutfen sorunuzu farkli sekilde sorun."
+        
+        # Check for phrase repetition (2-3 word phrases repeating)
+        text_len = len(text)
+        for phrase_len in range(5, 30):
+            if text_len < phrase_len * 4:
+                continue
+            phrase = text[-phrase_len:]
+            count = text.count(phrase)
+            if count >= 4:
+                # Repeated phrase found — find first occurrence and truncate after 2nd
+                first_pos = text.find(phrase)
+                second_pos = text.find(phrase, first_pos + phrase_len)
+                if second_pos > 0:
+                    truncated = text[:second_pos].strip()
+                    if truncated:
+                        return truncated
+        
+        return text
     
     def _build_analysis_prompt(
         self,

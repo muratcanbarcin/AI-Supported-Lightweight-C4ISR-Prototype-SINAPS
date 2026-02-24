@@ -346,6 +346,7 @@ export interface AiChatResponse {
 /**
  * Send a conversational chat query to the AI assistant.
  * POST /api/v1/ai/chat
+ * Timeout: 120s (Gemma-2 9B inference typically takes 40-80s with 384 max tokens)
  */
 export async function sendAiChat(query: string): Promise<AiChatResponse> {
   const response = await api.post<AiChatResponse>('/ai/chat', { query }, { timeout: 120000 });
