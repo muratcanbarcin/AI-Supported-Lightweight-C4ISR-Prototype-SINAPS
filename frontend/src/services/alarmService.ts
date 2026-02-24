@@ -24,9 +24,9 @@ export async function getActiveAlarms(): Promise<AlarmDTO[]> {
       throw new Error('CONNECTION_LOST');
     }
     
-    // If endpoint not implemented, return empty
-    console.warn('[AlarmService] Alarm endpoint not available, returning fallback');
-    return getFallbackAlarms();
+    // If endpoint not implemented, return empty (no fake data)
+    console.warn('[AlarmService] Alarm endpoint not available, returning empty');
+    return [];
   }
 }
 
@@ -133,41 +133,7 @@ function formatTimeAgo(timestamp: string): string {
   return 'ESKİ';
 }
 
-/**
- * Fallback alarms when backend endpoint is not available
- * These match the original mockAlerts format
- */
-function getFallbackAlarms(): AlarmDTO[] {
-  const now = new Date();
-  
-  return [
-    {
-      id: '1',
-      threatType: 'INTRUSION',
-      sourceId: 'UAV-01',
-      severity: 'HIGH' as Severity,
-      detectedAt: new Date(now.getTime() - 2 * 60000).toISOString(),
-      isAck: false,
-      location: { latitude: 39.935, longitude: 32.852 }
-    },
-    {
-      id: '2',
-      threatType: 'SIGNAL_LOSS',
-      sourceId: 'SOLDIER-02',
-      severity: 'MEDIUM' as Severity,
-      detectedAt: new Date(now.getTime() - 5 * 60000).toISOString(),
-      isAck: false
-    },
-    {
-      id: '3',
-      threatType: 'MISSION_COMPLETE',
-      sourceId: 'UAV-02',
-      severity: 'LOW' as Severity,
-      detectedAt: new Date(now.getTime() - 15 * 60000).toISOString(),
-      isAck: false
-    }
-  ];
-}
+
 
 export default {
   getActiveAlarms,

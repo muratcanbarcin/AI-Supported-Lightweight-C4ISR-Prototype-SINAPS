@@ -11,7 +11,16 @@ export function TacticalAnalysisPage() {
 
     useEffect(() => {
         fetchTacticalAnalyses()
-            .then(data => setTacticalAnalyses(data))
+            .then(data => {
+                // Filter out failed/error analyses (middleware failures)
+                const validAnalyses = data.filter(a =>
+                    a.threatLevel &&
+                    a.threatLevel !== '' &&
+                    a.recommendation &&
+                    !a.recommendation.startsWith('ERROR')
+                );
+                setTacticalAnalyses(validAnalyses);
+            })
             .catch(err => console.error('[TacticalAnalysis] Failed to fetch:', err))
             .finally(() => setAnalysesLoading(false));
     }, []);

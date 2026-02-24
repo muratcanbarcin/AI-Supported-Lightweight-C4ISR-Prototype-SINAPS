@@ -10,13 +10,17 @@ Pipeline:
     2. Search PostgreSQL pgvector with cosine similarity (<=> operator)
     3. Return top-K engagement rules / historical context for Gemma prompt
 
-Schema (tactical_memory):
-    id          BIGSERIAL PRIMARY KEY
-    context     TEXT NOT NULL          — natural language rule / event
-    embedding   vector(384)           — all-MiniLM-L6-v2 output
-    category    VARCHAR(100)          — ENGAGEMENT_RULE, SOP, HISTORICAL_EVENT
-    source      VARCHAR(200)          — origin document / platform
-    created_at  TIMESTAMP
+Schema (tactical_memory) — supports two variants:
+    Variant A (init-vector.sql):                  Variant B (tsk_seed.sql):
+    ─────────────────────────────                 ──────────────────────────
+    id          BIGSERIAL PK                      id          BIGSERIAL PK
+    context     TEXT NOT NULL                     event_type  VARCHAR(100)
+    embedding   vector(384)                       event_description TEXT
+    category    VARCHAR(100)                      source_id   VARCHAR(100)
+    source      VARCHAR(200)                      embedding   vector(384)
+    created_at  TIMESTAMP                         created_at  TIMESTAMP
+
+    The RAG engine uses COALESCE to handle both column layouts.
 """
 
 import time
@@ -120,12 +124,13 @@ class RAGEngine:
         # ── Build SQL ────────────────────────────────────────────────
         # <=> = cosine distance   (lower = more similar)
         # score = 1 - distance    (higher = more similar, range 0–1)
+        # COALESCE handles both schema variants (context vs event_description)
         sql = """
             SELECT
                 id,
-                context,
-                category,
-                source,
+                COALESCE(context, event_description) AS context,
+                COALESCE(category, event_type) AS category,
+                COALESCE(source, source_id) AS source,
                 1 - (embedding <=> %s::vector) AS score
             FROM tactical_memory
             WHERE embedding IS NOT NULL
@@ -133,7 +138,7 @@ class RAGEngine:
         params: list = [vec_literal]
 
         if category_filter:
-            sql += " AND category = %s"
+            sql += " AND COALESCE(category, event_type) = %s"
             params.append(category_filter)
 
         sql += """

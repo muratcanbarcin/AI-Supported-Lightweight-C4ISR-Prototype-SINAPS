@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import telemetryService from '@/services/telemetryService';
 import type { AssetSummary, MapAsset, ConnectionStatus } from '@/types';
 
-// Import mock data as fallback
-import { mockAssets as fallbackAssets } from '@/services/mockData';
+
 
 /**
  * Polling interval in milliseconds (2 seconds for real-time feel)
@@ -33,7 +32,7 @@ interface UseAssetsResult {
  * useAssets Hook
  * 
  * Polls /telemetry/latest endpoint every 2 seconds to provide
- * real-time asset data. Falls back to mock data if backend is unavailable.
+ * real-time asset data. Shows empty state if backend is unavailable.
  */
 export function useAssets(options: UseAssetsOptions = {}): UseAssetsResult {
   const {
@@ -41,7 +40,7 @@ export function useAssets(options: UseAssetsOptions = {}): UseAssetsResult {
     enabled = true
   } = options;
 
-  const [assets, setAssets] = useState<AssetSummary[]>(fallbackAssets);
+  const [assets, setAssets] = useState<AssetSummary[]>([]);
   const [mapAssets, setMapAssets] = useState<MapAsset[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -65,15 +64,9 @@ export function useAssets(options: UseAssetsOptions = {}): UseAssetsResult {
       
       if (!isMountedRef.current) return;
       
-      // Use backend data if available
-      if (assetData.length > 0) {
-        setAssets(assetData);
-        setMapAssets(mapData);
-      } else {
-        // Keep fallback if no data from backend
-        setAssets(fallbackAssets);
-        setMapAssets([]);
-      }
+      // Use backend data (may be empty — that's OK)
+      setAssets(assetData);
+      setMapAssets(mapData);
       
       // Reset error state on success
       consecutiveErrorsRef.current = 0;
@@ -100,10 +93,8 @@ export function useAssets(options: UseAssetsOptions = {}): UseAssetsResult {
         });
       }
       
-      // Keep using fallback/last known data
-      if (assets.length === 0) {
-        setAssets(fallbackAssets);
-      }
+      // Keep last known data on transient error
+      // (assets stay as-is, no fake data injected)
     } finally {
       if (isMountedRef.current) {
         setIsLoading(false);

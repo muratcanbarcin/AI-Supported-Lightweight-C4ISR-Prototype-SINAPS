@@ -31,7 +31,16 @@ export function AlertsPage({ }: AlertsPageProps) {
 
   useEffect(() => {
     fetchAlertAnalyses()
-      .then(data => setAiAlerts(data))
+      .then(data => {
+        // Filter out failed/error analyses (middleware failures)
+        const validAlerts = data.filter(a =>
+          a.threatLevel &&
+          a.threatLevel !== '' &&
+          a.recommendation &&
+          !a.recommendation.startsWith('ERROR')
+        );
+        setAiAlerts(validAlerts);
+      })
       .catch(err => console.warn('[AlertsPage] AI alert fetch failed:', err))
       .finally(() => setAiAlertsLoading(false));
   }, []);
@@ -195,6 +204,14 @@ export function AlertsPage({ }: AlertsPageProps) {
             );
           })}
         </div>
+
+        {/* Empty state when no alerts at all */}
+        {alerts.length === 0 && aiAlerts.length === 0 && !isLoading && !aiAlertsLoading && (
+          <div className="text-center py-20">
+            <i className="fa-solid fa-shield-check text-4xl text-emerald-500/40 mb-4"></i>
+            <p className="text-slate-500 text-sm">Aktif uyarı bulunmuyor. Sistem normal çalışıyor.</p>
+          </div>
+        )}
       </div>
     </div>
   );

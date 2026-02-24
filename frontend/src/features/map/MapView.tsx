@@ -45,8 +45,9 @@ const TILE_LAYERS = {
 // Current active tile layer - Satellite imagery (most reliable)
 const ACTIVE_TILE_LAYER = TILE_LAYERS.satellite;
 
-// Default map center (Ankara coordinates - fallback)
-const DEFAULT_CENTER: [number, number] = [39.93, 32.85];
+// Default map center (Turkey overview — country-wide view)
+const DEFAULT_CENTER: [number, number] = [39.0, 35.0];
+const DEFAULT_ZOOM = 6;
 
 // Component to set map background style
 function MapStyleSetter() {
@@ -266,14 +267,14 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
 
       <MapContainer
         center={DEFAULT_CENTER}
-        zoom={14}
+        zoom={DEFAULT_ZOOM}
         zoomControl={false}
         className="radar-map h-full w-full bg-[#080d12]"
       >
         <MapStyleSetter />
 
-        {/* Fly to target or user location */}
-        <FlyToLocation position={targetPosition || userLocation} />
+        {/* Fly to target only (NOT user location on initial load) */}
+        <FlyToLocation position={targetPosition || null} />
 
         {/* Satellite/Terrain Map Background */}
         <TileLayer

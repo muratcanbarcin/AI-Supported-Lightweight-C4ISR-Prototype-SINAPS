@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import alarmService from '@/services/alarmService';
 import type { AlertItem, ConnectionStatus } from '@/types';
 
-// Import mock data as fallback
-import { mockAlerts as fallbackAlerts } from '@/services/mockData';
+
 
 /**
  * Polling interval in milliseconds (5 seconds for alerts is sufficient)
@@ -41,7 +40,7 @@ export function useAlerts(options: UseAlertsOptions = {}): UseAlertsResult {
     enabled = true
   } = options;
 
-  const [alerts, setAlerts] = useState<AlertItem[]>(fallbackAlerts);
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
@@ -60,13 +59,8 @@ export function useAlerts(options: UseAlertsOptions = {}): UseAlertsResult {
       
       if (!isMountedRef.current) return;
       
-      // Use backend data if available
-      if (alertData.length > 0) {
-        setAlerts(alertData);
-      } else {
-        // Keep fallback if no data from backend
-        setAlerts(fallbackAlerts);
-      }
+      // Use backend data (may be empty — that's OK)
+      setAlerts(alertData);
       
       // Reset error state on success
       consecutiveErrorsRef.current = 0;
@@ -93,10 +87,8 @@ export function useAlerts(options: UseAlertsOptions = {}): UseAlertsResult {
         });
       }
       
-      // Keep using fallback/last known data
-      if (alerts.length === 0) {
-        setAlerts(fallbackAlerts);
-      }
+      // Keep last known data on transient error
+      // (alerts stay as-is, no fake data injected)
     } finally {
       if (isMountedRef.current) {
         setIsLoading(false);
