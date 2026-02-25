@@ -1,6 +1,6 @@
 """
 ============================================================================
-        C4ISR AI MICROSERVICE - POLYMORPHIC TACTICAL DECISION SUPPORT
+        C4ISR AI MICROSERVICE — DUAL-ENGINE TACTICAL DECISION SUPPORT
 ============================================================================
     ███████╗██╗███╗   ██╗ █████╗ ██████╗ ███████╗
     ██╔════╝██║████╗  ██║██╔══██╗██╔══██╗██╔════╝
@@ -9,16 +9,24 @@
     ███████║██║██║ ╚████║██║  ██║██║     ███████║
     ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝     ╚══════╝
 
-    ⚠️  SYSTEM RUNNING IN SECURE MODE - NO EXTERNAL CALLS PERMITTED  ⚠️
+    ⚠️  SYSTEM RUNNING IN SECURE MODE — NO EXTERNAL CALLS PERMITTED  ⚠️
     
     SECURITY CLASSIFICATION: MILITARY DATA PRIVACY COMPLIANT
     NETWORK MODE: AIR-GAPPED / OFFLINE OPERATION
     MODEL SOURCE: LOCAL DIRECTORY ONLY (./local_models/)
     
-    ARCHITECTURE: Polymorphic Discriminated Union + RAG Pipeline
-    - Automatic schema validation based on 'type' field
-    - DroneTelemetry | SoldierTelemetry | VehicleTelemetry
-    - Context-aware LLM analysis with pgvector engagement-rule retrieval
+    ARCHITECTURE: Dual-Engine + Polymorphic Discriminated Union + RAG Pipeline
+    
+    ENGINE 1 (Analysis): Gemma-2-9b-it (with LoRA adapter)
+        → POST /analyze — JSON threat assessment from telemetry
+        → DroneTelemetry | SoldierTelemetry | VehicleTelemetry
+    
+    ENGINE 2 (Chat): Meta-Llama-3.1-8B-Instruct
+        → POST /chat — Turkish military assistant (RAG-augmented)
+        → Free-text conversational responses
+
+    HARDWARE: Single NVIDIA RTX 3080 (16GB VRAM)
+    QUANTIZATION: Both models 4-bit NF4 (~10-12GB total VRAM)
 
 ============================================================================
 """
@@ -59,11 +67,21 @@ logger = structlog.get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan - initialize and cleanup resources"""
-    logger.info("Starting C4ISR AI Microservice (Polymorphic + RAG Pipeline)...")
+    """
+    Application lifespan — initialize and cleanup resources.
+    
+    Startup order:
+        1. PostgreSQL database (pgvector for RAG)
+        2. RAG engine (all-MiniLM-L6-v2 embedding model)
+        3. Dual-Engine Model Engine:
+           - Engine 1: Gemma-2-9b-it (Analysis + LoRA)
+           - Engine 2: Llama-3.1-8B-Instruct (Chat)
+    """
+    logger.info("Starting C4ISR AI Microservice (Dual-Engine + RAG Pipeline)...")
     
     db_initialized = False
     rag_initialized = False
+    model_initialized = False
     
     # Step 1: Initialize database connection (for pgvector RAG)
     try:
@@ -81,19 +99,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ RAG Engine init failed: {e}")
     
-    # Step 3: Initialize Model engine (Gemma-2-9b-it)
+    # Step 3: Initialize Dual-Engine Model Engine
     try:
         model_engine.initialize()
-        logger.info("✅ Model Engine (Gemma-2-9b-it) initialized")
+        model_initialized = True
+        logger.info("✅ Dual-Engine Model Engine initialized")
+        logger.info("   Engine 1: Gemma-2-9b-it (Analysis)")
+        logger.info("   Engine 2: Llama-3.1-8B-Instruct (Chat)")
     except Exception as e:
-        logger.warning(f"⚠️ Model Engine init failed (GPU required): {e}")
+        logger.warning(f"⚠️ Dual-Engine init failed (GPU required): {e}")
     
     # Startup summary
     logger.info(
         "Startup complete",
         database=db_initialized,
         rag=rag_initialized,
-        model="initialized",
+        model=model_initialized,
+        architecture="dual-engine",
     )
     
     yield
@@ -110,21 +132,28 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="C4ISR AI Microservice",
     description="""
-## Tactical Decision Support with RAG + Polymorphic Telemetry Analysis
+## Dual-Engine Tactical Decision Support with RAG
 
-### Pipeline
+### Architecture
 ```
-Telemetry ─→ Text Summary ─→ pgvector Search ─→ Top-K Rules ─→ Gemma Prompt ─→ JSON Decision
+Engine 1 (Gemma):  Telemetry → RAG → Gemma + LoRA → JSON Decision
+Engine 2 (Llama):  Query → RAG → Llama-3.1-8B → Turkish Text Response
 ```
 
-### Supported Types
+### Endpoints
+| Endpoint | Engine | Description |
+|----------|--------|-------------|
+| `POST /analyze` | Gemma-2-9b-it | Threat assessment from telemetry |
+| `POST /chat` | Llama-3.1-8B | Military assistant chat |
+
+### Supported Telemetry Types
 | Type | Description | Key Fields |
 |------|-------------|------------|
 | `drone` | UAV operational data | altitude, speed, battery_level, mode |
 | `soldier` | Personnel vitals | vitals (hr_bpm, spo2), status |
 | `vehicle` | Ground assets | speed, fuel_pct, vehicle_type |
     """,
-    version="4.0.0",
+    version="5.0.0",
     lifespan=lifespan,
 )
 
@@ -147,8 +176,8 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "c4isr-ai-microservice",
-        "version": "4.0.0",
-        "architecture": "polymorphic-rag-pipeline",
+        "version": "5.0.0",
+        "architecture": "dual-engine-rag-pipeline",
     }
 
 
@@ -156,9 +185,9 @@ async def health_check():
 async def service_info():
     return {
         "service": settings.APP_NAME,
-        "version": "4.0.0",
-        "architecture": "Polymorphic + RAG Pipeline",
-        "model": model_engine.get_model_info(),
+        "version": "5.0.0",
+        "architecture": "Dual-Engine + RAG Pipeline",
+        "engines": model_engine.get_model_info(),
         "rag_model": settings.EMBEDDING_MODEL,
         "supported_types": ["drone", "soldier", "vehicle"],
         "endpoint_docs": "/docs",
@@ -166,7 +195,7 @@ async def service_info():
 
 
 # ============================================================================
-#                  CHAT ENDPOINT  (RAG-augmented conversational AI)
+#           CHAT ENDPOINT (Engine 2: Llama-3.1-8B-Instruct)
 # ============================================================================
 
 from pydantic import BaseModel as PydanticBaseModel, Field
@@ -174,15 +203,27 @@ from pydantic import BaseModel as PydanticBaseModel, Field
 
 class ChatRequest(PydanticBaseModel):
     """Request body for the /chat endpoint."""
-    query: str = Field(..., min_length=1, max_length=2000, description="Commander's question")
+    query: str = Field(
+        ..., min_length=1, max_length=2000,
+        description="Commander's question (Turkish or English)"
+    )
 
 
 class ChatResponse(PydanticBaseModel):
     """Response body for the /chat endpoint."""
-    response: str = Field(..., description="AI-generated military assistant response")
-    cited_rule: str = Field(default="", description="Top retrieved doctrine/context used in the response")
-    rag_hits: int = Field(default=0, description="Number of RAG context items found")
-    processing_time_ms: float = Field(default=0.0, description="Total processing time in ms")
+    response: str = Field(
+        ..., description="AI-generated military assistant response (Turkish)"
+    )
+    cited_rule: str = Field(
+        default="",
+        description="Top retrieved doctrine/context used in the response"
+    )
+    rag_hits: int = Field(
+        default=0, description="Number of RAG context items found"
+    )
+    processing_time_ms: float = Field(
+        default=0.0, description="Total processing time in ms"
+    )
 
 
 # Minimum cosine similarity for RAG context to be considered "relevant"
@@ -192,20 +233,22 @@ RAG_RELEVANCE_THRESHOLD = 0.35
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat_with_ai(request: ChatRequest):
     """
-    Smart RAG-augmented conversational AI endpoint.
+    RAG-augmented conversational AI endpoint.
+    
+    Engine: Llama-3.1-8B-Instruct (Turkish military assistant persona)
 
     Pipeline:
         1. Embed the commander's query
         2. Search pgvector tactical_memory for relevant doctrine / rules
-        3. **FILTER**: Only keep RAG results above relevance threshold
-        4. Build chat-specific prompt (explicitly non-JSON, conversational)
-        5. Generate concise free-form response via local Gemma model
+        3. FILTER: Only keep RAG results above relevance threshold
+        4. Build Llama prompt with [DOKTRIN] and [SORU] blocks
+        5. Generate concise Turkish free-form response via Llama
         6. Return response + cited rule (if relevant)
     """
     start_time = time.time()
 
     query = request.query.strip()
-    logger.info("Chat request received", query=query[:80])
+    logger.info("Chat request received [Engine: Llama]", query=query[:80])
 
     # ── Step 1: RAG retrieval — search doctrine from pgvector ─────────
     raw_rag_results = []
@@ -217,15 +260,23 @@ async def chat_with_ai(request: ChatRequest):
 
     # ── Step 2: Smart RAG filtering — only keep genuinely relevant results
     relevant_rag = []
+    rag_context_str = ""
     if raw_rag_results:
         top_score = raw_rag_results[0].get("score", 0)
         if top_score >= RAG_RELEVANCE_THRESHOLD:
-            # RAG is relevant — keep results above threshold
             relevant_rag = [
                 r for r in raw_rag_results
                 if r.get("score", 0) >= RAG_RELEVANCE_THRESHOLD
             ]
+            # Build flat doctrine string for Llama prompt
+            doctrine_lines = []
+            for r in relevant_rag:
+                rule_text = r.get("context", r.get("event_description", ""))
+                if rule_text:
+                    doctrine_lines.append(f"- {rule_text}")
+            rag_context_str = "\n".join(doctrine_lines)
             cited_rule = relevant_rag[0].get("context", "") if relevant_rag else ""
+
             logger.info(
                 "RAG context RELEVANT for chat",
                 raw_hits=len(raw_rag_results),
@@ -233,7 +284,6 @@ async def chat_with_ai(request: ChatRequest):
                 top_score=round(top_score, 4),
             )
         else:
-            # RAG results are below threshold — discard to prevent hallucination
             logger.info(
                 "RAG context DISCARDED (below threshold)",
                 raw_hits=len(raw_rag_results),
@@ -241,17 +291,17 @@ async def chat_with_ai(request: ChatRequest):
                 threshold=RAG_RELEVANCE_THRESHOLD,
             )
 
-    # ── Step 3: Generate conversational response via Gemma ────────────
+    # ── Step 3: Generate response via Llama-3.1-8B-Instruct ──────────
     try:
-        response_text = model_engine.generate_chat_response(
+        response_text = model_engine.generate_chat(
             query=query,
-            rag_context=relevant_rag,  # Only pass relevant context
+            rag_context=rag_context_str,
         )
     except Exception as e:
-        logger.error(f"Chat generation failed: {e}")
+        logger.error(f"Llama chat generation failed: {e}")
         response_text = (
-            "The AI model is currently unable to respond. "
-            "Please try again later or contact the system administrator."
+            "AI modeli şu anda yanıt veremiyor. "
+            "Lütfen daha sonra tekrar deneyin veya sistem yöneticisine başvurun."
         )
 
     elapsed_ms = (time.time() - start_time) * 1000
@@ -265,18 +315,21 @@ async def chat_with_ai(request: ChatRequest):
 
 
 # ============================================================================
-#                  ANALYZE ENDPOINT  (RAG-augmented)
+#           ANALYZE ENDPOINT (Engine 1: Gemma-2-9b-it + LoRA)
 # ============================================================================
 
 @app.post("/analyze", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_telemetry(request: AnalysisRequest):
     """
-    RAG-augmented tactical analysis pipeline:
+    RAG-augmented tactical analysis pipeline.
+    
+    Engine: Gemma-2-9b-it (with LoRA tactical adapter)
 
-    1. Convert telemetry → natural-language summary
-    2. pgvector cosine search → top-K engagement rules
-    3. Build Gemma prompt:  System + Context(rules) + Situation(telemetry)
-    4. Parse JSON response → AnalysisResponse
+    Pipeline:
+        1. Convert telemetry → natural-language summary
+        2. pgvector cosine search → top-K engagement rules
+        3. Build Gemma prompt: System + Context(rules) + Situation(telemetry)
+        4. Parse JSON response → AnalysisResponse
     """
     start_time = time.time()
 
@@ -285,7 +338,7 @@ async def analyze_telemetry(request: AnalysisRequest):
     entity_id = telemetry.source_id
 
     logger.info(
-        f"Analyzing {entity_type} telemetry (RAG pipeline)",
+        f"Analyzing {entity_type} telemetry [Engine: Gemma]",
         entity_id=entity_id,
         entity_type=entity_type,
     )
@@ -320,12 +373,12 @@ async def analyze_telemetry(request: AnalysisRequest):
 
     # ── Step 3: AI decision — Gemma with RAG context ─────────────────
     try:
-        decision, threat_level, confidence, reasoning = model_engine.generate_decision(
+        decision, threat_level, confidence, reasoning = model_engine.generate_analysis(
             telemetry_data=telemetry,
             retrieved_context=[c.model_dump() for c in context_items],
         )
     except Exception as e:
-        logger.error(f"Model generation failed: {e}")
+        logger.error(f"Gemma analysis generation failed: {e}")
         decision = f"Unable to generate decision for {entity_type} — model unavailable"
         threat_level = ThreatLevel.UNKNOWN
         confidence = 0.0
@@ -390,7 +443,7 @@ def _create_telemetry_summary(telemetry: TelemetryInput) -> str:
 
 
 # ============================================================================
-#                  INGEST ENDPOINT  (Add Rules / Events to Memory)
+#                  INGEST ENDPOINT (Add Rules / Events to Memory)
 # ============================================================================
 
 @app.post("/ingest", response_model=IngestResponse, tags=["Memory"])
@@ -426,11 +479,11 @@ async def get_memory_stats():
 
 
 # ============================================================================
-#                           TRAINING ENDPOINT (LoRA)
+#                           TRAINING ENDPOINT (LoRA — Gemma Only)
 # ============================================================================
 
 def _run_training(request: TrainingRequest):
-    """Background task for LoRA training"""
+    """Background task for LoRA training (Gemma engine only)."""
     examples = [e.model_dump() for e in request.training_examples]
     model_engine.train_lora(
         training_examples=examples,
@@ -443,7 +496,7 @@ def _run_training(request: TrainingRequest):
 
 @app.post("/train", response_model=TrainingResponse, tags=["Training"])
 async def start_training(request: TrainingRequest, background_tasks: BackgroundTasks):
-    """Start LoRA fine-tuning as a background task."""
+    """Start LoRA fine-tuning as a background task (Gemma engine only)."""
     from datetime import datetime
 
     job_id = f"train_{request.save_adapter_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -460,7 +513,7 @@ async def start_training(request: TrainingRequest, background_tasks: BackgroundT
 
 @app.get("/train/{job_id}", tags=["Training"])
 async def get_training_status(job_id: str):
-    """Get status of a training job"""
+    """Get status of a training job."""
     status = model_engine.get_training_status(job_id)
     if not status:
         raise HTTPException(status_code=404, detail="Training job not found")
@@ -495,6 +548,7 @@ async def debug_validate_telemetry(request: AnalysisRequest):
         "serialized_json": telemetry.model_dump_json(indent=2),
         "summary_for_rag": summary,
         "rag_search_results": rag_results,
+        "engine_info": model_engine.get_model_info(),
     }
 
 

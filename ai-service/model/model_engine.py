@@ -1,26 +1,36 @@
 """
 ============================================================================
-    C4ISR MODEL ENGINE - CONTEXT-AWARE TACTICAL AI BRAIN
+    C4ISR DUAL-ENGINE MODEL ENGINE — ANALYSIS + CHAT
 ============================================================================
-    SECURITY: OFFLINE MODE - Model loaded from local directory only.
+    SECURITY: OFFLINE MODE — Models loaded from local directories only.
               No external network calls to HuggingFace or any API permitted.
 ============================================================================
-    MODEL: Google Gemma-2-9b-it (9 billion parameters)
+    ENGINE 1 (Analysis): Google Gemma-2-9b-it (with LoRA Tactical Adapter)
+        → Handles POST /analyze (JSON threat assessment)
+        → Path: local_models/llm
+
+    ENGINE 2 (Chat): Meta-Llama-3.1-8B-Instruct
+        → Handles POST /chat (conversational military assistant)
+        → Path: local_models/llama_chat
+
     HARDWARE TARGET: NVIDIA RTX 3080 (16GB VRAM) / 32GB System RAM
-    QUANTIZATION: 4-bit NF4 (~6-7GB VRAM footprint)
-    OPTIMIZATION: Full GPU residency, NO CPU offload for maximum speed
+    QUANTIZATION: Both models 4-bit NF4 (~5-6GB each, ~10-12GB total)
+    OPTIMIZATION: device_map="auto" for intelligent layer placement
 ============================================================================
     KEY FEATURES:
+    - Dual-model inference on a single GPU via aggressive quantization
     - Polymorphic telemetry handling via Pydantic model serialization
     - Context-aware LLM prompting without hardcoded rules
     - Robust JSON response parsing with markdown cleanup
-    - LoRA fine-tuning support for tactical domain adaptation
+    - LoRA fine-tuning support for tactical domain adaptation (Gemma only)
+    - Turkish military assistant persona for chat (Llama)
 ============================================================================
 """
 import os
 import re
 import json
 import time
+import gc
 import torch
 from typing import List, Optional, Dict, Any, Tuple, Union
 from datetime import datetime
@@ -28,17 +38,17 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from transformers import (
-    AutoModelForCausalLM, 
-    AutoTokenizer, 
-    BitsAndBytesConfig, 
-    TrainingArguments, 
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    TrainingArguments,
     Trainer
 )
 from peft import (
-    LoraConfig, 
-    get_peft_model, 
-    PeftModel, 
-    prepare_model_for_kbit_training, 
+    LoraConfig,
+    get_peft_model,
+    PeftModel,
+    prepare_model_for_kbit_training,
     TaskType
 )
 from datasets import Dataset
@@ -53,18 +63,36 @@ logger = structlog.get_logger(__name__)
 #                           CONFIGURATION
 # ============================================================================
 
-# Offline model path - NO INTERNET ACCESS
+# Offline model paths — NO INTERNET ACCESS
 # NOTE: Paths are relative to ai-service/ directory (where main.py runs from)
-LOCAL_LLM_MODEL_PATH = Path("./local_models/llm")
+LOCAL_GEMMA_MODEL_PATH = Path("./local_models/llm")           # Engine 1: Analysis
+LOCAL_LLAMA_MODEL_PATH = Path("./local_models/llama_chat")    # Engine 2: Chat
 
-# Path to fine-tuned LoRA adapters (new microservices structure)
+# Path to fine-tuned LoRA adapters (Gemma only)
 TACTICAL_ADAPTER_PATH = Path("./model/adapters/fine_tuned_adapter/final_adapter")
 
 # Force CUDA device for all operations
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # ============================================================================
-#                           SYSTEM PROMPT - PARANOID SAFETY OFFICER
+#          4-BIT QUANTIZATION CONFIG — SHARED BY BOTH ENGINES
+# ============================================================================
+
+def _create_bnb_config() -> BitsAndBytesConfig:
+    """
+    Create BitsAndBytes 4-bit quantization config.
+    Shared between Gemma (analysis) and Llama (chat) engines.
+    Both MUST use identical quantization to fit on single RTX 3080 16GB.
+    """
+    return BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,       # Double quantization for extra savings
+        bnb_4bit_quant_type="nf4",            # NormalFloat4 — best quality for 4-bit
+        bnb_4bit_compute_dtype=torch.float16  # FP16 compute for speed
+    )
+
+# ============================================================================
+#                SYSTEM PROMPT — GEMMA (ANALYSIS / JSON OUTPUT)
 # ============================================================================
 
 TACTICAL_ANALYST_SYSTEM_PROMPT = """You are a PARANOID TACTICAL SAFETY OFFICER in a C4ISR military command center.
@@ -120,35 +148,63 @@ RESPOND ONLY WITH JSON. NO MARKDOWN. NO ADDITIONAL TEXT."""
 
 
 # ============================================================================
-#                           MODEL ENGINE CLASS
+#              SYSTEM PROMPT — LLAMA (CHAT / TURKISH MILITARY ASSISTANT)
+# ============================================================================
+
+LLAMA_CHAT_SYSTEM_PROMPT = (
+    "Sen TSK C4ISR sisteminde görevli bir Yapay Zeka Kurmay Asistanısın. "
+    "Komutanın sorusuna, eğer verilmişse aşağıdaki [DOKTRIN] bağlamını "
+    "kullanarak net, askeri bir ciddiyetle ve kısa (maksimum 2-3 cümle) "
+    "Türkçe cevap ver. JSON üretme, doğrudan normal metin olarak konuş."
+)
+
+
+# ============================================================================
+#                       DUAL-ENGINE MODEL CLASS
 # ============================================================================
 
 class ModelEngine:
     """
-    Tactical AI Model Engine for C4ISR Decision Support.
-    
-    Handles:
-    - Gemma-2-9b-it model loading with 4-bit quantization
-    - Context-aware prompt generation
-    - Polymorphic telemetry analysis
-    - LoRA adapter management and training
+    Dual-Engine Tactical AI Model Engine for C4ISR Decision Support.
+
+    Engine 1 — Gemma-2-9b-it (Analysis):
+        - 4-bit NF4 quantized (~5-6 GB VRAM)
+        - LoRA tactical adapter (if available)
+        - JSON threat assessment output
+        - Used by: generate_analysis()
+
+    Engine 2 — Meta-Llama-3.1-8B-Instruct (Chat):
+        - 4-bit NF4 quantized (~5-6 GB VRAM)
+        - No LoRA, base instruct model only
+        - Turkish free-text conversational output
+        - Used by: generate_chat()
+
+    Total estimated VRAM: ~10-12 GB (fits RTX 3080 16GB)
     """
-    
+
     def __init__(self):
-        self._model = None
-        self._tokenizer = None
+        # ── Engine 1: Gemma (Analysis) ──
+        self._gemma_model = None
+        self._gemma_tokenizer = None
+
+        # ── Engine 2: Llama (Chat) ──
+        self._llama_model = None
+        self._llama_tokenizer = None
+
+        # ── State ──
         self._initialized = False
         self._lora_applied = False
         self._current_adapter: Optional[str] = None
         self._training_jobs: Dict[str, Dict] = {}
         self._device = DEVICE
-    
+
     # ========================================================================
-    #                           INITIALIZATION
+    #                           VRAM MONITORING
     # ========================================================================
-    
-    def _log_vram_usage(self, stage: str) -> None:
-        """Log current VRAM usage for debugging and verification"""
+
+    @staticmethod
+    def _log_vram_usage(stage: str) -> None:
+        """Log current VRAM usage for debugging and verification."""
         if torch.cuda.is_available():
             allocated = torch.cuda.memory_allocated() / 1024**3
             reserved = torch.cuda.memory_reserved() / 1024**3
@@ -161,490 +217,488 @@ class ModelEngine:
                 total_gb=f"{total:.2f}",
                 free_gb=f"{free:.2f}"
             )
-            print(f"🎮 [{stage}] VRAM: {allocated:.2f}GB allocated / {total:.2f}GB total ({(allocated/total)*100:.1f}%)")
-    
+            print(
+                f"🎮 [{stage}] VRAM: {allocated:.2f}GB allocated / "
+                f"{total:.2f}GB total ({(allocated/total)*100:.1f}%)"
+            )
+
+    # ========================================================================
+    #                      INITIALIZATION — DUAL ENGINE
+    # ========================================================================
+
     def initialize(self) -> None:
         """
-        Initialize Gemma-2-9b-it from LOCAL directory (air-gapped mode).
-        OPTIMIZED: Full GPU residency, NO CPU offload for RTX 3080 16GB.
-        
-        If a fine-tuned Tactical Adapter exists at ./fine_tuned_adapter/final_adapter,
-        it will be automatically loaded on top of the base model.
+        Initialize BOTH engines from LOCAL directories (air-gapped mode).
+
+        Load order:
+            1. Gemma-2-9b-it  → Analysis engine (+ optional LoRA adapter)
+            2. Llama-3.1-8B   → Chat engine (base only, no LoRA)
+
+        Both use 4-bit NF4 quantization with device_map="auto" to share
+        the GPU intelligently and prevent OOM on RTX 3080 16GB.
         """
         if self._initialized:
             return
-        
+
         start_time = time.time()
-        
-        # Verify CUDA availability
+
+        # ── Verify CUDA availability ─────────────────────────────────
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA not available! This model requires an NVIDIA GPU.")
-        
-        # Log GPU info
+            raise RuntimeError(
+                "CUDA not available! Dual-engine architecture requires an NVIDIA GPU."
+            )
+
         gpu_name = torch.cuda.get_device_name(0)
         gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
         logger.info(f"GPU Detected: {gpu_name} ({gpu_memory:.1f}GB VRAM)")
         print(f"🚀 GPU: {gpu_name} with {gpu_memory:.1f}GB VRAM")
-        
+        print("=" * 70)
+        print("   DUAL-ENGINE ARCHITECTURE — Loading 2 Models to Single GPU")
+        print("   Engine 1: Gemma-2-9b-it  (Analysis + LoRA)")
+        print("   Engine 2: Llama-3.1-8B   (Chat)")
+        print("   Quantization: 4-bit NF4 for both engines")
+        print("=" * 70)
+
         # Clear GPU cache before loading
         torch.cuda.empty_cache()
-        self._log_vram_usage("PRE-LOAD")
-        
-        # SECURITY CHECK: Verify local model exists
-        if not LOCAL_LLM_MODEL_PATH.exists():
+        gc.collect()
+        self._log_vram_usage("PRE-LOAD (Clean)")
+
+        # ── Load Engine 1: Gemma (Analysis) ──────────────────────────
+        self._load_gemma_engine()
+        self._log_vram_usage("POST-GEMMA")
+
+        # ── Load Engine 2: Llama (Chat) ──────────────────────────────
+        self._load_llama_engine()
+        self._log_vram_usage("POST-LLAMA (Both Models Loaded)")
+
+        # ── Final Status ─────────────────────────────────────────────
+        self._initialized = True
+        total_time = time.time() - start_time
+
+        adapter_status = (
+            "TACTICAL ADAPTER ACTIVE" if self._current_adapter
+            else "BASE MODEL (No Adapter)"
+        )
+
+        logger.info(
+            "🎯 DUAL-ENGINE initialized successfully",
+            mode="OFFLINE",
+            engine1="Gemma-2-9b-it (Analysis)",
+            engine1_adapter=adapter_status,
+            engine2="Llama-3.1-8B-Instruct (Chat)",
+            quantization="4-bit NF4 (both)",
+            device="CUDA",
+            load_time_seconds=f"{total_time:.2f}"
+        )
+        print("\n" + "=" * 70)
+        print("✅ DUAL-ENGINE READY")
+        print(f"   🔬 Engine 1 (Analysis): Gemma-2-9b-it [{adapter_status}]")
+        print(f"   💬 Engine 2 (Chat):     Llama-3.1-8B-Instruct")
+        print(f"   ⏱️  Total startup: {total_time:.2f}s")
+        print("=" * 70 + "\n")
+
+    # ────────────────────────────────────────────────────────────────
+    #  ENGINE 1: Gemma-2-9b-it  (Analysis + LoRA)
+    # ────────────────────────────────────────────────────────────────
+
+    def _load_gemma_engine(self) -> None:
+        """Load Engine 1: Gemma-2-9b-it with optional LoRA tactical adapter."""
+
+        if not LOCAL_GEMMA_MODEL_PATH.exists():
             error_msg = (
-                f"OFFLINE LLM MODEL NOT FOUND at {LOCAL_LLM_MODEL_PATH.absolute()}. "
+                f"GEMMA MODEL NOT FOUND at {LOCAL_GEMMA_MODEL_PATH.absolute()}. "
                 "Run 'python download_models.py' on a machine with internet access, "
-                "then transfer the 'local_models' folder to this secure environment."
+                "then transfer the 'local_models/llm' folder to this secure environment."
             )
             logger.error(error_msg)
             raise FileNotFoundError(error_msg)
-        
-        model_path = str(LOCAL_LLM_MODEL_PATH.absolute())
-        logger.info("Loading Gemma-2-9b-it from LOCAL directory (OFFLINE MODE)", model_path=model_path)
-        
-        # ====================================================================
-        # STRICT 4-BIT QUANTIZATION CONFIG - NO CPU OFFLOAD
-        # RTX 3080 16GB can easily fit ~7GB quantized 9B model
-        # ====================================================================
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,      # Double quantization for memory efficiency
-            bnb_4bit_quant_type="nf4",           # NormalFloat4 - best quality for 4-bit
-            bnb_4bit_compute_dtype=torch.float16  # FP16 compute for speed
-        )
-        
-        logger.info("Quantization: 4-bit NF4 | Compute: FP16 | Target: ~6-7GB VRAM | Device: CUDA ONLY")
-        print("⚡ Config: 4-bit NF4 quantization, FP16 compute, FULL GPU residency")
-        
-        # Load Tokenizer
-        logger.info("Loading tokenizer...")
-        self._tokenizer = AutoTokenizer.from_pretrained(
+
+        model_path = str(LOCAL_GEMMA_MODEL_PATH.absolute())
+        bnb_config = _create_bnb_config()
+
+        logger.info("ENGINE 1: Loading Gemma-2-9b-it (Analysis)...", path=model_path)
+        print("\n📥 [Engine 1] Loading Gemma-2-9b-it (Analysis)...")
+        print("   ⚡ 4-bit NF4 | FP16 compute | device_map=auto")
+
+        # Tokenizer
+        self._gemma_tokenizer = AutoTokenizer.from_pretrained(
             model_path,
             local_files_only=True,
             trust_remote_code=True
         )
-        if self._tokenizer.pad_token is None:
-            self._tokenizer.pad_token = self._tokenizer.eos_token
-        logger.info("Tokenizer loaded successfully")
-        
-        # Load Model - Force Full GPU Residency
-        logger.info("Loading 9B model with 4-bit quantization (expect 15-30 seconds)...")
-        print("📥 Loading Gemma-2-9b-it to GPU (this may take 15-30 seconds)...")
-        
+        if self._gemma_tokenizer.pad_token is None:
+            self._gemma_tokenizer.pad_token = self._gemma_tokenizer.eos_token
+
+        # Model
         load_start = time.time()
-        self._model = AutoModelForCausalLM.from_pretrained(
+        self._gemma_model = AutoModelForCausalLM.from_pretrained(
             model_path,
             quantization_config=bnb_config,
-            device_map={"": "cuda"},             # FORCE all layers to single GPU
-            torch_dtype=torch.float16,           # Explicit FP16 for non-quantized parts
+            device_map="auto",
+            torch_dtype=torch.float16,
             local_files_only=True,
             trust_remote_code=True,
-            attn_implementation="eager"          # Avoid FlashAttention issues on some setups
+            attn_implementation="eager"
         )
         load_time = time.time() - load_start
-        
-        # Verify model is on GPU
-        self._log_vram_usage("POST-LOAD")
-        logger.info(f"Model loaded in {load_time:.2f} seconds")
-        print(f"✅ Base model loaded in {load_time:.2f}s")
-        
-        # ====================================================================
-        # TACTICAL ADAPTER LOADING - Priority Fine-Tuned Adapter
-        # Path updated for new microservices structure
-        # ====================================================================
+        logger.info(f"Gemma base model loaded in {load_time:.2f}s")
+        print(f"   ✅ Gemma base loaded in {load_time:.2f}s")
+
+        # ── LoRA Tactical Adapter ────────────────────────────────────
+        self._apply_tactical_adapter()
+
+    def _apply_tactical_adapter(self) -> None:
+        """
+        Attempt to load the fine-tuned Tactical LoRA Adapter on top of Gemma.
+        Falls back to default LoRA config if adapter not found.
+        """
         tactical_adapter_path = TACTICAL_ADAPTER_PATH
-        
-        if tactical_adapter_path.exists() and (tactical_adapter_path / "adapter_config.json").exists():
+
+        if (tactical_adapter_path.exists()
+                and (tactical_adapter_path / "adapter_config.json").exists()):
             try:
-                logger.info("=" * 60)
-                logger.info("🎖️  TACTICAL ADAPTER DETECTED - LOADING FINE-TUNED WEIGHTS")
-                logger.info("=" * 60)
-                print("\n" + "=" * 60)
-                print("🎖️  LOADING TACTICAL ADAPTER...")
-                print("=" * 60)
-                
-                # Load the fine-tuned LoRA adapter
-                self._model = PeftModel.from_pretrained(
-                    self._model,
+                logger.info("🎖️ TACTICAL ADAPTER DETECTED — loading fine-tuned weights")
+                print("   🎖️ Loading Tactical Adapter...")
+
+                self._gemma_model = PeftModel.from_pretrained(
+                    self._gemma_model,
                     str(tactical_adapter_path),
                     is_trainable=False  # Inference mode
                 )
-                
+
                 self._lora_applied = True
                 self._current_adapter = str(tactical_adapter_path)
-                
-                logger.info("=" * 60)
-                logger.info("✅ TACTICAL ADAPTER is ACTIVE")
-                logger.info(f"   Adapter Path: {tactical_adapter_path}")
-                logger.info("   Mode: INFERENCE (Fine-tuned for C4ISR operations)")
-                logger.info("=" * 60)
-                
-                print("=" * 60)
-                print("✅ TACTICAL ADAPTER is ACTIVE!")
-                print(f"   📁 Loaded from: {tactical_adapter_path}")
-                print("   🎯 Mode: Fine-tuned C4ISR Intelligence")
-                print("=" * 60 + "\n")
-                
-                self._log_vram_usage("POST-TACTICAL-ADAPTER")
-                
+
+                logger.info(
+                    "✅ TACTICAL ADAPTER is ACTIVE",
+                    adapter_path=str(tactical_adapter_path)
+                )
+                print(f"   ✅ Tactical Adapter ACTIVE: {tactical_adapter_path}")
+
             except Exception as e:
                 logger.error(f"Failed to load Tactical Adapter: {e}")
-                print(f"⚠️  Failed to load Tactical Adapter: {e}")
-                print("   Falling back to base model with default LoRA config...")
-                
-                # Fallback: Apply default LoRA config
-                self._model = prepare_model_for_kbit_training(self._model)
+                print(f"   ⚠️ Failed to load Tactical Adapter: {e}")
+                print("   📌 Falling back to default LoRA config...")
+                self._gemma_model = prepare_model_for_kbit_training(self._gemma_model)
                 self._apply_lora_config()
         else:
-            # No fine-tuned adapter found - use default LoRA config
-            logger.warning("=" * 60)
-            logger.warning("⚠️  TACTICAL ADAPTER NOT FOUND")
-            logger.warning(f"   Expected at: {tactical_adapter_path.absolute()}")
-            logger.warning("   Using base model with default LoRA configuration")
-            logger.warning("   Run 'python train.py' to create the Tactical Adapter")
-            logger.warning("=" * 60)
-            
-            print("\n" + "=" * 60)
-            print("⚠️  TACTICAL ADAPTER NOT FOUND")
-            print(f"   Expected at: {tactical_adapter_path.absolute()}")
+            logger.warning(
+                "⚠️ TACTICAL ADAPTER NOT FOUND",
+                expected_path=str(tactical_adapter_path.absolute())
+            )
+            print(f"   ⚠️ No Tactical Adapter at: {tactical_adapter_path.absolute()}")
             print("   📌 Using BASE MODEL with default LoRA config")
             print("   💡 Run 'python train.py' to create the Tactical Adapter")
-            print("=" * 60 + "\n")
-            
-            # Apply default LoRA for training capability
-            self._model = prepare_model_for_kbit_training(self._model)
+            self._gemma_model = prepare_model_for_kbit_training(self._gemma_model)
             self._apply_lora_config()
-        
-        self._log_vram_usage("POST-LORA")
-        
-        self._initialized = True
-        total_time = time.time() - start_time
-        
-        # Final status
-        adapter_status = "TACTICAL ADAPTER ACTIVE" if self._current_adapter else "BASE MODEL (No Adapter)"
-        
-        logger.info(
-            "Gemma-2-9b-it loaded successfully",
-            mode="OFFLINE",
-            quantization="4-bit NF4",
-            device="CUDA",
-            adapter=adapter_status,
-            load_time_seconds=f"{total_time:.2f}"
-        )
-        print(f"🎯 AI Engine ready! [{adapter_status}] Total startup: {total_time:.2f}s")
-    
+
     def _apply_lora_config(self) -> None:
-        """Apply LoRA configuration for efficient fine-tuning"""
+        """Apply default LoRA configuration for efficient fine-tuning (Gemma only)."""
         lora_config = LoraConfig(
             r=settings.LORA_RANK,
             lora_alpha=settings.LORA_ALPHA,
             lora_dropout=settings.LORA_DROPOUT,
             bias="none",
             task_type=TaskType.CAUSAL_LM,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+            target_modules=[
+                "q_proj", "k_proj", "v_proj", "o_proj",
+                "gate_proj", "up_proj", "down_proj"
+            ]
         )
-        self._model = get_peft_model(self._model, lora_config)
+        self._gemma_model = get_peft_model(self._gemma_model, lora_config)
         self._lora_applied = True
-        logger.info("LoRA config applied", rank=settings.LORA_RANK, alpha=settings.LORA_ALPHA)
-    
-    def _load_existing_adapter(self) -> None:
-        """Load most recently saved LoRA adapter if exists"""
-        adapter_path = Path(settings.LORA_ADAPTER_PATH)
-        adapter_path.mkdir(parents=True, exist_ok=True)
-        adapters = list(adapter_path.glob("*/adapter_config.json"))
-        if adapters:
-            latest = max(adapters, key=lambda p: p.stat().st_mtime).parent
-            try:
-                self._model = PeftModel.from_pretrained(self._model.base_model.model, str(latest))
-                self._current_adapter = str(latest)
-                logger.info("Loaded existing adapter", path=str(latest))
-            except Exception as e:
-                logger.warning(f"Failed to load adapter: {e}")
-    
+        logger.info(
+            "Default LoRA config applied to Gemma",
+            rank=settings.LORA_RANK,
+            alpha=settings.LORA_ALPHA
+        )
+
+    # ────────────────────────────────────────────────────────────────
+    #  ENGINE 2: Meta-Llama-3.1-8B-Instruct  (Chat)
+    # ────────────────────────────────────────────────────────────────
+
+    def _load_llama_engine(self) -> None:
+        """Load Engine 2: Meta-Llama-3.1-8B-Instruct for conversational chat."""
+
+        if not LOCAL_LLAMA_MODEL_PATH.exists():
+            error_msg = (
+                f"LLAMA MODEL NOT FOUND at {LOCAL_LLAMA_MODEL_PATH.absolute()}. "
+                "Download Meta-Llama-3.1-8B-Instruct and place it in "
+                "'local_models/llama_chat/'."
+            )
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
+
+        model_path = str(LOCAL_LLAMA_MODEL_PATH.absolute())
+        bnb_config = _create_bnb_config()
+
+        logger.info("ENGINE 2: Loading Llama-3.1-8B-Instruct (Chat)...", path=model_path)
+        print("\n📥 [Engine 2] Loading Llama-3.1-8B-Instruct (Chat)...")
+        print("   ⚡ 4-bit NF4 | FP16 compute | device_map=auto")
+
+        # Tokenizer
+        self._llama_tokenizer = AutoTokenizer.from_pretrained(
+            model_path,
+            local_files_only=True,
+            trust_remote_code=True
+        )
+        if self._llama_tokenizer.pad_token is None:
+            self._llama_tokenizer.pad_token = self._llama_tokenizer.eos_token
+
+        # Model (NO LoRA — base instruct model only)
+        load_start = time.time()
+        self._llama_model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            quantization_config=bnb_config,
+            device_map="auto",
+            torch_dtype=torch.float16,
+            local_files_only=True,
+            trust_remote_code=True,
+            attn_implementation="eager"
+        )
+        load_time = time.time() - load_start
+
+        logger.info(f"Llama-3.1-8B loaded in {load_time:.2f}s")
+        print(f"   ✅ Llama-3.1-8B loaded in {load_time:.2f}s")
+
     # ========================================================================
-    #                           DECISION GENERATION
+    #               ENGINE 1 — ANALYSIS (Gemma + LoRA)
     # ========================================================================
-    
-    def generate_decision(
+
+    def generate_analysis(
         self,
         telemetry_data: BaseModel,
-        retrieved_context: List[Dict[str, Any]],
+        retrieved_context: List[Dict[str, Any]] = None,
         max_new_tokens: int = 512
     ) -> Tuple[str, ThreatLevel, float, str]:
         """
-        Generate tactical decision based on polymorphic telemetry data.
-        
-        CRITICAL: Uses model_dump_json() for proper Pydantic serialization,
-        ensuring the LLM sees ALL fields from the specific telemetry type.
-        
+        Generate tactical threat assessment using Gemma-2-9b-it (Engine 1).
+
+        Uses the same paranoid tactical analyst prompt + JSON output format
+        as the original single-engine system.
+
         Args:
-            telemetry_data: Validated Pydantic model (DroneTelemetry/SoldierTelemetry/VehicleTelemetry)
+            telemetry_data:   Validated Pydantic model (Drone/Soldier/Vehicle)
             retrieved_context: Historical context from RAG retrieval
-            max_new_tokens: Maximum tokens to generate
-            
+            max_new_tokens:   Maximum tokens to generate
+
         Returns:
             Tuple of (decision, threat_level, confidence, reasoning)
         """
         if not self._initialized:
             raise RuntimeError("Model not initialized. Call initialize() first.")
-        
+
+        if retrieved_context is None:
+            retrieved_context = []
+
         start_time = time.time()
-        
-        # ====================================================================
-        # CRITICAL FIX: Proper Pydantic serialization
-        # Use model_dump_json() to serialize ALL fields from the specific model
-        # ====================================================================
+
+        # Serialize telemetry via Pydantic
         telemetry_json = telemetry_data.model_dump_json(indent=2)
         entity_type = getattr(telemetry_data, 'type', 'unknown')
         entity_id = getattr(telemetry_data, 'source_id', 'unknown')
-        
+
         logger.info(
-            "Generating tactical decision",
+            "[Gemma] Generating tactical analysis",
             entity_type=entity_type,
             entity_id=entity_id
         )
-        
-        # Build the prompt with full telemetry data
-        prompt = self._build_analysis_prompt(telemetry_json, entity_type, retrieved_context)
-        
+
+        # Build prompt with RAG context
+        prompt = self._build_analysis_prompt(
+            telemetry_json, entity_type, retrieved_context
+        )
+
         # Tokenize and move to GPU
-        inputs = self._tokenizer(
+        inputs = self._gemma_tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
             max_length=2048
         ).to("cuda")
-        
+
         # Generate response
         with torch.no_grad():
-            outputs = self._model.generate(
+            outputs = self._gemma_model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=True,
                 temperature=0.7,
                 top_p=0.9,
-                pad_token_id=self._tokenizer.pad_token_id
+                pad_token_id=self._gemma_tokenizer.pad_token_id
             )
-        
-        # Decode response (skip input tokens)
-        response_text = self._tokenizer.decode(
+
+        # Decode (skip input tokens)
+        response_text = self._gemma_tokenizer.decode(
             outputs[0][inputs['input_ids'].shape[1]:],
             skip_special_tokens=True
         )
-        
+
         inference_time = time.time() - start_time
-        logger.debug(f"Inference completed in {inference_time:.2f}s")
-        
-        # Parse the structured response
+        logger.debug(
+            f"[Gemma] Inference completed in {inference_time:.2f}s",
+            response_preview=response_text[:200]
+        )
+
+        # Cleanup inference tensors
+        del inputs, outputs
+        torch.cuda.empty_cache()
+
         return self._parse_json_response(response_text)
-    
+
     # ========================================================================
-    #                     CHAT / CONVERSATIONAL GENERATION
+    #               ENGINE 2 — CHAT (Llama-3.1-8B-Instruct)
     # ========================================================================
-    
-    def generate_chat_response(
+
+    def generate_chat(
         self,
         query: str,
-        rag_context: List[Dict[str, Any]],
-        max_new_tokens: int = 250
+        rag_context: str = "",
+        max_new_tokens: int = 256
     ) -> str:
         """
-        Chat-specific generation pipeline optimized for conversational responses.
-        
-        Key design decisions (countering LoRA fine-tuning bias):
-        - Explicitly instructs model to produce PLAIN TEXT only, never JSON
-        - Smart doctrine: only references RAG context if provided (pre-filtered)
-        - Low temperature (0.3) for deterministic, focused responses
-        - Limited tokens (250) for concise military-style answers
-        
+        Generate conversational response using Llama-3.1-8B-Instruct (Engine 2).
+
+        Turkish military assistant persona. Short, authoritative answers.
+        Uses Llama-3.1 chat template with system/user roles.
+
         Args:
-            query:           The commander's question / message
-            rag_context:     Pre-filtered RAG results (only relevant ones, may be empty)
-            max_new_tokens:  Maximum tokens to generate (default 250 for conciseness)
-            
+            query:          Commander's question (free text)
+            rag_context:    Pre-formatted doctrine context string (may be empty)
+            max_new_tokens: Maximum tokens to generate (default 256 for conciseness)
+
         Returns:
-            Free-form text response string
+            Free-form Turkish text response string
         """
         if not self._initialized:
             raise RuntimeError("Model not initialized. Call initialize() first.")
-        
+
         start_time = time.time()
-        
-        # ── Build doctrine block (only if RAG passed relevant results) ──
-        if rag_context:
-            doctrine_lines = []
-            for c in rag_context:
-                rule_text = c.get("context", c.get("event_description", ""))
-                if rule_text:
-                    doctrine_lines.append(f"- {rule_text}")
-            doctrine_block = "\n".join(doctrine_lines)
-            doctrine_section = (
-                f"[DOCTRINE]\n{doctrine_block}\n\n"
-                "The above doctrine is relevant to this question. Base your answer on it."
-            )
-        else:
-            doctrine_section = (
-                "[DOCTRINE]\n"
-                "No specific doctrine found for this question in tactical memory.\n"
-                "Use your general military knowledge to answer."
-            )
-        
-        # ── Chat-specific prompt (English, anti-JSON, conversational) ──
-        prompt_text = (
-            "You are a Military Staff AI Assistant at a C4ISR command center.\n"
-            "Answer the user's question concisely in a military style.\n"
-            "IMPORTANT: Produce ONLY plain text. NEVER output JSON.\n"
-            "Use short paragraphs and bullet points when needed.\n\n"
-            f"{doctrine_section}\n\n"
-            f"[QUESTION]\n{query}\n\n"
-            "[ANSWER]"
+
+        logger.info("[Llama] Generating chat response", query=query[:80])
+
+        # ── Build Llama-3.1 prompt with system + user roles ──────────
+        doctrine_block = rag_context if rag_context else "Doktrin bilgisi bulunamadı."
+
+        user_message = (
+            f"[DOKTRIN]: {doctrine_block}\n\n"
+            f"[SORU]: {query}"
         )
-        
-        # ── Apply Gemma chat template ────────────────────────────────
-        messages = [{"role": "user", "content": prompt_text}]
-        prompt = self._tokenizer.apply_chat_template(
+
+        messages = [
+            {"role": "system", "content": LLAMA_CHAT_SYSTEM_PROMPT},
+            {"role": "user", "content": user_message}
+        ]
+
+        # Apply Llama-3.1 chat template
+        prompt = self._llama_tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True
         )
-        
-        # ── Tokenize & generate (speed-optimized) ────────────────────
-        inputs = self._tokenizer(
+
+        # Tokenize
+        inputs = self._llama_tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=768
+            max_length=1024
         ).to("cuda")
-        
+
+        # Generate
         with torch.no_grad():
-            outputs = self._model.generate(
+            outputs = self._llama_model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=True,
-                temperature=0.3,
-                top_p=0.85,
-                repetition_penalty=1.3,
-                pad_token_id=self._tokenizer.pad_token_id
+                temperature=0.4,
+                top_p=0.9,
+                repetition_penalty=1.2,
+                pad_token_id=self._llama_tokenizer.pad_token_id
             )
-        
-        # Decode response (skip input tokens)
-        response_text = self._tokenizer.decode(
+
+        # Decode (skip input tokens)
+        response_text = self._llama_tokenizer.decode(
             outputs[0][inputs['input_ids'].shape[1]:],
             skip_special_tokens=True
         ).strip()
-        
+
         # ── Post-processing ──────────────────────────────────────────
-        # Log raw model output for debugging
         raw_output = response_text
-        logger.info("Raw chat model output", raw_text=raw_output[:300])
-        
-        # 1. Strip any JSON artifacts the model might still produce
+        logger.info("[Llama] Raw chat output", raw_text=raw_output[:300])
+
+        # Strip any JSON artifacts the model might produce
         response_text = self._strip_json_artifacts(response_text)
-        # 2. Detect & truncate degenerate repetition
+        # Detect & truncate degenerate repetition
         response_text = self._clean_repetitive_output(response_text)
-        
-        # 3. Final safety: if post-processing emptied it, use raw output
+
+        # Safety: if post-processing emptied it, use raw output
         if not response_text or len(response_text) < 10:
             response_text = raw_output
-        
+
         inference_time = time.time() - start_time
         logger.info(
-            "Chat response generated",
+            "[Llama] Chat response generated",
             query=query[:80],
             response_length=len(response_text),
-            raw_length=len(raw_output),
             inference_time_s=f"{inference_time:.2f}",
-            rag_hits=len(rag_context),
         )
-        
+
+        # Cleanup inference tensors
+        del inputs, outputs
+        torch.cuda.empty_cache()
+
         return response_text
 
-    @staticmethod
-    def _strip_json_artifacts(text: str) -> str:
-        """
-        Remove JSON-like artifacts from chat responses.
-        The LoRA adapter is trained for JSON output, so it sometimes
-        produces { "key": "value" } fragments in chat mode.
-        
-        IMPORTANT: Only strip JSON if meaningful text remains after removal.
-        """
-        if not text:
-            return text
-        
-        import re
-        
-        # If the entire response is a JSON block, try to extract meaningful content
-        text_stripped = text.strip()
-        if text_stripped.startswith("{") and text_stripped.endswith("}"):
-            try:
-                import json
-                parsed = json.loads(text_stripped)
-                # Look for text-like values in the parsed JSON
-                for key in ["response", "cevap", "answer", "text", "recommendation",
-                            "reasoning", "decision", "content", "message"]:
-                    if key in parsed and isinstance(parsed[key], str) and len(parsed[key]) > 5:
-                        return parsed[key]
-                # If no known key found, return all string values joined
-                text_values = [v for v in parsed.values() if isinstance(v, str) and len(v) > 10]
-                if text_values:
-                    return "\n".join(text_values)
-            except (json.JSONDecodeError, Exception):
-                pass
-            # If we can't parse the JSON, return the original text as-is
-            # (better than returning nothing)
-            return text
-        
-        # Remove inline JSON fragments ONLY if substantial text remains
-        cleaned = re.sub(r'\{[^{}]{5,}\}', '', text)
-        if cleaned.strip() and len(cleaned.strip()) > 30:
-            return cleaned.strip()
-        
-        # If removal would leave too little text, keep original
-        return text
+    # ========================================================================
+    #       LEGACY COMPATIBILITY — generate_decision / generate_chat_response
+    # ========================================================================
 
-    @staticmethod
-    def _clean_repetitive_output(text: str) -> str:
+    def generate_decision(
+        self,
+        telemetry_data: BaseModel,
+        retrieved_context: List[Dict[str, Any]] = None,
+        max_new_tokens: int = 512
+    ) -> Tuple[str, ThreatLevel, float, str]:
+        """Legacy alias → routes to generate_analysis (Gemma engine)."""
+        return self.generate_analysis(
+            telemetry_data=telemetry_data,
+            retrieved_context=retrieved_context or [],
+            max_new_tokens=max_new_tokens
+        )
+
+    def generate_chat_response(
+        self,
+        query: str,
+        rag_context: List[Dict[str, Any]] = None,
+        max_new_tokens: int = 250
+    ) -> str:
         """
-        Detect and truncate degenerate repetitive output from the model.
-        If a word/phrase repeats more than 5 times consecutively, truncate there.
+        Legacy alias → routes to generate_chat (Llama engine).
+        Converts the list-based rag_context to a flat string for Llama prompt.
         """
-        if not text:
-            return text
-        
-        words = text.split()
-        if len(words) < 10:
-            return text
-        
-        # Check for single-word repetition (e.g., "Below Below Below...")
-        for i in range(len(words) - 5):
-            word = words[i]
-            if all(words[i + j] == word for j in range(1, 6)):
-                # Found 6+ consecutive repetitions — truncate before them
-                truncated = " ".join(words[:i])
-                if truncated.strip():
-                    return truncated.strip()
-                else:
-                    return "The model encountered a generation error. Please rephrase your question."
-        
-        # Check for phrase repetition (2-3 word phrases repeating)
-        text_len = len(text)
-        for phrase_len in range(5, 30):
-            if text_len < phrase_len * 4:
-                continue
-            phrase = text[-phrase_len:]
-            count = text.count(phrase)
-            if count >= 4:
-                # Repeated phrase found — find first occurrence and truncate after 2nd
-                first_pos = text.find(phrase)
-                second_pos = text.find(phrase, first_pos + phrase_len)
-                if second_pos > 0:
-                    truncated = text[:second_pos].strip()
-                    if truncated:
-                        return truncated
-        
-        return text
-    
+        if rag_context is None:
+            rag_context = []
+
+        # Convert list of dicts to a flat doctrine string for Llama
+        doctrine_lines = []
+        for c in rag_context:
+            rule_text = c.get("context", c.get("event_description", ""))
+            if rule_text:
+                doctrine_lines.append(f"- {rule_text}")
+        flat_context = "\n".join(doctrine_lines) if doctrine_lines else ""
+
+        return self.generate_chat(
+            query=query,
+            rag_context=flat_context,
+            max_new_tokens=max_new_tokens
+        )
+
+    # ========================================================================
+    #               PROMPT BUILDING (Gemma / Analysis)
+    # ========================================================================
+
     def _build_analysis_prompt(
         self,
         telemetry_json: str,
@@ -652,15 +706,15 @@ class ModelEngine:
         context: List[Dict[str, Any]]
     ) -> str:
         """
-        Build a RAG-augmented analysis prompt for the LLM.
-        
+        Build a RAG-augmented analysis prompt for Gemma.
+
         Structure:
             1. System persona (paranoid tactical analyst)
             2. Retrieved engagement rules from pgvector (if available)
             3. Full telemetry data as JSON
             4. Instruction
         """
-        # ── Format retrieved engagement rules ────────────────────────
+        # Format retrieved engagement rules
         if context:
             rule_lines = []
             for i, c in enumerate(context, 1):
@@ -683,8 +737,8 @@ class ModelEngine:
                 "No matching engagement rules found in tactical memory.\n"
                 "Use your standard military doctrine knowledge."
             )
-        
-        # ── Assemble prompt ──────────────────────────────────────────
+
+        # Assemble prompt
         user_message = f"""{TACTICAL_ANALYST_SYSTEM_PROMPT}
 
 {context_str}
@@ -697,81 +751,64 @@ Entity Type: {entity_type.upper()}
 ```
 
 Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactical assessment in the required JSON format."""
-        
-        # Apply chat template
+
+        # Apply Gemma chat template
         messages = [{"role": "user", "content": user_message}]
-        return self._tokenizer.apply_chat_template(
+        return self._gemma_tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True
         )
-    
+
+    # ========================================================================
+    #                       RESPONSE PARSING (Gemma / Analysis)
+    # ========================================================================
+
     def _parse_json_response(self, response: str) -> Tuple[str, ThreatLevel, float, str]:
-        """
-        Parse LLM response into structured decision.
-        
-        Includes robust cleaning to handle:
-        - Markdown code blocks (```json ... ```)
-        - Extra text before/after JSON
-        - Malformed JSON fallback to text parsing
-        """
-        # Default values
+        """Parse Gemma's JSON response into structured decision."""
         decision = "Unable to parse AI response"
         threat_level = ThreatLevel.UNKNOWN
         confidence = 0.5
         reasoning = ""
-        
-        # Clean the response - strip markdown code blocks
+
         cleaned = self._clean_llm_response(response)
-        
+
         try:
-            # Attempt JSON parsing
             parsed = json.loads(cleaned)
-            
-            # Extract threat level
             threat_str = parsed.get("threat_level", "UNKNOWN").upper()
             threat_level = self._map_threat_level(threat_str)
-            
-            # Extract decision and reasoning
             decision = parsed.get("decision", "No decision provided")
             reasoning = parsed.get("reasoning", "No reasoning provided")
-            
-            # Set confidence based on threat level
             confidence = self._calculate_confidence(threat_level)
-            
             logger.info("Successfully parsed JSON response", threat_level=threat_str)
-            
         except json.JSONDecodeError as e:
             logger.warning(f"JSON parsing failed: {e}. Attempting text extraction.")
-            # Fallback to text-based parsing
-            decision, threat_level, confidence, reasoning = self._parse_text_response(response)
-        
+            decision, threat_level, confidence, reasoning = (
+                self._parse_text_response(response)
+            )
+
         return decision, threat_level, confidence, reasoning
-    
+
     def _clean_llm_response(self, response: str) -> str:
-        """
-        Clean LLM response by removing markdown formatting and extracting JSON.
-        """
+        """Clean LLM response by removing markdown formatting and extracting JSON."""
         text = response.strip()
-        
-        # Remove markdown code blocks: ```json ... ``` or ``` ... ```
-        # Pattern matches opening ``` with optional language, content, and closing ```
+
+        # Remove markdown code blocks
         code_block_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
         matches = re.findall(code_block_pattern, text)
         if matches:
             text = matches[0].strip()
-        
-        # Try to extract JSON object if there's extra text
+
+        # Try to extract JSON object
         json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
         json_matches = re.findall(json_pattern, text)
         if json_matches:
-            # Return the first complete JSON object found
             text = json_matches[0]
-        
+
         return text.strip()
-    
+
     def _map_threat_level(self, threat_str: str) -> ThreatLevel:
-        """Map string threat level to ThreatLevel enum"""
+        """Map string threat level to ThreatLevel enum."""
         mapping = {
             "CRITICAL": ThreatLevel.CRITICAL,
             "HIGH": ThreatLevel.HIGH,
@@ -780,9 +817,9 @@ Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactica
             "MINIMAL": ThreatLevel.MINIMAL,
         }
         return mapping.get(threat_str, ThreatLevel.UNKNOWN)
-    
+
     def _calculate_confidence(self, threat_level: ThreatLevel) -> float:
-        """Calculate confidence score based on threat level clarity"""
+        """Calculate confidence score based on threat level clarity."""
         confidence_map = {
             ThreatLevel.CRITICAL: 0.95,
             ThreatLevel.HIGH: 0.88,
@@ -792,55 +829,55 @@ Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactica
             ThreatLevel.UNKNOWN: 0.50,
         }
         return confidence_map.get(threat_level, 0.50)
-    
-    def _parse_text_response(self, response: str) -> Tuple[str, ThreatLevel, float, str]:
-        """
-        Fallback text-based parsing when JSON parsing fails.
-        Extracts structured data from free-form text.
-        Always captures the full response as reasoning.
-        """
+
+    def _parse_text_response(
+        self, response: str
+    ) -> Tuple[str, ThreatLevel, float, str]:
+        """Fallback text-based parsing when JSON parsing fails."""
         decision = "MONITOR"
         threat_level = ThreatLevel.UNKNOWN
         confidence = 0.5
-        # CRITICAL FIX: Use full response as reasoning instead of empty string
-        reasoning = response.strip()[:1000] if response.strip() else "AI response could not be parsed"
-        
+        reasoning = (
+            response.strip()[:1000] if response.strip()
+            else "AI response could not be parsed"
+        )
+
         lines = response.split('\n')
         found_decision = False
         found_threat = False
         reasoning_parts = []
-        
+
         for line in lines:
             upper_line = line.strip().upper()
-            
+
             if not found_threat and "THREAT" in upper_line and ":" in line:
-                # Extract threat level from text
                 for t in ThreatLevel:
                     if t.value in upper_line:
                         threat_level = t
                         confidence = self._calculate_confidence(t)
                         found_threat = True
                         break
-            
-            elif not found_decision and ("DECISION" in upper_line) and ":" in line:
+
+            elif not found_decision and "DECISION" in upper_line and ":" in line:
                 decision = line.split(":", 1)[1].strip()
                 if decision:
                     found_decision = True
-            
+
             elif "REASON" in upper_line and ":" in line:
                 reasoning_parts.append(line.split(":", 1)[1].strip())
-        
-        # If we found explicit reasoning lines, use those instead of full text
+
         if reasoning_parts:
             reasoning = " ".join(reasoning_parts)
-        
-        # Also try to extract threat from common patterns in the full text
+
+        # Try common patterns in full text
         if not found_threat:
             upper_response = response.upper()
             if "CRITICAL" in upper_response:
                 threat_level = ThreatLevel.CRITICAL
                 confidence = 0.85
-            elif "HIGH" in upper_response and ("THREAT" in upper_response or "RISK" in upper_response):
+            elif "HIGH" in upper_response and (
+                "THREAT" in upper_response or "RISK" in upper_response
+            ):
                 threat_level = ThreatLevel.HIGH
                 confidence = 0.80
             elif "MEDIUM" in upper_response:
@@ -849,13 +886,95 @@ Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactica
             elif "LOW" in upper_response:
                 threat_level = ThreatLevel.LOW
                 confidence = 0.80
-        
+
         return decision, threat_level, confidence, reasoning
-    
+
     # ========================================================================
-    #                           LORA TRAINING
+    #                       TEXT POST-PROCESSING
     # ========================================================================
-    
+
+    @staticmethod
+    def _strip_json_artifacts(text: str) -> str:
+        """
+        Remove JSON-like artifacts from chat responses.
+        Only strip JSON if meaningful text remains after removal.
+        """
+        if not text:
+            return text
+
+        text_stripped = text.strip()
+        if text_stripped.startswith("{") and text_stripped.endswith("}"):
+            try:
+                parsed = json.loads(text_stripped)
+                for key in [
+                    "response", "cevap", "answer", "text",
+                    "recommendation", "reasoning", "decision",
+                    "content", "message"
+                ]:
+                    if (key in parsed
+                            and isinstance(parsed[key], str)
+                            and len(parsed[key]) > 5):
+                        return parsed[key]
+                text_values = [
+                    v for v in parsed.values()
+                    if isinstance(v, str) and len(v) > 10
+                ]
+                if text_values:
+                    return "\n".join(text_values)
+            except (json.JSONDecodeError, Exception):
+                pass
+            return text
+
+        cleaned = re.sub(r'\{[^{}]{5,}\}', '', text)
+        if cleaned.strip() and len(cleaned.strip()) > 30:
+            return cleaned.strip()
+
+        return text
+
+    @staticmethod
+    def _clean_repetitive_output(text: str) -> str:
+        """Detect and truncate degenerate repetitive output from the model."""
+        if not text:
+            return text
+
+        words = text.split()
+        if len(words) < 10:
+            return text
+
+        # Single-word repetition (6+ consecutive)
+        for i in range(len(words) - 5):
+            word = words[i]
+            if all(words[i + j] == word for j in range(1, 6)):
+                truncated = " ".join(words[:i])
+                if truncated.strip():
+                    return truncated.strip()
+                else:
+                    return (
+                        "The model encountered a generation error. "
+                        "Please rephrase your question."
+                    )
+
+        # Phrase repetition (2-3 word phrases repeating)
+        text_len = len(text)
+        for phrase_len in range(5, 30):
+            if text_len < phrase_len * 4:
+                continue
+            phrase = text[-phrase_len:]
+            count = text.count(phrase)
+            if count >= 4:
+                first_pos = text.find(phrase)
+                second_pos = text.find(phrase, first_pos + phrase_len)
+                if second_pos > 0:
+                    truncated = text[:second_pos].strip()
+                    if truncated:
+                        return truncated
+
+        return text
+
+    # ========================================================================
+    #                       LORA TRAINING (Gemma Only)
+    # ========================================================================
+
     def train_lora(
         self,
         training_examples: List[Dict[str, Any]],
@@ -865,39 +984,42 @@ Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactica
         adapter_name: str = "tactical_adapter"
     ) -> str:
         """
-        Train LoRA adapter on tactical examples.
-        
+        Train LoRA adapter on tactical examples (Gemma engine only).
+
         Args:
             training_examples: List of dicts with 'instruction', 'input_data', 'output'
-            epochs: Number of training epochs
-            learning_rate: Learning rate for optimizer
-            batch_size: Training batch size
-            adapter_name: Name for the saved adapter
-            
+            epochs:            Number of training epochs
+            learning_rate:     Learning rate for optimizer
+            batch_size:        Training batch size
+            adapter_name:      Name for the saved adapter
+
         Returns:
             Job ID for tracking training progress
         """
         if not self._initialized:
             raise RuntimeError("Model not initialized")
-        
+
         job_id = f"train_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self._training_jobs[job_id] = {
             'status': 'RUNNING',
             'started_at': datetime.utcnow(),
             'progress': 0
         }
-        
+
         try:
-            # Format training data
             data = [
                 {
-                    "text": f"### Instruction:\n{e['instruction']}\n### Input:\n{e['input_data']}\n### Response:\n{e['output']}"
+                    "text": (
+                        f"### Instruction:\n{e['instruction']}\n"
+                        f"### Input:\n{e['input_data']}\n"
+                        f"### Response:\n{e['output']}"
+                    )
                 }
                 for e in training_examples
             ]
-            
+
             dataset = Dataset.from_list(data).map(
-                lambda x: self._tokenizer(
+                lambda x: self._gemma_tokenizer(
                     x["text"],
                     truncation=True,
                     max_length=1024,
@@ -905,9 +1027,9 @@ Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactica
                 ),
                 batched=True
             )
-            
+
             adapter_path = os.path.join(settings.LORA_ADAPTER_PATH, adapter_name)
-            
+
             training_args = TrainingArguments(
                 output_dir=adapter_path,
                 num_train_epochs=epochs,
@@ -918,51 +1040,80 @@ Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactica
                 fp16=True,
                 report_to="none"
             )
-            
+
             trainer = Trainer(
-                model=self._model,
+                model=self._gemma_model,
                 args=training_args,
                 train_dataset=dataset
             )
             trainer.train()
-            
-            self._model.save_pretrained(adapter_path)
-            
+
+            self._gemma_model.save_pretrained(adapter_path)
+
             self._training_jobs[job_id].update({
                 'status': 'COMPLETED',
                 'progress': 100,
                 'adapter_path': adapter_path
             })
-            
+
         except Exception as e:
             self._training_jobs[job_id].update({
                 'status': 'FAILED',
                 'error': str(e)
             })
             raise
-        
+
         return job_id
-    
+
     # ========================================================================
     #                           STATUS METHODS
     # ========================================================================
-    
+
     def get_training_status(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """Get status of a training job"""
+        """Get status of a training job."""
         return self._training_jobs.get(job_id)
-    
+
     def get_model_info(self) -> Dict[str, Any]:
-        """Get current model information and status"""
+        """Get current dual-engine model information and status."""
+        vram = "N/A"
+        if torch.cuda.is_available():
+            vram = f"{torch.cuda.memory_allocated() / 1024**3:.2f}"
+
         return {
-            "model": settings.MODEL_NAME,
+            "architecture": "dual-engine",
+            "engine1": {
+                "model": "Gemma-2-9b-it",
+                "role": "Analysis (POST /analyze)",
+                "adapter": self._current_adapter,
+                "lora_active": self._lora_applied,
+            },
+            "engine2": {
+                "model": "Meta-Llama-3.1-8B-Instruct",
+                "role": "Chat (POST /chat)",
+                "adapter": None,
+                "lora_active": False,
+            },
             "initialized": self._initialized,
-            "adapter": self._current_adapter,
             "device": self._device,
-            "vram_allocated_gb": (
-                f"{torch.cuda.memory_allocated() / 1024**3:.2f}"
-                if torch.cuda.is_available() else "N/A"
-            )
+            "quantization": "4-bit NF4 (both engines)",
+            "vram_allocated_gb": vram,
         }
+
+    def _load_existing_adapter(self) -> None:
+        """Load most recently saved LoRA adapter if exists (Gemma only)."""
+        adapter_path = Path(settings.LORA_ADAPTER_PATH)
+        adapter_path.mkdir(parents=True, exist_ok=True)
+        adapters = list(adapter_path.glob("*/adapter_config.json"))
+        if adapters:
+            latest = max(adapters, key=lambda p: p.stat().st_mtime).parent
+            try:
+                self._gemma_model = PeftModel.from_pretrained(
+                    self._gemma_model.base_model.model, str(latest)
+                )
+                self._current_adapter = str(latest)
+                logger.info("Loaded existing adapter", path=str(latest))
+            except Exception as e:
+                logger.warning(f"Failed to load adapter: {e}")
 
 
 # ============================================================================
