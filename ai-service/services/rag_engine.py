@@ -128,24 +128,36 @@ class RAGEngine:
         except Exception as exc:
             logger.warning(f"Schema detection failed, using defaults: {exc}")
 
-    # ── Core: search (pgvector cosine similarity) ────────────────────
+    # ── Core: search (pgvector cosine similarity + threshold) ──────
+
+    # Minimum cosine similarity to be considered relevant.
+    # pgvector <=> returns distance in [0, 2], so similarity = 1 - distance.
+    # 0.40 threshold eliminates cross-category hallucinations (e.g. fuel
+    # rules retrieved for a UAV query).
+    SIMILARITY_THRESHOLD: float = 0.40
 
     def search(
         self,
         query_text: str,
-        top_k: int = 3,
+        top_k: int = 2,
         category_filter: Optional[str] = None,
     ) -> List[dict]:
         """
         Semantic search over tactical_memory using pgvector cosine distance.
 
+        Server-side similarity threshold (>0.40) ensures only genuinely
+        relevant doctrine is returned.  If no row passes the threshold,
+        an empty list is returned — signalling the LLM to use its own
+        tactical reasoning instead of hallucinating with irrelevant context.
+
         Args:
             query_text:       Natural language query
-            top_k:            Maximum results to return
+            top_k:            Maximum results to return (default 2)
             category_filter:  Optional — restrict to a specific category
 
         Returns:
             List of dicts with keys: context, category, source, score
+            (empty list if nothing exceeds the similarity threshold)
         """
         self._ensure_ready()
 
@@ -166,27 +178,31 @@ class RAGEngine:
         # ── Build SQL (using detected column names) ───────────────────
         # <=> = cosine distance   (lower = more similar)
         # score = 1 - distance    (higher = more similar, range 0–1)
+        #
+        # KEY FIX: WHERE clause enforces similarity > threshold so
+        # irrelevant rules are never returned to the LLM.
         sql = f"""
             SELECT
                 id,
-                {self._col_context} AS context,
+                {self._col_context}  AS context,
                 {self._col_category} AS category,
-                {self._col_source} AS source,
-                1 - (embedding <=> %s::vector) AS score
+                {self._col_source}   AS source,
+                (1 - (embedding <=> %s::vector)) AS score
             FROM tactical_memory
             WHERE embedding IS NOT NULL
+              AND (1 - (embedding <=> %s::vector)) > %s
         """
-        params: list = [vec_literal]
+        params: list = [vec_literal, vec_literal, self.SIMILARITY_THRESHOLD]
 
         if category_filter:
             sql += f" AND {self._col_category} = %s"
             params.append(category_filter)
 
         sql += """
-            ORDER BY embedding <=> %s::vector
+            ORDER BY score DESC
             LIMIT %s
         """
-        params.extend([vec_literal, top_k])
+        params.append(top_k)
 
         # ── Execute ──────────────────────────────────────────────────
         results: List[dict] = []
@@ -205,13 +221,24 @@ class RAGEngine:
             return []
 
         elapsed = (time.time() - t0) * 1000
-        logger.info(
-            "RAG search complete",
-            query=query_text[:80],
-            hits=len(results),
-            top_score=results[0]["score"] if results else 0,
-            elapsed_ms=round(elapsed, 1),
-        )
+
+        if results:
+            logger.info(
+                "RAG search — relevant doctrine found",
+                query=query_text[:80],
+                hits=len(results),
+                top_score=results[0]["score"],
+                threshold=self.SIMILARITY_THRESHOLD,
+                elapsed_ms=round(elapsed, 1),
+            )
+        else:
+            logger.info(
+                "RAG search — NO doctrine above threshold",
+                query=query_text[:80],
+                threshold=self.SIMILARITY_THRESHOLD,
+                elapsed_ms=round(elapsed, 1),
+            )
+
         return results
 
     # ── Ingest (used by seed_doctrine.py & /ingest endpoint) ─────────
