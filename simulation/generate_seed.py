@@ -87,12 +87,11 @@ AI_ANALYSIS_TEMPLATES = [
 ]
 
 # User seed data - Turkish military personnel
-# Passwords are bcrypt hashed (all default to "sinaps123")
-# BCrypt hash for "sinaps123": $2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
+# All default passwords: "sinaps123" (plain text for prototype)
 USER_SEED_DATA = [
     {
         "username": "admin",
-        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "password": "sinaps123",
         "full_name": "Semih Utku",
         "rank": "Yüzbaşı",
         "role": "ROLE_ADMIN",
@@ -100,7 +99,7 @@ USER_SEED_DATA = [
     },
     {
         "username": "komutan01",
-        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "password": "sinaps123",
         "full_name": "Kaan Yıldırım",
         "rank": "Binbaşı",
         "role": "ROLE_COMMANDER",
@@ -108,7 +107,7 @@ USER_SEED_DATA = [
     },
     {
         "username": "komutan02",
-        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "password": "sinaps123",
         "full_name": "Arda Çelik",
         "rank": "Yüzbaşı",
         "role": "ROLE_COMMANDER",
@@ -116,7 +115,7 @@ USER_SEED_DATA = [
     },
     {
         "username": "operator01",
-        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "password": "sinaps123",
         "full_name": "Emre Demir",
         "rank": "Üsteğmen",
         "role": "ROLE_USER",
@@ -124,7 +123,7 @@ USER_SEED_DATA = [
     },
     {
         "username": "operator02",
-        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "password": "sinaps123",
         "full_name": "Burak Aksoy",
         "rank": "Teğmen",
         "role": "ROLE_USER",
@@ -132,7 +131,7 @@ USER_SEED_DATA = [
     },
     {
         "username": "operator03",
-        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "password": "sinaps123",
         "full_name": "Murat Can Barçın",
         "rank": "Asteğmen",
         "role": "ROLE_USER",
@@ -140,7 +139,7 @@ USER_SEED_DATA = [
     },
     {
         "username": "operator04",
-        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "password": "sinaps123",
         "full_name": "Yusuf Kara",
         "rank": "Astsubay",
         "role": "ROLE_USER",
@@ -148,7 +147,7 @@ USER_SEED_DATA = [
     },
     {
         "username": "operator05",
-        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "password": "sinaps123",
         "full_name": "Ali Özkan",
         "rank": "Çavuş",
         "role": "ROLE_USER",

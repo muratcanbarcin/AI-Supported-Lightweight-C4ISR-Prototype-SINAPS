@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,7 +17,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*") // Allow frontend access
+@CrossOrigin(origins = "*")
 public class AuthController {
 
     private final UserRepository userRepository;
@@ -27,14 +28,26 @@ public class AuthController {
 
         if (userOpt.isPresent()) {
             User user = userOpt.get();
-            // TODO: Implement real password hashing. For prototype, using plain text check.
+
+            // Check if user is active
+            if (!user.isActive()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Account is deactivated");
+            }
+
+            // Plain text password check (prototype)
             if (user.getPassword().equals(request.getPassword())) {
-                String token = UUID.randomUUID().toString(); // Simple mock token
+                String token = UUID.randomUUID().toString();
+
+                // Update last login timestamp
+                user.setLastLogin(LocalDateTime.now());
+                userRepository.save(user);
 
                 return ResponseEntity.ok(LoginResponse.builder()
                         .token(token)
                         .username(user.getUsername())
                         .roles(Collections.singletonList(user.getRole().name()))
+                        .fullName(user.getFullName())
+                        .rank(user.getRank())
                         .build());
             }
         }

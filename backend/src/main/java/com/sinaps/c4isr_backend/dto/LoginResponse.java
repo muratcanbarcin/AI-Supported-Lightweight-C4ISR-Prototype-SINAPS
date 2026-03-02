@@ -15,4 +15,6 @@ public class LoginResponse {
     private String token;
     private String username;
     private List<String> roles;
+    private String fullName;
+    private String rank;
 }

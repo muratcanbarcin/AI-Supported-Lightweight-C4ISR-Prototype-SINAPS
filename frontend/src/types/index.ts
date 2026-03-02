@@ -242,6 +242,8 @@ export interface LoginResponse {
   token: string;
   username: string;
   roles?: string[];
+  fullName?: string;
+  rank?: string;
 }
 
 export interface AuthState {

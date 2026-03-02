@@ -10,11 +10,13 @@ import type { LoginRequest, LoginResponse, AuthState } from '@/types';
  */
 
 const AUTH_ENDPOINT = '/auth';
+export const AUTH_FULLNAME_KEY = 'sinaps_auth_fullname';
+export const AUTH_RANK_KEY = 'sinaps_auth_rank';
 
 /**
  * Authenticate user with credentials
  * @param credentials - Username and password
- * @returns Login response with JWT token
+ * @returns Login response with token and user info
  */
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
   try {
@@ -24,10 +26,15 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
 
     // Store auth data in localStorage
     localStorage.setItem(AUTH_TOKEN_KEY, token);
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
     localStorage.setItem(AUTH_USER_KEY, username);
     if (response.data.roles) {
       localStorage.setItem(AUTH_ROLES_KEY, JSON.stringify(response.data.roles));
+    }
+    if (response.data.fullName) {
+      localStorage.setItem(AUTH_FULLNAME_KEY, response.data.fullName);
+    }
+    if (response.data.rank) {
+      localStorage.setItem(AUTH_RANK_KEY, response.data.rank);
     }
 
     return response.data;
@@ -40,12 +47,16 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
     const mockResponse: LoginResponse = {
       token: mockToken,
       username: credentials.username,
-      roles: ['OPERATOR']
+      roles: ['ROLE_ADMIN'],
+      fullName: 'Test User',
+      rank: 'Yüzbaşı',
     };
 
     localStorage.setItem(AUTH_TOKEN_KEY, mockToken);
     localStorage.setItem(AUTH_USER_KEY, credentials.username);
     localStorage.setItem(AUTH_ROLES_KEY, JSON.stringify(mockResponse.roles));
+    localStorage.setItem(AUTH_FULLNAME_KEY, mockResponse.fullName || '');
+    localStorage.setItem(AUTH_RANK_KEY, mockResponse.rank || '');
 
     return mockResponse;
   }
@@ -58,6 +69,8 @@ export function logout(): void {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   localStorage.removeItem(AUTH_USER_KEY);
   localStorage.removeItem(AUTH_ROLES_KEY);
+  localStorage.removeItem(AUTH_FULLNAME_KEY);
+  localStorage.removeItem(AUTH_RANK_KEY);
 
   // Dispatch logout event for UI to react
   window.dispatchEvent(new CustomEvent('auth:logout'));
