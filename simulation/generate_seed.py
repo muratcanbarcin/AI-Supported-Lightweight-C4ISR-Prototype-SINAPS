@@ -8,6 +8,7 @@ Generates SQL seed file for PostgreSQL with:
 - Half in Izmir Barracks (IDLE)
 - Half in Aegean Exercise Zone (EXERCISE)
 - Tasks, System Logs, AI Analyses for the new v2 tables
+- Users table with roles (ROLE_ADMIN, ROLE_COMMANDER, ROLE_USER)
 
 Usage:
     python generate_seed.py
@@ -83,6 +84,76 @@ AI_ANALYSIS_TEMPLATES = [
     ("LOW", "Standart tatbikat harekati, veriler normal sinirlar icinde", False),
     ("MEDIUM", "Yakit/batarya seviyesi dusuk, ikmal planlanmali", True),
     ("LOW", "Cevre kosullari normal, gorev devam edebilir", False),
+]
+
+# User seed data - Turkish military personnel
+# Passwords are bcrypt hashed (all default to "sinaps123")
+# BCrypt hash for "sinaps123": $2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
+USER_SEED_DATA = [
+    {
+        "username": "admin",
+        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "full_name": "Semih Utku",
+        "rank": "Yüzbaşı",
+        "role": "ROLE_ADMIN",
+        "active": True,
+    },
+    {
+        "username": "komutan01",
+        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "full_name": "Kaan Yıldırım",
+        "rank": "Binbaşı",
+        "role": "ROLE_COMMANDER",
+        "active": True,
+    },
+    {
+        "username": "komutan02",
+        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "full_name": "Arda Çelik",
+        "rank": "Yüzbaşı",
+        "role": "ROLE_COMMANDER",
+        "active": True,
+    },
+    {
+        "username": "operator01",
+        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "full_name": "Emre Demir",
+        "rank": "Üsteğmen",
+        "role": "ROLE_USER",
+        "active": True,
+    },
+    {
+        "username": "operator02",
+        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "full_name": "Burak Aksoy",
+        "rank": "Teğmen",
+        "role": "ROLE_USER",
+        "active": True,
+    },
+    {
+        "username": "operator03",
+        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "full_name": "Murat Can Barçın",
+        "rank": "Asteğmen",
+        "role": "ROLE_USER",
+        "active": True,
+    },
+    {
+        "username": "operator04",
+        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "full_name": "Yusuf Kara",
+        "rank": "Astsubay",
+        "role": "ROLE_USER",
+        "active": True,
+    },
+    {
+        "username": "operator05",
+        "password": "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy",
+        "full_name": "Ali Özkan",
+        "rank": "Çavuş",
+        "role": "ROLE_USER",
+        "active": False,
+    },
 ]
 
 
@@ -286,6 +357,7 @@ DROP TABLE IF EXISTS tactical_memory CASCADE;
 DROP TABLE IF EXISTS tactical_analysis CASCADE;
 DROP TABLE IF EXISTS telemetry CASCADE;
 DROP TABLE IF EXISTS assets CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
 
 -- ============================================================================
 -- CREATE TABLES
@@ -374,6 +446,18 @@ CREATE TABLE ai_analyses (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Users table (authentication & profile)
+CREATE TABLE users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255),
+    rank VARCHAR(100),
+    role VARCHAR(50) DEFAULT 'ROLE_USER' CHECK (role IN ('ROLE_USER', 'ROLE_ADMIN', 'ROLE_COMMANDER')),
+    active BOOLEAN DEFAULT TRUE,
+    last_login TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 -- ============================================================================
 -- CREATE INDEXES
 -- ============================================================================
@@ -390,6 +474,8 @@ CREATE INDEX idx_system_logs_asset_id ON system_logs(asset_id);
 CREATE INDEX idx_system_logs_event_type ON system_logs(event_type);
 CREATE INDEX idx_ai_analyses_asset_id ON ai_analyses(asset_id);
 CREATE INDEX idx_ai_analyses_is_alert ON ai_analyses(is_alert);
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_role ON users(role);
 
 -- ============================================================================
 -- INSERT ASSETS (30 Total)
@@ -455,6 +541,7 @@ VALUES ('{escape_sql_string(asset.id)}', '{asset.asset_type.value}', CURRENT_TIM
     sql += generate_tasks_sql(assets)
     sql += generate_system_logs_sql(assets)
     sql += generate_ai_analyses_sql(assets)
+    sql += generate_users_sql()
     
     sql += """
 -- ============================================================================
@@ -472,6 +559,7 @@ DECLARE
     log_count INTEGER;
     analysis_count INTEGER;
     alert_count INTEGER;
+    user_count INTEGER;
 BEGIN
     SELECT COUNT(*) INTO asset_count FROM assets;
     SELECT COUNT(*) INTO telemetry_count FROM telemetry;
@@ -482,6 +570,7 @@ BEGIN
     SELECT COUNT(*) INTO log_count FROM system_logs;
     SELECT COUNT(*) INTO analysis_count FROM ai_analyses;
     SELECT COUNT(*) INTO alert_count FROM ai_analyses WHERE is_alert = TRUE;
+    SELECT COUNT(*) INTO user_count FROM users;
     
     RAISE NOTICE 'EGE TATBIKATI Database seeded!';
     RAISE NOTICE '   Total Assets: %', asset_count;
@@ -492,6 +581,7 @@ BEGIN
     RAISE NOTICE '   Tasks: %', task_count;
     RAISE NOTICE '   System Logs: %', log_count;
     RAISE NOTICE '   AI Analyses: % (Alerts: %)', analysis_count, alert_count;
+    RAISE NOTICE '   Users: %', user_count;
 END $$;
 """
     
@@ -583,6 +673,22 @@ VALUES ('{escape_sql_string(asset.id)}', '{threat_level}', '{escape_sql_string(r
     return sql
 
 
+def generate_users_sql() -> str:
+    """Generate INSERT statements for users table."""
+    sql = """
+-- ============================================================================
+-- INSERT USERS (Authentication & Profile)
+-- ============================================================================
+
+"""
+    for user in USER_SEED_DATA:
+        active_val = "TRUE" if user["active"] else "FALSE"
+        sql += f"""INSERT INTO users (username, password, full_name, rank, role, active, created_at)
+VALUES ('{escape_sql_string(user["username"])}', '{escape_sql_string(user["password"])}', '{escape_sql_string(user["full_name"])}', '{escape_sql_string(user["rank"])}', '{user["role"]}', {active_val}, CURRENT_TIMESTAMP);
+"""
+    return sql
+
+
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -608,6 +714,7 @@ def main():
     print(f"   Soldiers: {len([a for a in assets if a.asset_type == AssetType.SOLDIER])}")
     print(f"   Vehicles: {len([a for a in assets if a.asset_type == AssetType.VEHICLE])}")
     print(f"\n   + Tasks, System Logs, AI Analyses (v2 tables)")
+    print(f"   + Users: {len(USER_SEED_DATA)} (Admin, Commander, Operators)")
     
     # Generate SQL
     print("\nGenerating SQL...")

@@ -1,6 +1,6 @@
 -- ============================================================================
 -- EGE TATBIKATI - DATABASE SEED
--- Generated: 2026-02-23T00:13:34.276136
+-- Generated: 2026-03-03T01:27:26.664271
 -- Total Assets: 30
 -- ============================================================================
 
@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS tactical_memory CASCADE;
 DROP TABLE IF EXISTS tactical_analysis CASCADE;
 DROP TABLE IF EXISTS telemetry CASCADE;
 DROP TABLE IF EXISTS assets CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
 
 -- ============================================================================
 -- CREATE TABLES
@@ -107,6 +108,18 @@ CREATE TABLE ai_analyses (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Users table (authentication & profile)
+CREATE TABLE users (
+    id BIGSERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(255),
+    rank VARCHAR(100),
+    role VARCHAR(50) DEFAULT 'ROLE_USER' CHECK (role IN ('ROLE_USER', 'ROLE_ADMIN', 'ROLE_COMMANDER')),
+    active BOOLEAN DEFAULT TRUE,
+    last_login TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 -- ============================================================================
 -- CREATE INDEXES
 -- ============================================================================
@@ -123,171 +136,173 @@ CREATE INDEX idx_system_logs_asset_id ON system_logs(asset_id);
 CREATE INDEX idx_system_logs_event_type ON system_logs(event_type);
 CREATE INDEX idx_ai_analyses_asset_id ON ai_analyses(asset_id);
 CREATE INDEX idx_ai_analyses_is_alert ON ai_analyses(is_alert);
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_role ON users(role);
 
 -- ============================================================================
 -- INSERT ASSETS (30 Total)
 -- ============================================================================
 
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('TB2-ALFA-01', 'TB2 Bayraktar 1', 'DRONE', 'IDLE', 'FRIEND', 38.462583, 27.215356, 22.8, CURRENT_TIMESTAMP);
+VALUES ('TB2-ALFA-01', 'TB2 Bayraktar 1', 'DRONE', 'IDLE', 'FRIEND', 38.462862, 27.217821, 27.4, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('TB2-ALFA-02', 'TB2 Bayraktar 2', 'DRONE', 'IDLE', 'FRIEND', 38.46942, 27.218794, 42.4, CURRENT_TIMESTAMP);
+VALUES ('TB2-ALFA-02', 'TB2 Bayraktar 2', 'DRONE', 'IDLE', 'FRIEND', 38.461293, 27.212342, 32.7, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('TB2-ALFA-03', 'TB2 Bayraktar 3', 'DRONE', 'IDLE', 'FRIEND', 38.467232, 27.211478, 1.2, CURRENT_TIMESTAMP);
+VALUES ('TB2-ALFA-03', 'TB2 Bayraktar 3', 'DRONE', 'IDLE', 'FRIEND', 38.461383, 27.214577, 41.0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('ANKA-BRAVO-01', 'ANKA-S 1', 'DRONE', 'IDLE', 'FRIEND', 38.462689, 27.218842, 39.6, CURRENT_TIMESTAMP);
+VALUES ('ANKA-BRAVO-01', 'ANKA-S 1', 'DRONE', 'IDLE', 'FRIEND', 38.469473, 27.211214, 1.6, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('ANKA-BRAVO-02', 'ANKA-S 2', 'DRONE', 'IDLE', 'FRIEND', 38.467215, 27.211558, 49.7, CURRENT_TIMESTAMP);
+VALUES ('ANKA-BRAVO-02', 'ANKA-S 2', 'DRONE', 'IDLE', 'FRIEND', 38.46169, 27.217729, 26.4, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('ANKA-BRAVO-03', 'ANKA-S 3', 'DRONE', 'EXERCISE', 'FRIEND', 38.230511, 27.017017, 1635.2, CURRENT_TIMESTAMP);
+VALUES ('ANKA-BRAVO-03', 'ANKA-S 3', 'DRONE', 'EXERCISE', 'FRIEND', 38.255645, 27.059311, 704.9, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('AKSUNGUR-01', 'Aksungur 1', 'DRONE', 'EXERCISE', 'FRIEND', 38.221925, 26.950423, 529.8, CURRENT_TIMESTAMP);
+VALUES ('AKSUNGUR-01', 'Aksungur 1', 'DRONE', 'EXERCISE', 'FRIEND', 38.217054, 26.969703, 1517.8, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('AKSUNGUR-02', 'Aksungur 2', 'DRONE', 'EXERCISE', 'FRIEND', 38.35041, 27.048104, 1068.9, CURRENT_TIMESTAMP);
+VALUES ('AKSUNGUR-02', 'Aksungur 2', 'DRONE', 'EXERCISE', 'FRIEND', 38.389813, 27.005857, 516.8, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('MINI-IHA-01', 'Mini IHA 1', 'DRONE', 'EXERCISE', 'FRIEND', 38.364094, 26.97877, 913.3, CURRENT_TIMESTAMP);
+VALUES ('MINI-IHA-01', 'Mini IHA 1', 'DRONE', 'EXERCISE', 'FRIEND', 38.254671, 27.004727, 1694.2, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('MINI-IHA-02', 'Mini IHA 2', 'DRONE', 'EXERCISE', 'FRIEND', 38.25623, 26.956745, 1389.2, CURRENT_TIMESTAMP);
+VALUES ('MINI-IHA-02', 'Mini IHA 2', 'DRONE', 'EXERCISE', 'FRIEND', 38.305257, 26.912003, 1342.1, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('SAT-TIM-01', 'SAT Komando Tim 1', 'SOLDIER', 'IDLE', 'FRIEND', 38.467211, 27.215675, 0, CURRENT_TIMESTAMP);
+VALUES ('SAT-TIM-01', 'SAT Komando Tim 1', 'SOLDIER', 'IDLE', 'FRIEND', 38.466407, 27.215718, 0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('SAT-TIM-02', 'SAT Komando Tim 2', 'SOLDIER', 'IDLE', 'FRIEND', 38.46558, 27.218951, 0, CURRENT_TIMESTAMP);
+VALUES ('SAT-TIM-02', 'SAT Komando Tim 2', 'SOLDIER', 'IDLE', 'FRIEND', 38.464151, 27.218976, 0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('SAT-TIM-03', 'SAT Komando Tim 3', 'SOLDIER', 'IDLE', 'FRIEND', 38.463219, 27.215347, 0, CURRENT_TIMESTAMP);
+VALUES ('SAT-TIM-03', 'SAT Komando Tim 3', 'SOLDIER', 'IDLE', 'FRIEND', 38.463845, 27.21781, 0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('SAS-TIM-01', 'SAS Tim 1', 'SOLDIER', 'IDLE', 'FRIEND', 38.468658, 27.212254, 0, CURRENT_TIMESTAMP);
+VALUES ('SAS-TIM-01', 'SAS Tim 1', 'SOLDIER', 'IDLE', 'FRIEND', 38.463217, 27.213374, 0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('SAS-TIM-02', 'SAS Tim 2', 'SOLDIER', 'IDLE', 'FRIEND', 38.465947, 27.215267, 0, CURRENT_TIMESTAMP);
+VALUES ('SAS-TIM-02', 'SAS Tim 2', 'SOLDIER', 'IDLE', 'FRIEND', 38.467845, 27.214707, 0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('KOMANDO-01', 'Dag Komando 1', 'SOLDIER', 'EXERCISE', 'FRIEND', 38.309258, 26.97994, 122.5, CURRENT_TIMESTAMP);
+VALUES ('KOMANDO-01', 'Dag Komando 1', 'SOLDIER', 'EXERCISE', 'FRIEND', 38.346115, 26.994406, 116.6, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('KOMANDO-02', 'Dag Komando 2', 'SOLDIER', 'EXERCISE', 'FRIEND', 38.249601, 27.060462, 440.8, CURRENT_TIMESTAMP);
+VALUES ('KOMANDO-02', 'Dag Komando 2', 'SOLDIER', 'EXERCISE', 'FRIEND', 38.216079, 26.919303, 297.2, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('KOMANDO-03', 'Dag Komando 3', 'SOLDIER', 'EXERCISE', 'FRIEND', 38.299171, 26.948628, 451.8, CURRENT_TIMESTAMP);
+VALUES ('KOMANDO-03', 'Dag Komando 3', 'SOLDIER', 'EXERCISE', 'FRIEND', 38.236712, 27.084027, 104.3, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('PIYADE-01', 'Piyade Manga 1', 'SOLDIER', 'EXERCISE', 'FRIEND', 38.253829, 27.055226, 280.1, CURRENT_TIMESTAMP);
+VALUES ('PIYADE-01', 'Piyade Manga 1', 'SOLDIER', 'EXERCISE', 'FRIEND', 38.286712, 26.940285, 433.1, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('PIYADE-02', 'Piyade Manga 2', 'SOLDIER', 'EXERCISE', 'FRIEND', 38.356342, 27.047386, 399.1, CURRENT_TIMESTAMP);
+VALUES ('PIYADE-02', 'Piyade Manga 2', 'SOLDIER', 'EXERCISE', 'FRIEND', 38.374128, 26.947426, 233.0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('ALTAY-01', 'Altay Tank 1', 'VEHICLE', 'IDLE', 'FRIEND', 38.4653, 27.219005, 0, CURRENT_TIMESTAMP);
+VALUES ('ALTAY-01', 'Altay Tank 1', 'VEHICLE', 'IDLE', 'FRIEND', 38.463813, 27.212535, 0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('ALTAY-02', 'Altay Tank 2', 'VEHICLE', 'IDLE', 'FRIEND', 38.46389, 27.21276, 0, CURRENT_TIMESTAMP);
+VALUES ('ALTAY-02', 'Altay Tank 2', 'VEHICLE', 'IDLE', 'FRIEND', 38.46685, 27.214776, 0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('KIRPI-01', 'Kirpi MRAP 1', 'VEHICLE', 'IDLE', 'FRIEND', 38.462153, 27.215436, 0, CURRENT_TIMESTAMP);
+VALUES ('KIRPI-01', 'Kirpi MRAP 1', 'VEHICLE', 'IDLE', 'FRIEND', 38.460997, 27.217197, 0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('KIRPI-02', 'Kirpi MRAP 2', 'VEHICLE', 'IDLE', 'FRIEND', 38.465872, 27.217464, 0, CURRENT_TIMESTAMP);
+VALUES ('KIRPI-02', 'Kirpi MRAP 2', 'VEHICLE', 'IDLE', 'FRIEND', 38.465181, 27.21622, 0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('KIRPI-03', 'Kirpi MRAP 3', 'VEHICLE', 'IDLE', 'FRIEND', 38.468997, 27.214845, 0, CURRENT_TIMESTAMP);
+VALUES ('KIRPI-03', 'Kirpi MRAP 3', 'VEHICLE', 'IDLE', 'FRIEND', 38.461758, 27.212241, 0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('KOBRA-01', 'Kobra Zirhli 1', 'VEHICLE', 'EXERCISE', 'FRIEND', 38.299398, 27.069975, 286.2, CURRENT_TIMESTAMP);
+VALUES ('KOBRA-01', 'Kobra Zirhli 1', 'VEHICLE', 'EXERCISE', 'FRIEND', 38.249128, 27.025755, 195.0, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('KOBRA-02', 'Kobra Zirhli 2', 'VEHICLE', 'EXERCISE', 'FRIEND', 38.320956, 27.011834, 243.7, CURRENT_TIMESTAMP);
+VALUES ('KOBRA-02', 'Kobra Zirhli 2', 'VEHICLE', 'EXERCISE', 'FRIEND', 38.255386, 27.041065, 180.2, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('FIRTINA-01', 'Firtina Obus 1', 'VEHICLE', 'EXERCISE', 'FRIEND', 38.364698, 27.019086, 190.9, CURRENT_TIMESTAMP);
+VALUES ('FIRTINA-01', 'Firtina Obus 1', 'VEHICLE', 'EXERCISE', 'FRIEND', 38.386271, 27.089975, 176.8, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('FIRTINA-02', 'Firtina Obus 2', 'VEHICLE', 'EXERCISE', 'FRIEND', 38.288152, 27.060973, 290.9, CURRENT_TIMESTAMP);
+VALUES ('FIRTINA-02', 'Firtina Obus 2', 'VEHICLE', 'EXERCISE', 'FRIEND', 38.27404, 27.013554, 257.7, CURRENT_TIMESTAMP);
 INSERT INTO assets (id, name, type, status, alignment, last_latitude, last_longitude, last_altitude, last_update)
-VALUES ('EJDER-01', 'Ejder Yalcin 1', 'VEHICLE', 'EXERCISE', 'FRIEND', 38.36108, 27.05105, 277.6, CURRENT_TIMESTAMP);
+VALUES ('EJDER-01', 'Ejder Yalcin 1', 'VEHICLE', 'EXERCISE', 'FRIEND', 38.304607, 27.023836, 258.0, CURRENT_TIMESTAMP);
 
 -- ============================================================================
 -- INSERT INITIAL TELEMETRY
 -- ============================================================================
 
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('TB2-ALFA-01', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.215356, 38.462583), 4326), 22.8, 0, 90, '{"heading": 314.7, "mode": "STANDBY", "alignment": "FRIEND", "threat_level": 0, "mission": "Bekleme"}'::jsonb);
+VALUES ('TB2-ALFA-01', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.217821, 38.462862), 4326), 27.4, 0, 90, '{"heading": 87.5, "mode": "STANDBY", "alignment": "FRIEND", "threat_level": 0, "mission": "Bekleme"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('TB2-ALFA-02', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.218794, 38.46942), 4326), 42.4, 0, 99, '{"heading": 291.3, "mode": "STANDBY", "alignment": "FRIEND", "threat_level": 0, "mission": "Bekleme"}'::jsonb);
+VALUES ('TB2-ALFA-02', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.212342, 38.461293), 4326), 32.7, 0, 98, '{"heading": 340.3, "mode": "STANDBY", "alignment": "FRIEND", "threat_level": 0, "mission": "Bekleme"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('TB2-ALFA-03', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.211478, 38.467232), 4326), 1.2, 0, 98, '{"heading": 99.1, "mode": "STANDBY", "alignment": "FRIEND", "threat_level": 0, "mission": "Bekleme"}'::jsonb);
+VALUES ('TB2-ALFA-03', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.214577, 38.461383), 4326), 41.0, 0, 96, '{"heading": 195.8, "mode": "STANDBY", "alignment": "FRIEND", "threat_level": 0, "mission": "Bekleme"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('ANKA-BRAVO-01', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.218842, 38.462689), 4326), 39.6, 0, 100, '{"heading": 209.2, "mode": "STANDBY", "alignment": "FRIEND", "threat_level": 0, "mission": "Bekleme"}'::jsonb);
+VALUES ('ANKA-BRAVO-01', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.211214, 38.469473), 4326), 1.6, 0, 98, '{"heading": 163.9, "mode": "STANDBY", "alignment": "FRIEND", "threat_level": 0, "mission": "Bekleme"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('ANKA-BRAVO-02', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.211558, 38.467215), 4326), 49.7, 0, 93, '{"heading": 172.1, "mode": "STANDBY", "alignment": "FRIEND", "threat_level": 0, "mission": "Bekleme"}'::jsonb);
+VALUES ('ANKA-BRAVO-02', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.217729, 38.46169), 4326), 26.4, 0, 95, '{"heading": 185.8, "mode": "STANDBY", "alignment": "FRIEND", "threat_level": 0, "mission": "Bekleme"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('ANKA-BRAVO-03', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.017017, 38.230511), 4326), 1635.2, 137.6, 73, '{"heading": 219.9, "mode": "AUTO", "alignment": "FRIEND", "threat_level": 0, "mission": "Kesif Ucusu"}'::jsonb);
+VALUES ('ANKA-BRAVO-03', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.059311, 38.255645), 4326), 704.9, 132.8, 80, '{"heading": 146.3, "mode": "AUTO", "alignment": "FRIEND", "threat_level": 0, "mission": "Kesif Ucusu"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('AKSUNGUR-01', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.950423, 38.221925), 4326), 529.8, 83.9, 86, '{"heading": 51.7, "mode": "AUTO", "alignment": "FRIEND", "threat_level": 0, "mission": "Kesif Ucusu"}'::jsonb);
+VALUES ('AKSUNGUR-01', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.969703, 38.217054), 4326), 1517.8, 105.4, 75, '{"heading": 252.9, "mode": "AUTO", "alignment": "FRIEND", "threat_level": 0, "mission": "Kesif Ucusu"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('AKSUNGUR-02', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.048104, 38.35041), 4326), 1068.9, 148.1, 64, '{"heading": 276.1, "mode": "AUTO", "alignment": "FRIEND", "threat_level": 0, "mission": "Kesif Ucusu"}'::jsonb);
+VALUES ('AKSUNGUR-02', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.005857, 38.389813), 4326), 516.8, 95.9, 61, '{"heading": 285.6, "mode": "AUTO", "alignment": "FRIEND", "threat_level": 0, "mission": "Kesif Ucusu"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('MINI-IHA-01', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.97877, 38.364094), 4326), 913.3, 84.0, 90, '{"heading": 181.0, "mode": "AUTO", "alignment": "FRIEND", "threat_level": 0, "mission": "Kesif Ucusu"}'::jsonb);
+VALUES ('MINI-IHA-01', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.004727, 38.254671), 4326), 1694.2, 110.9, 64, '{"heading": 314.2, "mode": "AUTO", "alignment": "FRIEND", "threat_level": 0, "mission": "Kesif Ucusu"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('MINI-IHA-02', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.956745, 38.25623), 4326), 1389.2, 139.7, 73, '{"heading": 10.5, "mode": "AUTO", "alignment": "FRIEND", "threat_level": 0, "mission": "Kesif Ucusu"}'::jsonb);
+VALUES ('MINI-IHA-02', 'DRONE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.912003, 38.305257), 4326), 1342.1, 146.6, 89, '{"heading": 292.6, "mode": "AUTO", "alignment": "FRIEND", "threat_level": 0, "mission": "Kesif Ucusu"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('SAT-TIM-01', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.215675, 38.467211), 4326), 0, 0, 97, '{"heart_rate": 70, "spo2": 97, "body_temp": 36.2, "stress_level": "LOW", "alignment": "FRIEND", "threat_level": 0, "mission": "Kisla Nobet"}'::jsonb);
+VALUES ('SAT-TIM-01', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.215718, 38.466407), 4326), 0, 0, 98, '{"heart_rate": 70, "spo2": 97, "body_temp": 36.9, "stress_level": "LOW", "alignment": "FRIEND", "threat_level": 0, "mission": "Kisla Nobet"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('SAT-TIM-02', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.218951, 38.46558), 4326), 0, 0, 93, '{"heart_rate": 70, "spo2": 96, "body_temp": 36.9, "stress_level": "LOW", "alignment": "FRIEND", "threat_level": 0, "mission": "Kisla Nobet"}'::jsonb);
+VALUES ('SAT-TIM-02', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.218976, 38.464151), 4326), 0, 0, 94, '{"heart_rate": 70, "spo2": 98, "body_temp": 36.6, "stress_level": "LOW", "alignment": "FRIEND", "threat_level": 0, "mission": "Kisla Nobet"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('SAT-TIM-03', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.215347, 38.463219), 4326), 0, 0, 98, '{"heart_rate": 70, "spo2": 99, "body_temp": 36.7, "stress_level": "LOW", "alignment": "FRIEND", "threat_level": 0, "mission": "Kisla Nobet"}'::jsonb);
+VALUES ('SAT-TIM-03', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.21781, 38.463845), 4326), 0, 0, 92, '{"heart_rate": 70, "spo2": 99, "body_temp": 36.3, "stress_level": "LOW", "alignment": "FRIEND", "threat_level": 0, "mission": "Kisla Nobet"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('SAS-TIM-01', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.212254, 38.468658), 4326), 0, 0, 94, '{"heart_rate": 70, "spo2": 98, "body_temp": 37.0, "stress_level": "LOW", "alignment": "FRIEND", "threat_level": 0, "mission": "Kisla Nobet"}'::jsonb);
+VALUES ('SAS-TIM-01', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.213374, 38.463217), 4326), 0, 0, 91, '{"heart_rate": 70, "spo2": 98, "body_temp": 36.4, "stress_level": "LOW", "alignment": "FRIEND", "threat_level": 0, "mission": "Kisla Nobet"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('SAS-TIM-02', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.215267, 38.465947), 4326), 0, 0, 100, '{"heart_rate": 70, "spo2": 97, "body_temp": 36.7, "stress_level": "LOW", "alignment": "FRIEND", "threat_level": 0, "mission": "Kisla Nobet"}'::jsonb);
+VALUES ('SAS-TIM-02', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.214707, 38.467845), 4326), 0, 0, 100, '{"heart_rate": 70, "spo2": 96, "body_temp": 36.7, "stress_level": "LOW", "alignment": "FRIEND", "threat_level": 0, "mission": "Kisla Nobet"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('KOMANDO-01', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.97994, 38.309258), 4326), 122.5, 6.1, 63, '{"heart_rate": 85, "spo2": 97, "body_temp": 36.5, "stress_level": "MEDIUM", "alignment": "FRIEND", "threat_level": 0, "mission": "Tatbikat"}'::jsonb);
+VALUES ('KOMANDO-01', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.994406, 38.346115), 4326), 116.6, 7.3, 94, '{"heart_rate": 106, "spo2": 97, "body_temp": 36.8, "stress_level": "MEDIUM", "alignment": "FRIEND", "threat_level": 0, "mission": "Tatbikat"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('KOMANDO-02', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.060462, 38.249601), 4326), 440.8, 3.0, 89, '{"heart_rate": 109, "spo2": 98, "body_temp": 36.7, "stress_level": "MEDIUM", "alignment": "FRIEND", "threat_level": 0, "mission": "Tatbikat"}'::jsonb);
+VALUES ('KOMANDO-02', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.919303, 38.216079), 4326), 297.2, 3.7, 72, '{"heart_rate": 103, "spo2": 97, "body_temp": 36.8, "stress_level": "MEDIUM", "alignment": "FRIEND", "threat_level": 0, "mission": "Tatbikat"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('KOMANDO-03', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.948628, 38.299171), 4326), 451.8, 5.3, 78, '{"heart_rate": 93, "spo2": 99, "body_temp": 36.8, "stress_level": "MEDIUM", "alignment": "FRIEND", "threat_level": 0, "mission": "Tatbikat"}'::jsonb);
+VALUES ('KOMANDO-03', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.084027, 38.236712), 4326), 104.3, 2.1, 81, '{"heart_rate": 105, "spo2": 99, "body_temp": 36.2, "stress_level": "MEDIUM", "alignment": "FRIEND", "threat_level": 0, "mission": "Tatbikat"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('PIYADE-01', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.055226, 38.253829), 4326), 280.1, 7.0, 64, '{"heart_rate": 87, "spo2": 99, "body_temp": 36.8, "stress_level": "MEDIUM", "alignment": "FRIEND", "threat_level": 0, "mission": "Tatbikat"}'::jsonb);
+VALUES ('PIYADE-01', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.940285, 38.286712), 4326), 433.1, 4.4, 79, '{"heart_rate": 93, "spo2": 97, "body_temp": 36.7, "stress_level": "MEDIUM", "alignment": "FRIEND", "threat_level": 0, "mission": "Tatbikat"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('PIYADE-02', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.047386, 38.356342), 4326), 399.1, 7.9, 60, '{"heart_rate": 96, "spo2": 99, "body_temp": 36.9, "stress_level": "MEDIUM", "alignment": "FRIEND", "threat_level": 0, "mission": "Tatbikat"}'::jsonb);
+VALUES ('PIYADE-02', 'SOLDIER', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(26.947426, 38.374128), 4326), 233.0, 5.3, 66, '{"heart_rate": 110, "spo2": 97, "body_temp": 37.0, "stress_level": "MEDIUM", "alignment": "FRIEND", "threat_level": 0, "mission": "Tatbikat"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('ALTAY-01', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.219005, 38.4653), 4326), 0, 0, 99, '{"fuel_level": 99, "engine_temp": 79, "engine_status": "OFF", "heading": 67.7, "alignment": "FRIEND", "threat_level": 0, "mission": "Garajda Bekleme"}'::jsonb);
+VALUES ('ALTAY-01', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.212535, 38.463813), 4326), 0, 0, 95, '{"fuel_level": 95, "engine_temp": 75, "engine_status": "OFF", "heading": 50.6, "alignment": "FRIEND", "threat_level": 0, "mission": "Garajda Bekleme"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('ALTAY-02', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.21276, 38.46389), 4326), 0, 0, 95, '{"fuel_level": 95, "engine_temp": 83, "engine_status": "OFF", "heading": 239.7, "alignment": "FRIEND", "threat_level": 0, "mission": "Garajda Bekleme"}'::jsonb);
+VALUES ('ALTAY-02', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.214776, 38.46685), 4326), 0, 0, 99, '{"fuel_level": 99, "engine_temp": 79, "engine_status": "OFF", "heading": 293.9, "alignment": "FRIEND", "threat_level": 0, "mission": "Garajda Bekleme"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('KIRPI-01', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.215436, 38.462153), 4326), 0, 0, 95, '{"fuel_level": 95, "engine_temp": 78, "engine_status": "OFF", "heading": 276.6, "alignment": "FRIEND", "threat_level": 0, "mission": "Garajda Bekleme"}'::jsonb);
+VALUES ('KIRPI-01', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.217197, 38.460997), 4326), 0, 0, 94, '{"fuel_level": 94, "engine_temp": 75, "engine_status": "OFF", "heading": 196.5, "alignment": "FRIEND", "threat_level": 0, "mission": "Garajda Bekleme"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('KIRPI-02', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.217464, 38.465872), 4326), 0, 0, 90, '{"fuel_level": 90, "engine_temp": 70, "engine_status": "OFF", "heading": 97.3, "alignment": "FRIEND", "threat_level": 0, "mission": "Garajda Bekleme"}'::jsonb);
+VALUES ('KIRPI-02', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.21622, 38.465181), 4326), 0, 0, 98, '{"fuel_level": 98, "engine_temp": 73, "engine_status": "OFF", "heading": 32.4, "alignment": "FRIEND", "threat_level": 0, "mission": "Garajda Bekleme"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('KIRPI-03', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.214845, 38.468997), 4326), 0, 0, 90, '{"fuel_level": 90, "engine_temp": 72, "engine_status": "OFF", "heading": 5.1, "alignment": "FRIEND", "threat_level": 0, "mission": "Garajda Bekleme"}'::jsonb);
+VALUES ('KIRPI-03', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.212241, 38.461758), 4326), 0, 0, 94, '{"fuel_level": 94, "engine_temp": 81, "engine_status": "OFF", "heading": 73.6, "alignment": "FRIEND", "threat_level": 0, "mission": "Garajda Bekleme"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('KOBRA-01', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.069975, 38.299398), 4326), 286.2, 41.1, 86, '{"fuel_level": 86, "engine_temp": 72, "engine_status": "RUNNING", "heading": 279.1, "alignment": "FRIEND", "threat_level": 0, "mission": "Arazi Tatbikati"}'::jsonb);
+VALUES ('KOBRA-01', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.025755, 38.249128), 4326), 195.0, 54.9, 82, '{"fuel_level": 82, "engine_temp": 71, "engine_status": "RUNNING", "heading": 349.4, "alignment": "FRIEND", "threat_level": 0, "mission": "Arazi Tatbikati"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('KOBRA-02', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.011834, 38.320956), 4326), 243.7, 51.9, 92, '{"fuel_level": 92, "engine_temp": 75, "engine_status": "RUNNING", "heading": 241.2, "alignment": "FRIEND", "threat_level": 0, "mission": "Arazi Tatbikati"}'::jsonb);
+VALUES ('KOBRA-02', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.041065, 38.255386), 4326), 180.2, 33.7, 95, '{"fuel_level": 95, "engine_temp": 83, "engine_status": "RUNNING", "heading": 27.9, "alignment": "FRIEND", "threat_level": 0, "mission": "Arazi Tatbikati"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('FIRTINA-01', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.019086, 38.364698), 4326), 190.9, 41.4, 93, '{"fuel_level": 93, "engine_temp": 78, "engine_status": "RUNNING", "heading": 170.6, "alignment": "FRIEND", "threat_level": 0, "mission": "Arazi Tatbikati"}'::jsonb);
+VALUES ('FIRTINA-01', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.089975, 38.386271), 4326), 176.8, 44.6, 81, '{"fuel_level": 81, "engine_temp": 70, "engine_status": "RUNNING", "heading": 354.1, "alignment": "FRIEND", "threat_level": 0, "mission": "Arazi Tatbikati"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('FIRTINA-02', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.060973, 38.288152), 4326), 290.9, 20.5, 77, '{"fuel_level": 77, "engine_temp": 77, "engine_status": "RUNNING", "heading": 38.6, "alignment": "FRIEND", "threat_level": 0, "mission": "Arazi Tatbikati"}'::jsonb);
+VALUES ('FIRTINA-02', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.013554, 38.27404), 4326), 257.7, 35.4, 87, '{"fuel_level": 87, "engine_temp": 74, "engine_status": "RUNNING", "heading": 162.0, "alignment": "FRIEND", "threat_level": 0, "mission": "Arazi Tatbikati"}'::jsonb);
 INSERT INTO telemetry (source_id, source_type, timestamp, location, altitude, speed, battery_level, payload)
-VALUES ('EJDER-01', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.05105, 38.36108), 4326), 277.6, 49.1, 74, '{"fuel_level": 74, "engine_temp": 80, "engine_status": "RUNNING", "heading": 289.6, "alignment": "FRIEND", "threat_level": 0, "mission": "Arazi Tatbikati"}'::jsonb);
+VALUES ('EJDER-01', 'VEHICLE', CURRENT_TIMESTAMP, ST_SetSRID(ST_MakePoint(27.023836, 38.304607), 4326), 258.0, 45.6, 77, '{"fuel_level": 77, "engine_temp": 85, "engine_status": "RUNNING", "heading": 354.3, "alignment": "FRIEND", "threat_level": 0, "mission": "Arazi Tatbikati"}'::jsonb);
 
 -- ============================================================================
 -- INSERT TASKS (v2)
 -- ============================================================================
 
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('TB2-ALFA-01', 'Gece Gorevi', 'Gece termal kamera ile bolge taramasi', 'PENDING');
+VALUES ('TB2-ALFA-01', 'Gozetleme Gorevi', 'Sinir hattinda 24 saat gozetleme gorevi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('TB2-ALFA-02', 'Gece Gorevi', 'Gece termal kamera ile bolge taramasi', 'PENDING');
+VALUES ('TB2-ALFA-02', 'Gozetleme Gorevi', 'Sinir hattinda 24 saat gozetleme gorevi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('TB2-ALFA-03', 'Gozetleme Gorevi', 'Sinir hattinda 24 saat gozetleme gorevi', 'PENDING');
+VALUES ('TB2-ALFA-03', 'Gece Gorevi', 'Gece termal kamera ile bolge taramasi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('ANKA-BRAVO-01', 'Gozetleme Gorevi', 'Sinir hattinda 24 saat gozetleme gorevi', 'PENDING');
+VALUES ('ANKA-BRAVO-01', 'Gece Gorevi', 'Gece termal kamera ile bolge taramasi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('ANKA-BRAVO-02', 'Gozetleme Gorevi', 'Sinir hattinda 24 saat gozetleme gorevi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('ANKA-BRAVO-03', 'Fotograf Haritalama', 'Tatbikat bolgesinin hava fotograflarini cek', 'COMPLETED');
+VALUES ('ANKA-BRAVO-03', 'Gece Gorevi', 'Gece termal kamera ile bolge taramasi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('ANKA-BRAVO-03', 'Kesif Ucusu', 'Hedef bolgesinde alçak irtifa kesif ucusu gerceklestir', 'IN_PROGRESS');
+VALUES ('ANKA-BRAVO-03', 'Konvoy Takibi', 'Mavi kuvvet konvoyunu havadan takip et', 'IN_PROGRESS');
+INSERT INTO tasks (asset_id, title, description, status)
+VALUES ('AKSUNGUR-01', 'Konvoy Takibi', 'Mavi kuvvet konvoyunu havadan takip et', 'IN_PROGRESS');
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('AKSUNGUR-01', 'Gece Gorevi', 'Gece termal kamera ile bolge taramasi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('AKSUNGUR-01', 'Kesif Ucusu', 'Hedef bolgesinde alçak irtifa kesif ucusu gerceklestir', 'IN_PROGRESS');
+VALUES ('AKSUNGUR-02', 'Gozetleme Gorevi', 'Sinir hattinda 24 saat gozetleme gorevi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('AKSUNGUR-02', 'Gece Gorevi', 'Gece termal kamera ile bolge taramasi', 'PENDING');
-INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('AKSUNGUR-02', 'Kesif Ucusu', 'Hedef bolgesinde alçak irtifa kesif ucusu gerceklestir', 'IN_PROGRESS');
+VALUES ('AKSUNGUR-02', 'Konvoy Takibi', 'Mavi kuvvet konvoyunu havadan takip et', 'IN_PROGRESS');
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('MINI-IHA-01', 'Gozetleme Gorevi', 'Sinir hattinda 24 saat gozetleme gorevi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('MINI-IHA-01', 'Konvoy Takibi', 'Mavi kuvvet konvoyunu havadan takip et', 'IN_PROGRESS');
+VALUES ('MINI-IHA-01', 'Kesif Ucusu', 'Hedef bolgesinde alçak irtifa kesif ucusu gerceklestir', 'IN_PROGRESS');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('MINI-IHA-02', 'Kesif Ucusu', 'Hedef bolgesinde alçak irtifa kesif ucusu gerceklestir', 'IN_PROGRESS');
+VALUES ('MINI-IHA-02', 'Fotograf Haritalama', 'Tatbikat bolgesinin hava fotograflarini cek', 'COMPLETED');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('MINI-IHA-02', 'Konvoy Takibi', 'Mavi kuvvet konvoyunu havadan takip et', 'IN_PROGRESS');
+VALUES ('MINI-IHA-02', 'Gece Gorevi', 'Gece termal kamera ile bolge taramasi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('SAT-TIM-01', 'Ilk Yardim Egitimi', 'Saha ilk yardim egitimi katilimi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
@@ -299,55 +314,55 @@ VALUES ('SAS-TIM-01', 'Ilk Yardim Egitimi', 'Saha ilk yardim egitimi katilimi', 
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('SAS-TIM-02', 'Ilk Yardim Egitimi', 'Saha ilk yardim egitimi katilimi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('KOMANDO-01', 'Kesif Timi', 'Ileri kesif noktasina intikal', 'IN_PROGRESS');
-INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('KOMANDO-01', 'Devriye Gorevi', 'Kuzey sektor devriye hattinda yuruyus', 'IN_PROGRESS');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('KOMANDO-02', 'Ilk Yardim Egitimi', 'Saha ilk yardim egitimi katilimi', 'PENDING');
+VALUES ('KOMANDO-01', 'Kesif Timi', 'Ileri kesif noktasina intikal', 'IN_PROGRESS');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('KOMANDO-02', 'Devriye Gorevi', 'Kuzey sektor devriye hattinda yuruyus', 'IN_PROGRESS');
+VALUES ('KOMANDO-02', 'Tatbikat - Baskin', 'Simule edilmis baskin tatbikati', 'COMPLETED');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('KOMANDO-03', 'Nobet Gorevi', 'Kisla ana giris nobet gorevi', 'IN_PROGRESS');
+VALUES ('KOMANDO-02', 'Nobet Gorevi', 'Kisla ana giris nobet gorevi', 'IN_PROGRESS');
+INSERT INTO tasks (asset_id, title, description, status)
+VALUES ('KOMANDO-03', 'Kesif Timi', 'Ileri kesif noktasina intikal', 'IN_PROGRESS');
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('KOMANDO-03', 'Tatbikat - Baskin', 'Simule edilmis baskin tatbikati', 'COMPLETED');
 INSERT INTO tasks (asset_id, title, description, status)
+VALUES ('PIYADE-01', 'Tatbikat - Baskin', 'Simule edilmis baskin tatbikati', 'COMPLETED');
+INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('PIYADE-01', 'Devriye Gorevi', 'Kuzey sektor devriye hattinda yuruyus', 'IN_PROGRESS');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('PIYADE-01', 'Tatbikat - Baskin', 'Simule edilmis baskin tatbikati', 'COMPLETED');
+VALUES ('PIYADE-02', 'Devriye Gorevi', 'Kuzey sektor devriye hattinda yuruyus', 'IN_PROGRESS');
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('PIYADE-02', 'Tatbikat - Baskin', 'Simule edilmis baskin tatbikati', 'COMPLETED');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('PIYADE-02', 'Ilk Yardim Egitimi', 'Saha ilk yardim egitimi katilimi', 'PENDING');
+VALUES ('ALTAY-01', 'Muharebe Destek', 'Piyade birligine yakin destek gorevi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('ALTAY-01', 'Bakim Kontrol', 'Periyodik bakim ve teknik kontrol', 'PENDING');
-INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('ALTAY-02', 'Bakim Kontrol', 'Periyodik bakim ve teknik kontrol', 'PENDING');
+VALUES ('ALTAY-02', 'Muharebe Destek', 'Piyade birligine yakin destek gorevi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('KIRPI-01', 'Bakim Kontrol', 'Periyodik bakim ve teknik kontrol', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('KIRPI-02', 'Muharebe Destek', 'Piyade birligine yakin destek gorevi', 'PENDING');
+VALUES ('KIRPI-02', 'Bakim Kontrol', 'Periyodik bakim ve teknik kontrol', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('KIRPI-03', 'Bakim Kontrol', 'Periyodik bakim ve teknik kontrol', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('KOBRA-01', 'Konvoy Harekati', 'Alfa noktasindan Bravo noktasina malzeme taşima', 'IN_PROGRESS');
+VALUES ('KOBRA-01', 'Bakim Kontrol', 'Periyodik bakim ve teknik kontrol', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('KOBRA-01', 'Muharebe Destek', 'Piyade birligine yakin destek gorevi', 'PENDING');
-INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('KOBRA-02', 'Konvoy Harekati', 'Alfa noktasindan Bravo noktasina malzeme taşima', 'IN_PROGRESS');
+VALUES ('KOBRA-01', 'Arazi Manevra', 'Tatbikat bolgesinde taktik manevra', 'IN_PROGRESS');
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('KOBRA-02', 'Bakim Kontrol', 'Periyodik bakim ve teknik kontrol', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('FIRTINA-01', 'Muharebe Destek', 'Piyade birligine yakin destek gorevi', 'PENDING');
+VALUES ('KOBRA-02', 'Hedef Atisi', 'Atis poligonunda hedef atisi', 'COMPLETED');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('FIRTINA-01', 'Bakim Kontrol', 'Periyodik bakim ve teknik kontrol', 'PENDING');
+VALUES ('FIRTINA-01', 'Konvoy Harekati', 'Alfa noktasindan Bravo noktasina malzeme taşima', 'IN_PROGRESS');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('FIRTINA-02', 'Konvoy Harekati', 'Alfa noktasindan Bravo noktasina malzeme taşima', 'IN_PROGRESS');
+VALUES ('FIRTINA-01', 'Hedef Atisi', 'Atis poligonunda hedef atisi', 'COMPLETED');
 INSERT INTO tasks (asset_id, title, description, status)
 VALUES ('FIRTINA-02', 'Muharebe Destek', 'Piyade birligine yakin destek gorevi', 'PENDING');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('EJDER-01', 'Muharebe Destek', 'Piyade birligine yakin destek gorevi', 'PENDING');
+VALUES ('FIRTINA-02', 'Hedef Atisi', 'Atis poligonunda hedef atisi', 'COMPLETED');
 INSERT INTO tasks (asset_id, title, description, status)
-VALUES ('EJDER-01', 'Arazi Manevra', 'Tatbikat bolgesinde taktik manevra', 'IN_PROGRESS');
+VALUES ('EJDER-01', 'Bakim Kontrol', 'Periyodik bakim ve teknik kontrol', 'PENDING');
+INSERT INTO tasks (asset_id, title, description, status)
+VALUES ('EJDER-01', 'Konvoy Harekati', 'Alfa noktasindan Bravo noktasina malzeme taşima', 'IN_PROGRESS');
 
 -- ============================================================================
 -- INSERT SYSTEM LOGS (v2)
@@ -376,39 +391,37 @@ VALUES ('ANKA-BRAVO-02', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('ANKA-BRAVO-03', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('ANKA-BRAVO-03', 'GPS_LOCK', 'GPS sinyali kilitlendi, konum dogrulandi');
+VALUES ('ANKA-BRAVO-03', 'MISSION_START', 'Gorev basladi');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('ANKA-BRAVO-03', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %14');
+VALUES ('ANKA-BRAVO-03', 'MISSION_COMPLETE', 'Gorev basariyla tamamlandi');
+INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('ANKA-BRAVO-03', 'MODE_CHANGE', 'Operasyonel mod degisikligi: IDLE -> EXERCISE');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('AKSUNGUR-01', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('AKSUNGUR-01', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %25');
+VALUES ('AKSUNGUR-01', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %16');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('AKSUNGUR-01', 'MODE_CHANGE', 'Operasyonel mod degisikligi: IDLE -> EXERCISE');
-INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('AKSUNGUR-01', 'GPS_LOCK', 'GPS sinyali kilitlendi, konum dogrulandi');
+VALUES ('AKSUNGUR-01', 'MISSION_COMPLETE', 'Gorev basariyla tamamlandi');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('AKSUNGUR-02', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('AKSUNGUR-02', 'SENSOR_CALIBRATION', 'Sensor kalibrasyonu tamamlandi');
+VALUES ('AKSUNGUR-02', 'MISSION_START', 'Gorev basladi');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('AKSUNGUR-02', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
+VALUES ('AKSUNGUR-02', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %12');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('MINI-IHA-01', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('MINI-IHA-01', 'SENSOR_CALIBRATION', 'Sensor kalibrasyonu tamamlandi');
-INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('MINI-IHA-01', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
-INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('MINI-IHA-01', 'MODE_CHANGE', 'Operasyonel mod degisikligi: IDLE -> EXERCISE');
+INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('MINI-IHA-01', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %11');
+INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('MINI-IHA-01', 'FIRMWARE_UPDATE', 'Firmware guncelleme tamamlandi v2.1.4');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('MINI-IHA-02', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('MINI-IHA-02', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %15');
+VALUES ('MINI-IHA-02', 'GPS_LOCK', 'GPS sinyali kilitlendi, konum dogrulandi');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('MINI-IHA-02', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
-INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('MINI-IHA-02', 'MISSION_START', 'Gorev basladi');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('SAT-TIM-01', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
@@ -432,43 +445,35 @@ VALUES ('SAS-TIM-02', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('KOMANDO-01', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('KOMANDO-01', 'SENSOR_CALIBRATION', 'Sensor kalibrasyonu tamamlandi');
+VALUES ('KOMANDO-01', 'FIRMWARE_UPDATE', 'Firmware guncelleme tamamlandi v2.1.4');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('KOMANDO-01', 'MODE_CHANGE', 'Operasyonel mod degisikligi: IDLE -> EXERCISE');
-INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('KOMANDO-01', 'MISSION_START', 'Gorev basladi');
+VALUES ('KOMANDO-01', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('KOMANDO-02', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('KOMANDO-02', 'MISSION_COMPLETE', 'Gorev basariyla tamamlandi');
+VALUES ('KOMANDO-02', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %22');
+INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('KOMANDO-02', 'SENSOR_CALIBRATION', 'Sensor kalibrasyonu tamamlandi');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('KOMANDO-02', 'MODE_CHANGE', 'Operasyonel mod degisikligi: IDLE -> EXERCISE');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('KOMANDO-02', 'MISSION_START', 'Gorev basladi');
-INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('KOMANDO-03', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
+INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('KOMANDO-03', 'MISSION_START', 'Gorev basladi');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('KOMANDO-03', 'GPS_LOCK', 'GPS sinyali kilitlendi, konum dogrulandi');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('KOMANDO-03', 'MODE_CHANGE', 'Operasyonel mod degisikligi: IDLE -> EXERCISE');
-INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('KOMANDO-03', 'SENSOR_CALIBRATION', 'Sensor kalibrasyonu tamamlandi');
-INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('PIYADE-01', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('PIYADE-01', 'FIRMWARE_UPDATE', 'Firmware guncelleme tamamlandi v2.1.4');
+VALUES ('PIYADE-01', 'GPS_LOCK', 'GPS sinyali kilitlendi, konum dogrulandi');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('PIYADE-01', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %25');
-INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('PIYADE-01', 'MISSION_START', 'Gorev basladi');
+VALUES ('PIYADE-01', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %14');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('PIYADE-02', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('PIYADE-02', 'MISSION_START', 'Gorev basladi');
-INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('PIYADE-02', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %13');
-INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('PIYADE-02', 'GPS_LOCK', 'GPS sinyali kilitlendi, konum dogrulandi');
+INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('PIYADE-02', 'MISSION_START', 'Gorev basladi');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('ALTAY-01', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
@@ -492,74 +497,72 @@ VALUES ('KIRPI-03', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('KOBRA-01', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('KOBRA-01', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
+VALUES ('KOBRA-01', 'MISSION_START', 'Gorev basladi');
+INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('KOBRA-01', 'GPS_LOCK', 'GPS sinyali kilitlendi, konum dogrulandi');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('KOBRA-01', 'FIRMWARE_UPDATE', 'Firmware guncelleme tamamlandi v2.1.4');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('KOBRA-02', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('KOBRA-02', 'SENSOR_CALIBRATION', 'Sensor kalibrasyonu tamamlandi');
-INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('KOBRA-02', 'MODE_CHANGE', 'Operasyonel mod degisikligi: IDLE -> EXERCISE');
-INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('KOBRA-02', 'GPS_LOCK', 'GPS sinyali kilitlendi, konum dogrulandi');
+INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('KOBRA-02', 'FIRMWARE_UPDATE', 'Firmware guncelleme tamamlandi v2.1.4');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('FIRTINA-01', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
+VALUES ('FIRTINA-01', 'MISSION_START', 'Gorev basladi');
+INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('FIRTINA-01', 'SENSOR_CALIBRATION', 'Sensor kalibrasyonu tamamlandi');
-INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('FIRTINA-01', 'FIRMWARE_UPDATE', 'Firmware guncelleme tamamlandi v2.1.4');
-INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('FIRTINA-01', 'GPS_LOCK', 'GPS sinyali kilitlendi, konum dogrulandi');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('FIRTINA-02', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('FIRTINA-02', 'GPS_LOCK', 'GPS sinyali kilitlendi, konum dogrulandi');
+VALUES ('FIRTINA-02', 'SENSOR_CALIBRATION', 'Sensor kalibrasyonu tamamlandi');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('FIRTINA-02', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %15');
+VALUES ('FIRTINA-02', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('FIRTINA-02', 'MISSION_START', 'Gorev basladi');
 INSERT INTO system_logs (asset_id, event_type, message)
 VALUES ('EJDER-01', 'CONNECTION_ESTABLISHED', 'Sistem baglantisi basariyla kuruldu');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('EJDER-01', 'HEARTBEAT', 'Sistem saglik kontrolu basarili');
+VALUES ('EJDER-01', 'BATTERY_WARNING', 'Batarya seviyesi kritik: %25');
 INSERT INTO system_logs (asset_id, event_type, message)
-VALUES ('EJDER-01', 'FIRMWARE_UPDATE', 'Firmware guncelleme tamamlandi v2.1.4');
+VALUES ('EJDER-01', 'MISSION_START', 'Gorev basladi');
 
 -- ============================================================================
 -- INSERT AI ANALYSES (v2)
 -- ============================================================================
 
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('TB2-ALFA-01', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
+VALUES ('TB2-ALFA-01', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('TB2-ALFA-02', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
+VALUES ('TB2-ALFA-02', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('TB2-ALFA-03', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
+VALUES ('TB2-ALFA-03', 'LOW', 'Rutin devriye hareketi, anomali yok', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('ANKA-BRAVO-01', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('ANKA-BRAVO-02', 'LOW', 'Rutin devriye hareketi, anomali yok', FALSE);
+VALUES ('ANKA-BRAVO-02', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('ANKA-BRAVO-03', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
+VALUES ('ANKA-BRAVO-03', 'HIGH', 'Kritik bolgeye yaklasma tespit edildi, acil onlem alinmali', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('ANKA-BRAVO-03', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
+VALUES ('ANKA-BRAVO-03', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('AKSUNGUR-01', 'HIGH', 'Kritik bolgeye yaklasma tespit edildi, acil onlem alinmali', TRUE);
+VALUES ('ANKA-BRAVO-03', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('AKSUNGUR-01', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('AKSUNGUR-01', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
+VALUES ('AKSUNGUR-01', 'HIGH', 'Anormal biyometrik degerler, personel saglik kontrolu gerekli', TRUE);
+INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
+VALUES ('AKSUNGUR-01', 'MEDIUM', 'Beklenmeyen hiz degisimi tespit edildi, izleme onerisi', FALSE);
+INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
+VALUES ('AKSUNGUR-02', 'HIGH', 'Anormal biyometrik degerler, personel saglik kontrolu gerekli', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('AKSUNGUR-02', 'CRITICAL', 'Olasi dusman temasi, birlik alarma gecirilmeli', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('AKSUNGUR-02', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
-INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('AKSUNGUR-02', 'MEDIUM', 'Beklenmeyen hiz degisimi tespit edildi, izleme onerisi', FALSE);
+VALUES ('AKSUNGUR-02', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('MINI-IHA-01', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
-INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('MINI-IHA-01', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('MINI-IHA-01', 'MEDIUM', 'Rota sapmasi tespit edildi, operatorun dikkatine sunuldu', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
@@ -567,75 +570,96 @@ VALUES ('MINI-IHA-02', 'HIGH', 'Anormal biyometrik degerler, personel saglik kon
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('MINI-IHA-02', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('SAT-TIM-01', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
+VALUES ('MINI-IHA-02', 'LOW', 'Rutin devriye hareketi, anomali yok', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('SAT-TIM-02', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
+VALUES ('SAT-TIM-01', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('SAT-TIM-03', 'LOW', 'Rutin devriye hareketi, anomali yok', FALSE);
+VALUES ('SAT-TIM-02', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('SAS-TIM-01', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
+VALUES ('SAT-TIM-03', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('SAS-TIM-02', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
+VALUES ('SAS-TIM-01', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
+INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
+VALUES ('SAS-TIM-02', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
+INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
+VALUES ('KOMANDO-01', 'MEDIUM', 'Rota sapmasi tespit edildi, operatorun dikkatine sunuldu', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('KOMANDO-01', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KOMANDO-01', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
+VALUES ('KOMANDO-02', 'MEDIUM', 'Rota sapmasi tespit edildi, operatorun dikkatine sunuldu', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KOMANDO-02', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
+VALUES ('KOMANDO-02', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KOMANDO-02', 'CRITICAL', 'Olasi dusman temasi, birlik alarma gecirilmeli', TRUE);
+VALUES ('KOMANDO-02', 'MEDIUM', 'Beklenmeyen hiz degisimi tespit edildi, izleme onerisi', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KOMANDO-02', 'LOW', 'Rutin devriye hareketi, anomali yok', FALSE);
+VALUES ('KOMANDO-03', 'HIGH', 'Anormal biyometrik degerler, personel saglik kontrolu gerekli', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KOMANDO-03', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
+VALUES ('KOMANDO-03', 'MEDIUM', 'Rota sapmasi tespit edildi, operatorun dikkatine sunuldu', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KOMANDO-03', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
+VALUES ('PIYADE-01', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KOMANDO-03', 'HIGH', 'Kritik bolgeye yaklasma tespit edildi, acil onlem alinmali', TRUE);
+VALUES ('PIYADE-01', 'MEDIUM', 'Rota sapmasi tespit edildi, operatorun dikkatine sunuldu', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('PIYADE-01', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
+VALUES ('PIYADE-01', 'LOW', 'Rutin devriye hareketi, anomali yok', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('PIYADE-01', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
-INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('PIYADE-02', 'CRITICAL', 'Olasi dusman temasi, birlik alarma gecirilmeli', TRUE);
+VALUES ('PIYADE-02', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('PIYADE-02', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('ALTAY-01', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
+VALUES ('PIYADE-02', 'HIGH', 'Kritik bolgeye yaklasma tespit edildi, acil onlem alinmali', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('ALTAY-02', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
+VALUES ('ALTAY-01', 'LOW', 'Rutin devriye hareketi, anomali yok', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KIRPI-01', 'LOW', 'Rutin devriye hareketi, anomali yok', FALSE);
+VALUES ('ALTAY-02', 'LOW', 'Rutin devriye hareketi, anomali yok', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KIRPI-02', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
+VALUES ('KIRPI-01', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KIRPI-03', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
+VALUES ('KIRPI-02', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KOBRA-01', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
+VALUES ('KIRPI-03', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
+INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
+VALUES ('KOBRA-01', 'HIGH', 'Anormal biyometrik degerler, personel saglik kontrolu gerekli', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('KOBRA-01', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KOBRA-02', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
+VALUES ('KOBRA-02', 'HIGH', 'Kritik bolgeye yaklasma tespit edildi, acil onlem alinmali', TRUE);
+INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
+VALUES ('KOBRA-02', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('KOBRA-02', 'MEDIUM', 'Beklenmeyen hiz degisimi tespit edildi, izleme onerisi', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('KOBRA-02', 'MEDIUM', 'Rota sapmasi tespit edildi, operatorun dikkatine sunuldu', TRUE);
-INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('FIRTINA-01', 'MEDIUM', 'Beklenmeyen hiz degisimi tespit edildi, izleme onerisi', FALSE);
+VALUES ('FIRTINA-01', 'CRITICAL', 'Olasi dusman temasi, birlik alarma gecirilmeli', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('FIRTINA-01', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('FIRTINA-01', 'MEDIUM', 'Rota sapmasi tespit edildi, operatorun dikkatine sunuldu', TRUE);
+VALUES ('FIRTINA-02', 'LOW', 'Normal operasyonel aktivite, tehdit tespit edilmedi', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('FIRTINA-02', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
+VALUES ('FIRTINA-02', 'HIGH', 'Anormal biyometrik degerler, personel saglik kontrolu gerekli', TRUE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('FIRTINA-02', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
+VALUES ('EJDER-01', 'LOW', 'Standart tatbikat harekati, veriler normal sinirlar icinde', FALSE);
 INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('EJDER-01', 'MEDIUM', 'Yakit/batarya seviyesi dusuk, ikmal planlanmali', TRUE);
-INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('EJDER-01', 'LOW', 'Cevre kosullari normal, gorev devam edebilir', FALSE);
-INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
-VALUES ('EJDER-01', 'HIGH', 'Kritik bolgeye yaklasma tespit edildi, acil onlem alinmali', TRUE);
+VALUES ('EJDER-01', 'HIGH', 'Anormal biyometrik degerler, personel saglik kontrolu gerekli', TRUE);
+
+-- ============================================================================
+-- INSERT USERS (Authentication & Profile)
+-- ============================================================================
+
+INSERT INTO users (username, password, full_name, rank, role, active, created_at)
+VALUES ('admin', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Semih Utku', 'Yüzbaşı', 'ROLE_ADMIN', TRUE, CURRENT_TIMESTAMP);
+INSERT INTO users (username, password, full_name, rank, role, active, created_at)
+VALUES ('komutan01', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Kaan Yıldırım', 'Binbaşı', 'ROLE_COMMANDER', TRUE, CURRENT_TIMESTAMP);
+INSERT INTO users (username, password, full_name, rank, role, active, created_at)
+VALUES ('komutan02', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Arda Çelik', 'Yüzbaşı', 'ROLE_COMMANDER', TRUE, CURRENT_TIMESTAMP);
+INSERT INTO users (username, password, full_name, rank, role, active, created_at)
+VALUES ('operator01', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Emre Demir', 'Üsteğmen', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
+INSERT INTO users (username, password, full_name, rank, role, active, created_at)
+VALUES ('operator02', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Burak Aksoy', 'Teğmen', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
+INSERT INTO users (username, password, full_name, rank, role, active, created_at)
+VALUES ('operator03', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Murat Can Barçın', 'Asteğmen', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
+INSERT INTO users (username, password, full_name, rank, role, active, created_at)
+VALUES ('operator04', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Yusuf Kara', 'Astsubay', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
+INSERT INTO users (username, password, full_name, rank, role, active, created_at)
+VALUES ('operator05', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'Ali Özkan', 'Çavuş', 'ROLE_USER', FALSE, CURRENT_TIMESTAMP);
 
 -- ============================================================================
 -- SUMMARY
@@ -652,6 +676,7 @@ DECLARE
     log_count INTEGER;
     analysis_count INTEGER;
     alert_count INTEGER;
+    user_count INTEGER;
 BEGIN
     SELECT COUNT(*) INTO asset_count FROM assets;
     SELECT COUNT(*) INTO telemetry_count FROM telemetry;
@@ -662,6 +687,7 @@ BEGIN
     SELECT COUNT(*) INTO log_count FROM system_logs;
     SELECT COUNT(*) INTO analysis_count FROM ai_analyses;
     SELECT COUNT(*) INTO alert_count FROM ai_analyses WHERE is_alert = TRUE;
+    SELECT COUNT(*) INTO user_count FROM users;
     
     RAISE NOTICE 'EGE TATBIKATI Database seeded!';
     RAISE NOTICE '   Total Assets: %', asset_count;
@@ -672,4 +698,5 @@ BEGIN
     RAISE NOTICE '   Tasks: %', task_count;
     RAISE NOTICE '   System Logs: %', log_count;
     RAISE NOTICE '   AI Analyses: % (Alerts: %)', analysis_count, alert_count;
+    RAISE NOTICE '   Users: %', user_count;
 END $$;
