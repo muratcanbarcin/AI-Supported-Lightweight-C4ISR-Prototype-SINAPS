@@ -32,6 +32,11 @@ import { TelemetryPage } from '@/features/telemetry/pages/TelemetryPage';
 import { AnalysisPage } from '@/features/analysis/pages/AnalysisPage';
 import { ProfilePage } from '@/features/profile/pages/ProfilePage';
 import { LoginPage } from '@/features/auth/LoginPage';
+import { AdminLayout } from '@/features/admin/AdminLayout';
+import { AssetRegistry } from '@/features/admin/AssetRegistry';
+import { UserManagement } from '@/features/admin/UserManagement';
+import { AdminDashboard } from '@/features/admin/AdminDashboard';
+import { SystemHealth } from '@/features/admin/SystemHealth';
 
 // Services
 import { checkHealth, fetchLatestTelemetry } from '@/services/api';
@@ -123,7 +128,7 @@ function Dashboard() {
     try {
       const healthy = await checkHealth();
       setIsConnected(healthy);
-      
+
       if (healthy) {
         const telemetry = await fetchLatestTelemetry();
         setAssetCount(telemetry.length);
@@ -154,27 +159,26 @@ function Dashboard() {
           <h2 className="text-lg font-semibold text-slate-300 mb-4">
             Bağlantı Durumu
           </h2>
-          
+
           <div className="flex items-center gap-4">
             {/* Status Indicator */}
             <div className={`
               w-16 h-16 rounded-full flex items-center justify-center
-              ${isLoading ? 'bg-slate-700 animate-pulse' : 
+              ${isLoading ? 'bg-slate-700 animate-pulse' :
                 isConnected ? 'bg-emerald-500/20' : 'bg-red-500/20'}
             `}>
               <div className={`
                 w-8 h-8 rounded-full
-                ${isLoading ? 'bg-slate-500' : 
-                  isConnected ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50' : 
-                  'bg-red-500 shadow-lg shadow-red-500/50'}
+                ${isLoading ? 'bg-slate-500' :
+                  isConnected ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50' :
+                    'bg-red-500 shadow-lg shadow-red-500/50'}
               `} />
             </div>
 
             <div>
-              <p className={`text-2xl font-bold ${
-                isConnected ? 'text-emerald-400' : 'text-red-400'
-              }`}>
-                {isLoading ? 'Kontrol ediliyor...' : 
+              <p className={`text-2xl font-bold ${isConnected ? 'text-emerald-400' : 'text-red-400'
+                }`}>
+                {isLoading ? 'Kontrol ediliyor...' :
                   isConnected ? 'BAĞLANTI BAŞARILI' : 'BAĞLANTI YOK'}
               </p>
               <p className="text-slate-400 text-sm">
@@ -203,7 +207,7 @@ function Dashboard() {
           <h2 className="text-lg font-semibold text-slate-300 mb-4">
             Aktif Varlıklar
           </h2>
-          
+
           <div className="flex items-baseline gap-2">
             <span className="text-5xl font-bold text-cyan-400">
               {assetCount}
@@ -432,6 +436,38 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 // =============================================================================
+// ADMIN ROUTE
+// =============================================================================
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
+  const [isAdmin, setIsAdmin] = useState(authService.isAdmin());
+
+  useEffect(() => {
+    const handleLogout = () => {
+      setIsAuthenticated(false);
+      setIsAdmin(false);
+    };
+    window.addEventListener('auth:logout', handleLogout);
+    return () => window.removeEventListener('auth:logout', handleLogout);
+  }, []);
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  return (
+    <GlobalPoller>
+      {children}
+    </GlobalPoller>
+  );
+}
+
+// =============================================================================
 // APP ENTRY POINT
 // =============================================================================
 
@@ -448,6 +484,24 @@ export function App() {
                 window.location.href = '/';
               }}
             />
+          }
+        />
+
+        {/* Admin Panel Routes */}
+        <Route
+          path="/admin/*"
+          element={
+            <AdminRoute>
+              <Routes>
+                <Route element={<AdminLayout />}>
+                  <Route path="dashboard" element={<AdminDashboard />} />
+                  <Route path="assets" element={<AssetRegistry />} />
+                  <Route path="users" element={<UserManagement />} />
+                  <Route path="system" element={<SystemHealth />} />
+                  <Route index element={<Navigate to="dashboard" />} />
+                </Route>
+              </Routes>
+            </AdminRoute>
           }
         />
 

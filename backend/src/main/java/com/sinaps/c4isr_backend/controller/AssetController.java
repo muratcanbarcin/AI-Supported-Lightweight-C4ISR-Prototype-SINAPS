@@ -1,15 +1,19 @@
 package com.sinaps.c4isr_backend.controller;
 
+import com.sinaps.c4isr_backend.model.Asset;
 import com.sinaps.c4isr_backend.model.SystemLog;
 import com.sinaps.c4isr_backend.model.Telemetry;
+import com.sinaps.c4isr_backend.repository.AssetRepository;
 import com.sinaps.c4isr_backend.repository.SystemLogRepository;
 import com.sinaps.c4isr_backend.repository.TelemetryRepository;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -18,25 +22,42 @@ import java.util.Optional;
  * Asset Controller - Asset-Level Operations
  * ============================================================================
  *
- * Provides REST endpoints for asset-level actions such as emergency stop.
+ * Provides REST endpoints for asset-level actions such as emergency stop and
+ * CRUD.
  *
  * Endpoints:
- * - POST /api/v1/assets/{id}/emergency-stop  → Initiate emergency stop
+ * - GET /api/v1/assets → Get all assets
+ * - POST /api/v1/assets → Create an asset
+ * - DELETE /api/v1/assets/{id} → Delete an asset
+ * - POST /api/v1/assets/{id}/emergency-stop → Initiate emergency stop
  * ============================================================================
  */
 @RestController
 @RequestMapping("/api/v1/assets")
+@RequiredArgsConstructor
+@CrossOrigin(origins = "*")
 public class AssetController {
 
     private static final Logger log = LoggerFactory.getLogger(AssetController.class);
 
     private final TelemetryRepository telemetryRepository;
     private final SystemLogRepository systemLogRepository;
+    private final AssetRepository assetRepository;
 
-    public AssetController(TelemetryRepository telemetryRepository,
-                           SystemLogRepository systemLogRepository) {
-        this.telemetryRepository = telemetryRepository;
-        this.systemLogRepository = systemLogRepository;
+    @GetMapping
+    public List<Asset> getAllAssets() {
+        return assetRepository.findAll();
+    }
+
+    @PostMapping
+    public Asset createAsset(@RequestBody Asset asset) {
+        return assetRepository.save(asset);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteAsset(@PathVariable Long id) {
+        assetRepository.deleteById(id);
+        return ResponseEntity.ok().build();
     }
 
     /**
