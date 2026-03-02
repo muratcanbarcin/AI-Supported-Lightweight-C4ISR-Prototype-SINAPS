@@ -49,24 +49,33 @@ export function TopNavBar() {
       {/* Center: Navigation - Technical Tabs with Router Links */}
       <nav className="flex-1 flex justify-center">
         <ul className="flex items-center gap-1 bg-slate-800/30 p-1 rounded-sm border border-slate-700/30 backdrop-blur-md">
-          {navItems.map((item) => {
-            const active = isActive(item.path);
-            return (
-              <li key={item.path}>
-                <Link
-                  to={item.path}
-                  className={`
-                    px-6 py-1.5 text-xs font-bold tracking-widest transition-all rounded-sm uppercase block
-                    ${active
-                      ? 'bg-sky-600/90 text-white shadow-sm border border-sky-400/50'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 border border-transparent'}
-                  `}
-                >
-                  {item.label}
-                </Link>
-              </li>
-            );
-          })}
+
+          {(() => {
+            const isAdmin = authService.isAdmin();
+            const displayItems = [...navItems];
+            if (isAdmin) {
+              displayItems.push({ path: '/admin', label: 'YÖNETİM' });
+            }
+
+            return displayItems.map((item) => {
+              const active = isActive(item.path) || (item.path === '/admin' && location.pathname.startsWith('/admin'));
+              return (
+                <li key={item.path}>
+                  <Link
+                    to={item.path}
+                    className={`
+                      px-6 py-1.5 text-xs font-bold tracking-widest transition-all rounded-sm uppercase block
+                      ${active
+                        ? 'bg-sky-600/90 text-white shadow-sm border border-sky-400/50'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 border border-transparent'}
+                    `}
+                  >
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            });
+          })()}
         </ul>
       </nav>
 
@@ -75,9 +84,8 @@ export function TopNavBar() {
         {/* Profile */}
         <Link
           to="/profile"
-          className={`w-9 h-9 flex items-center justify-center bg-slate-800/30 border border-slate-700 text-slate-400 hover:text-sky-400 hover:bg-slate-700 transition-colors rounded-sm group ${
-            location.pathname === '/profile' ? 'bg-sky-500/20 text-sky-400 border-sky-500' : ''
-          }`}
+          className={`w-9 h-9 flex items-center justify-center bg-slate-800/30 border border-slate-700 text-slate-400 hover:text-sky-400 hover:bg-slate-700 transition-colors rounded-sm group ${location.pathname === '/profile' ? 'bg-sky-500/20 text-sky-400 border-sky-500' : ''
+            }`}
           title="Profil"
         >
           <i className="fa-solid fa-user"></i>

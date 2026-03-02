@@ -27,6 +27,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080
 /** Storage keys for authentication */
 export const AUTH_TOKEN_KEY = 'sinaps_auth_token';
 export const AUTH_USER_KEY = 'sinaps_auth_user';
+export const AUTH_ROLES_KEY = 'sinaps_auth_roles';
 
 // Log API URL in development
 if (import.meta.env.DEV) {
@@ -56,16 +57,16 @@ const api = axios.create({
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
-    
+
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
+
     // Debug logging in development
     if (import.meta.env.DEV) {
       console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
     }
-    
+
     return config;
   },
   (error: AxiosError) => {
@@ -107,7 +108,7 @@ api.interceptors.response.use(
         detail: { message: 'Backend bağlantısı kesildi' }
       }));
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -124,7 +125,7 @@ api.interceptors.response.use(
  */
 export async function checkHealth(): Promise<boolean> {
   try {
-    const response = await api.get('/telemetry/latest', { 
+    const response = await api.get('/telemetry/latest', {
       timeout: 5000,
       // Don't throw on 4xx/5xx - we just want to know if server responds
       validateStatus: (status) => status < 500,
@@ -186,7 +187,7 @@ export async function fetchAssetTelemetry(sourceId: string): Promise<Telemetry[]
  */
 export async function fetchAssets(): Promise<Asset[]> {
   const telemetryList = await fetchLatestTelemetry();
-  
+
   // Convert telemetry to assets
   return telemetryList.map((t): Asset => ({
     id: t.sourceId,
