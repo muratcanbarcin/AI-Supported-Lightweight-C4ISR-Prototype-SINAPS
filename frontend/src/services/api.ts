@@ -333,7 +333,7 @@ export async function fetchSystemLogs(assetId: string): Promise<SystemLogDTO[]> 
 }
 
 // =============================================================================
-// AI CHAT API (RAG-augmented)
+// AI CHAT API (RAG-augmented) — Legacy single-shot
 // =============================================================================
 
 export interface AiChatResponse {
@@ -344,12 +344,69 @@ export interface AiChatResponse {
 }
 
 /**
- * Send a conversational chat query to the AI assistant.
+ * Send a conversational chat query to the AI assistant (legacy stateless).
  * POST /api/v1/ai/chat
  * Timeout: 120s (Gemma-2 9B inference typically takes 40-80s with 384 max tokens)
  */
 export async function sendAiChat(query: string): Promise<AiChatResponse> {
   const response = await api.post<AiChatResponse>('/ai/chat', { query }, { timeout: 120000 });
+  return response.data;
+}
+
+// =============================================================================
+// PERSISTENT CHAT SESSIONS API
+// =============================================================================
+
+export interface ChatSessionDTO {
+  id: number;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessageDTO {
+  id: number;
+  sessionId: number;
+  role: 'user' | 'assistant';
+  content: string;
+  citedRule: string;
+  createdAt: string;
+}
+
+/** Create a new empty chat session. POST /api/v1/chats */
+export async function createChatSession(): Promise<ChatSessionDTO> {
+  const response = await api.post<ChatSessionDTO>('/chats');
+  return response.data;
+}
+
+/** Fetch all chat sessions (most recent first). GET /api/v1/chats */
+export async function fetchChatSessions(): Promise<ChatSessionDTO[]> {
+  const response = await api.get<ChatSessionDTO[]>('/chats');
+  return response.data;
+}
+
+/** Delete a chat session. DELETE /api/v1/chats/{id} */
+export async function deleteChatSession(sessionId: number): Promise<void> {
+  await api.delete(`/chats/${sessionId}`);
+}
+
+/** Fetch all messages for a session. GET /api/v1/chats/{id}/messages */
+export async function fetchSessionMessages(sessionId: number): Promise<ChatMessageDTO[]> {
+  const response = await api.get<ChatMessageDTO[]>(`/chats/${sessionId}/messages`);
+  return response.data;
+}
+
+/**
+ * Send a message in a session (user→AI round-trip, both saved to DB).
+ * POST /api/v1/chats/{id}/messages
+ * Timeout: 120s (RAG + LLM inference)
+ */
+export async function sendSessionMessage(sessionId: number, content: string): Promise<ChatMessageDTO> {
+  const response = await api.post<ChatMessageDTO>(
+    `/chats/${sessionId}/messages`,
+    { content },
+    { timeout: 120000 }
+  );
   return response.data;
 }
 
@@ -371,3 +428,4 @@ export async function postEmergencyStop(assetId: string): Promise<{ success: boo
 // =============================================================================
 
 export default api;
+

@@ -134,7 +134,7 @@ class RAGEngine:
     # pgvector <=> returns distance in [0, 2], so similarity = 1 - distance.
     # 0.40 threshold eliminates cross-category hallucinations (e.g. fuel
     # rules retrieved for a UAV query).
-    SIMILARITY_THRESHOLD: float = 0.40
+    SIMILARITY_THRESHOLD: float = 0.7
 
     def search(
         self,
