@@ -17,6 +17,7 @@ import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -389,18 +390,35 @@ public class AIServiceClient {
 
     /**
      * Send a conversational chat query to the AI service (RAG-augmented).
-     * 
-     * This method forwards the user's question to the Python AI microservice's
-     * /chat endpoint, which performs RAG retrieval + Gemma generation.
+     * Backward-compatible overload without history.
      *
      * @param query The user's question
      * @return Mono<Map> containing { response, cited_rule, rag_hits, processing_time_ms }
      */
     public Mono<Map<String, Object>> chatAsync(String query) {
+        return chatAsync(query, null);
+    }
+
+    /**
+     * Send a conversational chat query with conversation history to the AI service.
+     *
+     * This method forwards the user's question plus previous turns to the Python
+     * AI microservice's /chat endpoint, which performs RAG retrieval + Llama generation.
+     *
+     * @param query   The user's current question
+     * @param history List of previous messages [{role, content}, ...]  (may be null)
+     * @return Mono<Map> containing { response, cited_rule, rag_hits, processing_time_ms }
+     */
+    public Mono<Map<String, Object>> chatAsync(String query, List<Map<String, String>> history) {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("query", query);
+        if (history != null && !history.isEmpty()) {
+            requestBody.put("history", history);
+        }
 
-        log.info("Sending chat request to AI Service: {}", query.length() > 80 ? query.substring(0, 80) + "..." : query);
+        log.info("Sending chat request to AI Service: {} (history={})",
+                query.length() > 80 ? query.substring(0, 80) + "..." : query,
+                history != null ? history.size() + " turns" : "none");
 
         return webClient.post()
                 .uri("/chat")

@@ -152,17 +152,13 @@ RESPOND ONLY WITH JSON. NO MARKDOWN. NO ADDITIONAL TEXT."""
 # ============================================================================
 
 LLAMA_CHAT_SYSTEM_PROMPT = (
-    "Sen TSK C4ISR Karargahında görevli yapay zeka tabanlı bir Kurmay Asistanısın. "
-    "Duygusuz, ciddi ve net bir askeri dil kullan. "
-    "Asla şaka yapma, fıkra anlatma veya günlük muhabbete girme; "
-    "böyle bir istek gelirse reddet ve görevine dön.\n\n"
-    "Sana bir [SORU] ve referans olması için veritabanından çekilmiş bir [DOKTRIN] verilecek.\n\n"
-    "KURAL 1: Eğer [DOKTRIN] soruyla alakalı ve mantıklıysa, "
-    "taktiksel tavsiyeni kesinlikle bu doktrine dayandır.\n\n"
-    "KURAL 2: Eğer [DOKTRIN] boşsa veya soruyla tamamen alakasızsa, "
-    "doktrini görmezden gel ve kendi askeri/taktiksel zekanı kullanarak "
-    "en doğru karargah tavsiyesini ver.\n\n"
-    "Cevapların her zaman kısa, eyleme dönük ve askeri formatta olsun."
+    "Sen TSK C4ISR Karargahında görevli, proaktif ve çözüm odaklı bir Yapay Zeka "
+    "Kurmay Asistanısın. Asla 'Doktrin yok', 'Cevap veremem' veya 'Görevi yerine "
+    "getiremeyeceğim' gibi mazeretler üretme. Eğer sağlanan [DOKTRIN] boşsa veya "
+    "komutan sana bir devam sorusu soruyorsa (örn: 'adım adım anlat'), KESİNLİKLE "
+    "reddetme. Kendi askeri zekanı kullanarak doğrudan sahada ne yapılması gerektiğini "
+    "spesifik, net ve taktiksel adımlarla (1, 2, 3 şeklinde) anlat. "
+    "Yuvarlak ve jenerik laflardan kaçın."
 )
 
 
@@ -562,18 +558,21 @@ class ModelEngine:
         self,
         query: str,
         rag_context: str = "",
-        max_new_tokens: int = 256
+        history: list[dict] | None = None,
+        max_new_tokens: int = 384
     ) -> str:
         """
         Generate conversational response using Llama-3.1-8B-Instruct (Engine 2).
 
         Turkish military assistant persona. Short, authoritative answers.
-        Uses Llama-3.1 chat template with system/user roles.
+        Uses Llama-3.1 chat template with system/user/assistant roles.
 
         Args:
             query:          Commander's question (free text)
             rag_context:    Pre-formatted doctrine context string (may be empty)
-            max_new_tokens: Maximum tokens to generate (default 256 for conciseness)
+            history:        List of {"role": "user"|"assistant", "content": "..."}
+                            from previous turns (most recent last).  Max 6 kept.
+            max_new_tokens: Maximum tokens to generate (default 384)
 
         Returns:
             Free-form Turkish text response string
@@ -585,8 +584,8 @@ class ModelEngine:
 
         logger.info("[Llama] Generating chat response", query=query[:80])
 
-        # ── Build Llama-3.1 prompt with system + user roles ──────────
-        doctrine_block = rag_context if rag_context else "Doktrin bilgisi bulunamadı."
+        # ── Build Llama-3.1 prompt with system + history + user roles ─────
+        doctrine_block = rag_context if rag_context else "(Doktrin bilgisi bulunamadı — kendi askeri zekanı kullan.)"
 
         user_message = (
             f"[DOKTRIN]: {doctrine_block}\n\n"
@@ -595,8 +594,20 @@ class ModelEngine:
 
         messages = [
             {"role": "system", "content": LLAMA_CHAT_SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
         ]
+
+        # Inject conversation history (cap at last 6 messages to avoid OOM)
+        if history:
+            recent = history[-6:]
+            for turn in recent:
+                role = turn.get("role", "user")
+                content = turn.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+            logger.info("[Llama] History injected", turns=len(recent))
+
+        # Current user message (with doctrine context)
+        messages.append({"role": "user", "content": user_message})
 
         # Apply Llama-3.1 chat template
         prompt = self._llama_tokenizer.apply_chat_template(

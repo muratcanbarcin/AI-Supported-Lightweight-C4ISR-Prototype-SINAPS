@@ -113,15 +113,32 @@ public class ChatService {
             session.setTitle(autoTitle);
         }
 
-        // 3. Call Python AI Service (blocking)
+        // 3. Fetch conversation history (last 6 messages for context)
+        List<ChatMessage> allMessages = messageRepo.findBySessionIdOrderByCreatedAtAsc(sessionId);
+        List<Map<String, String>> history = new java.util.ArrayList<>();
+
+        // Take last 6 messages (excluding the user message we just saved, which is the last one)
+        int totalMessages = allMessages.size();
+        int startIdx = Math.max(0, totalMessages - 7); // -7 because we just added userMsg
+        for (int i = startIdx; i < totalMessages - 1; i++) {
+            ChatMessage msg = allMessages.get(i);
+            history.add(Map.of(
+                "role", msg.getRole(),
+                "content", msg.getContent()
+            ));
+        }
+
+        log.info("[Chat] Forwarding to AI service: sessionId={}, query={}, historyTurns={}",
+                sessionId,
+                userText.length() > 80 ? userText.substring(0, 80) + "..." : userText,
+                history.size());
+
+        // 4. Call Python AI Service with history (blocking)
         String aiResponse;
         String citedRule = "";
 
         try {
-            log.info("[Chat] Forwarding to AI service: sessionId={}, query={}",
-                    sessionId, userText.length() > 80 ? userText.substring(0, 80) + "..." : userText);
-
-            Map<String, Object> result = aiServiceClient.chatAsync(userText).block();
+            Map<String, Object> result = aiServiceClient.chatAsync(userText, history).block();
 
             if (result != null) {
                 aiResponse = String.valueOf(result.getOrDefault("response", "AI yanıt üretemedi."));
@@ -135,7 +152,7 @@ public class ChatService {
             aiResponse = "AI servisi şu an erişilemez. Hata: " + e.getMessage();
         }
 
-        // 4. Save AI response message
+        // 5. Save AI response message
         ChatMessage aiMsg = ChatMessage.builder()
                 .sessionId(sessionId)
                 .role("assistant")

@@ -199,6 +199,13 @@ async def service_info():
 # ============================================================================
 
 from pydantic import BaseModel as PydanticBaseModel, Field
+from typing import Optional
+
+
+class HistoryMessage(PydanticBaseModel):
+    """A single message in the conversation history."""
+    role: str = Field(..., description="'user' or 'assistant'")
+    content: str = Field(..., description="Message content")
 
 
 class ChatRequest(PydanticBaseModel):
@@ -206,6 +213,10 @@ class ChatRequest(PydanticBaseModel):
     query: str = Field(
         ..., min_length=1, max_length=2000,
         description="Commander's question (Turkish or English)"
+    )
+    history: Optional[list[HistoryMessage]] = Field(
+        default=None,
+        description="Previous conversation messages for multi-turn context"
     )
 
 
@@ -291,11 +302,18 @@ async def chat_with_ai(request: ChatRequest):
                 threshold=RAG_RELEVANCE_THRESHOLD,
             )
 
-    # ── Step 3: Generate response via Llama-3.1-8B-Instruct ──────────
+    # ── Step 3: Build history list for multi-turn chat ────────────────
+    history_dicts = None
+    if request.history:
+        history_dicts = [{"role": h.role, "content": h.content} for h in request.history]
+        logger.info("Chat history provided", history_turns=len(history_dicts))
+
+    # ── Step 4: Generate response via Llama-3.1-8B-Instruct ──────────
     try:
         response_text = model_engine.generate_chat(
             query=query,
             rag_context=rag_context_str,
+            history=history_dicts,
         )
     except Exception as e:
         logger.error(f"Llama chat generation failed: {e}")
