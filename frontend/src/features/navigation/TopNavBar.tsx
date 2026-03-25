@@ -27,6 +27,9 @@ export function TopNavBar() {
     if (path === '/assets') {
       return location.pathname.startsWith('/assets');
     }
+    if (path === '/ai') {
+      return location.pathname === '/ai' || location.pathname.startsWith('/ai/');
+    }
     return location.pathname === path;
   };
 

@@ -152,10 +152,25 @@ RESPOND ONLY WITH JSON. NO MARKDOWN. NO ADDITIONAL TEXT."""
 # ============================================================================
 
 LLAMA_CHAT_SYSTEM_PROMPT = (
-    "Sen TSK C4ISR sisteminde görevli bir Yapay Zeka Kurmay Asistanısın. "
-    "Komutanın sorusuna, eğer verilmişse aşağıdaki [DOKTRIN] bağlamını "
-    "kullanarak net, askeri bir ciddiyetle ve kısa (maksimum 2-3 cümle) "
-    "Türkçe cevap ver. JSON üretme, doğrudan normal metin olarak konuş."
+    "Sen TSK C4ISR Karargahında görevli, proaktif bir Yapay Zeka Kurmay Asistanısın.\n\n"
+    "FORMAT KURALI: Cevaplarını oluştururken maddeler (1, 2, 3) veya paragraflar "
+    "arasında MUTLAKA boşluk bırak (Markdown formatında '\\n\\n' kullan). "
+    "Metni asla tek bir blok halinde yazma.\n\n"
+    "MANTIK KURALI: Sana verilen [DOKTRIN] içeriği ile [SORU] arasında anlamsal "
+    "bir bağ yoksa, bu doktrini SESSİZCE yok say. Asla 'Doktrin mantıksız', "
+    "'Bağlantı yok', 'Göreve başlıyorum' gibi açıklamalar veya mazeretler üretme. "
+    "Sadece komutanın sorusuna odaklan ve doğrudan askeri planını sun.\n\n"
+    "MENTION KURALI: Eğer komutan mesajında @ ile bir birim etiketlemişse "
+    "(Örn: @ANKA-01, @TB2-ALFA-01), sana sağlanan [SAHADAN CANLI VERİ] bloğunu "
+    "kullanarak o birimin anlık durumuna, yakıtına, bataryasına veya konumuna "
+    "göre spesifik taktikler ver. Canlı veriyi mutlaka cevabına entegre et.\n\n"
+    "LOJİSTİK VE KAPASİTE KURALI: Etiketlenen (@) askeri birimlerin (TB2, ANKA vb.) "
+    "batarya veya yakıt seviyesi %50'nin üzerindeyse, uzun süreli sınır ötesi "
+    "devriyeler ve kritik operasyonlar için KESİNLİKLE 'YETERLİ' ve 'GÖREVE HAZIR' "
+    "olarak değerlendir. %80 ve üzeri tam kapasitedir. ASLA sivil dronlar gibi "
+    "'30 dakika uçabilir', 'yedek batarya takın' gibi uçuş süresi halüsinasyonları "
+    "(uydurma rakamlar) üretme. Rakam uydurmak yerine sadece yüzdeye bakarak "
+    "taktiksel onay veya ret ver."
 )
 
 
@@ -555,18 +570,23 @@ class ModelEngine:
         self,
         query: str,
         rag_context: str = "",
-        max_new_tokens: int = 256
+        history: list[dict] | None = None,
+        mention_context: str = "",
+        max_new_tokens: int = 1024
     ) -> str:
         """
         Generate conversational response using Llama-3.1-8B-Instruct (Engine 2).
 
         Turkish military assistant persona. Short, authoritative answers.
-        Uses Llama-3.1 chat template with system/user roles.
+        Uses Llama-3.1 chat template with system/user/assistant roles.
 
         Args:
-            query:          Commander's question (free text)
-            rag_context:    Pre-formatted doctrine context string (may be empty)
-            max_new_tokens: Maximum tokens to generate (default 256 for conciseness)
+            query:           Commander's question (free text)
+            rag_context:     Pre-formatted doctrine context string (may be empty)
+            history:         List of {"role": "user"|"assistant", "content": "..."}
+                             from previous turns (most recent last).  Max 6 kept.
+            mention_context: Real-time data for @mentioned assets (may be empty)
+            max_new_tokens:  Maximum tokens to generate (default 1024)
 
         Returns:
             Free-form Turkish text response string
@@ -578,18 +598,32 @@ class ModelEngine:
 
         logger.info("[Llama] Generating chat response", query=query[:80])
 
-        # ── Build Llama-3.1 prompt with system + user roles ──────────
-        doctrine_block = rag_context if rag_context else "Doktrin bilgisi bulunamadı."
+        # ── Build Llama-3.1 prompt with system + history + user roles ─────
+        doctrine_block = rag_context if rag_context else "(Doktrin bilgisi bulunamadı — kendi askeri zekanı kullan.)"
 
-        user_message = (
-            f"[DOKTRIN]: {doctrine_block}\n\n"
-            f"[SORU]: {query}"
-        )
+        # Build user message with optional mention data
+        parts = [f"[DOKTRIN]: {doctrine_block}"]
+        if mention_context:
+            parts.append(f"\n\n[SAHADAN CANLI VERİ - MENTION EDİLEN BİRİMLER]:\n{mention_context}")
+        parts.append(f"\n\n[SORU]: {query}")
+        user_message = "".join(parts)
 
         messages = [
             {"role": "system", "content": LLAMA_CHAT_SYSTEM_PROMPT},
-            {"role": "user", "content": user_message}
         ]
+
+        # Inject conversation history (cap at last 6 messages to avoid OOM)
+        if history:
+            recent = history[-6:]
+            for turn in recent:
+                role = turn.get("role", "user")
+                content = turn.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+            logger.info("[Llama] History injected", turns=len(recent))
+
+        # Current user message (with doctrine context)
+        messages.append({"role": "user", "content": user_message})
 
         # Apply Llama-3.1 chat template
         prompt = self._llama_tokenizer.apply_chat_template(
@@ -598,23 +632,28 @@ class ModelEngine:
             add_generation_prompt=True
         )
 
-        # Tokenize
+        # Tokenize — max_length applies to PROMPT ONLY (not generation output).
+        # Llama-3.1 supports 128K context, but we cap at 4096 for RTX 3080 VRAM safety.
         inputs = self._llama_tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=1024
+            max_length=4096
         ).to("cuda")
 
-        # Generate
+        prompt_len = inputs['input_ids'].shape[1]
+        logger.info("[Llama] Prompt tokenized", prompt_tokens=prompt_len, max_new_tokens=max_new_tokens)
+
+        # Generate — max_new_tokens guarantees 1024 tokens exclusively for output,
+        # regardless of how long the prompt/history is.
         with torch.no_grad():
             outputs = self._llama_model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=True,
-                temperature=0.4,
+                temperature=0.3,
                 top_p=0.9,
-                repetition_penalty=1.2,
+                repetition_penalty=1.1,
                 pad_token_id=self._llama_tokenizer.pad_token_id
             )
 

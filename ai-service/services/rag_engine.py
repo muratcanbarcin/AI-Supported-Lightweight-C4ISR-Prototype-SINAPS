@@ -128,25 +128,38 @@ class RAGEngine:
         except Exception as exc:
             logger.warning(f"Schema detection failed, using defaults: {exc}")
 
-    # ── Core: search (pgvector cosine similarity) ────────────────────
+    # ── Core: search (pgvector cosine similarity + threshold) ──────
+
+    # "Sniper" approach — strict threshold, strictly Top-1 result.
+    # pgvector <=> returns distance in [0, 2], so similarity = 1 - distance.
+    # 0.65 threshold eliminates false positives from the English embedding
+    # model on Turkish text. Only the single best match is returned.
+    SIMILARITY_THRESHOLD: float = 0.65
 
     def search(
         self,
         query_text: str,
-        top_k: int = 3,
+        top_k: int = 1,
         category_filter: Optional[str] = None,
     ) -> List[dict]:
         """
-        Semantic search over tactical_memory using pgvector cosine distance.
+        "Sniper" semantic search — returns ONLY the Top-1 best match
+        above the 0.50 similarity threshold.
+
+        If no row passes the threshold, returns [] so the LLM falls back
+        to autonomous tactical reasoning.
 
         Args:
             query_text:       Natural language query
-            top_k:            Maximum results to return
+            top_k:            Forced to 1 (sniper mode)
             category_filter:  Optional — restrict to a specific category
 
         Returns:
             List of dicts with keys: context, category, source, score
+            (empty list if nothing exceeds 0.50 similarity)
         """
+        # Force top_k=1 regardless of caller
+        top_k = 1
         self._ensure_ready()
 
         # Graceful degradation when DB is not available
@@ -166,27 +179,30 @@ class RAGEngine:
         # ── Build SQL (using detected column names) ───────────────────
         # <=> = cosine distance   (lower = more similar)
         # score = 1 - distance    (higher = more similar, range 0–1)
+        #
+        # KEY FIX: WHERE clause enforces similarity > threshold so
+        # irrelevant rules are never returned to the LLM.
         sql = f"""
             SELECT
                 id,
-                {self._col_context} AS context,
+                {self._col_context}  AS context,
                 {self._col_category} AS category,
-                {self._col_source} AS source,
-                1 - (embedding <=> %s::vector) AS score
+                {self._col_source}   AS source,
+                (1 - (embedding <=> %s::vector)) AS similarity
             FROM tactical_memory
             WHERE embedding IS NOT NULL
+              AND (1 - (embedding <=> %s::vector)) > %s
         """
-        params: list = [vec_literal]
+        params: list = [vec_literal, vec_literal, self.SIMILARITY_THRESHOLD]
 
         if category_filter:
             sql += f" AND {self._col_category} = %s"
             params.append(category_filter)
 
         sql += """
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s
+            ORDER BY similarity DESC
+            LIMIT 1
         """
-        params.extend([vec_literal, top_k])
 
         # ── Execute ──────────────────────────────────────────────────
         results: List[dict] = []
@@ -194,24 +210,48 @@ class RAGEngine:
             with db_manager.get_cursor() as cur:
                 cur.execute(sql, params)
                 for row in cur.fetchall():
+                    sim = round(float(row["similarity"]), 4)
+                    ctx = row["context"]
+                    cat = row["category"]
+                    src = row["source"]
+
+                    # ── Per-result debug log (critical for vector tuning) ──
+                    logger.info(
+                        "RAG HIT (Sniper Top-1)",
+                        similarity=sim,
+                        category=cat,
+                        source=src,
+                        context_preview=ctx[:120] if ctx else "",
+                    )
+
                     results.append({
-                        "context":  row["context"],
-                        "category": row["category"],
-                        "source":   row["source"],
-                        "score":    round(float(row["score"]), 4),
+                        "context":  ctx,
+                        "category": cat,
+                        "source":   src,
+                        "score":    sim,
                     })
         except Exception as exc:
             logger.warning(f"pgvector search failed — returning empty: {exc}")
             return []
 
         elapsed = (time.time() - t0) * 1000
-        logger.info(
-            "RAG search complete",
-            query=query_text[:80],
-            hits=len(results),
-            top_score=results[0]["score"] if results else 0,
-            elapsed_ms=round(elapsed, 1),
-        )
+
+        if results:
+            logger.info(
+                "RAG search — sniper hit",
+                query=query_text[:80],
+                similarity=results[0]["score"],
+                threshold=self.SIMILARITY_THRESHOLD,
+                elapsed_ms=round(elapsed, 1),
+            )
+        else:
+            logger.info(
+                "RAG search — NO doctrine above threshold (LLM will use autonomous reasoning)",
+                query=query_text[:80],
+                threshold=self.SIMILARITY_THRESHOLD,
+                elapsed_ms=round(elapsed, 1),
+            )
+
         return results
 
     # ── Ingest (used by seed_doctrine.py & /ingest endpoint) ─────────
