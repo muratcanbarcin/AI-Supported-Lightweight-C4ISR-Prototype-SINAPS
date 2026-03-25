@@ -362,6 +362,23 @@ def _fetch_mention_context(mention_ids: list[str]) -> str:
                 # Extract payload-specific fields
                 payload = row.get('payload') or {}
                 if isinstance(payload, dict):
+                    # Deployment / movement status (Phase 4)
+                    p_status = payload.get('status')
+                    if p_status:
+                        status_labels = {
+                            'EN_ROUTE': 'İNTİKAL HALİNDE',
+                            'IN_MISSION': 'GÖREV BÖLGESİNDE',
+                            'STOPPED': 'DURDURULDU',
+                        }
+                        line += f" | Durum: {status_labels.get(p_status, p_status)}"
+                    if 'deployment_zone' in payload:
+                        line += f" | Hedef Bölge: {payload['deployment_zone']}"
+                    if 'distance_remaining_m' in payload:
+                        dist_km = payload['distance_remaining_m'] / 1000
+                        line += f" | Kalan Mesafe: {dist_km:.1f} km"
+                    if 'arrived_at' in payload:
+                        line += f" | Varış: {payload['arrived_at']}"
+
                     if 'fuel_level' in payload:
                         line += f" | Yakıt: %{payload['fuel_level']}"
                     if 'engine_status' in payload:
