@@ -31,35 +31,28 @@ public class Task {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /**
-     * The asset this task is assigned to (e.g., "DRONE-001", "VEHICLE-T001").
-     */
-    @Column(name = "asset_id", length = 50)
+    @Column(name = "asset_id", length = 100)
     private String assetId;
 
-    /**
-     * Short human-readable title of the task.
-     */
     @Column(name = "title", nullable = false, length = 200)
     private String title;
 
-    /**
-     * Detailed description of the task objectives and instructions.
-     */
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
-    /**
-     * Current status of the task.
-     * Values: PENDING, IN_PROGRESS, COMPLETED, CANCELLED
-     */
     @Builder.Default
     @Column(name = "status", length = 50)
     private String status = "PENDING";
 
-    /**
-     * Timestamp when the task was created.
-     */
+    @Column(name = "task_type", length = 50)
+    private String taskType;
+
+    @Column(name = "zone_id", length = 50)
+    private String zoneId;
+
+    @Column(name = "zone_name", length = 200)
+    private String zoneName;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

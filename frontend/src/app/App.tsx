@@ -30,6 +30,7 @@ import { TasksPage } from '@/features/tasks/pages/TasksPage';
 import { AIPage } from '@/features/ai/pages/AIPage';
 import { TelemetryPage } from '@/features/telemetry/pages/TelemetryPage';
 import { AnalysisPage } from '@/features/analysis/pages/AnalysisPage';
+import { TacticalPlanner } from '@/features/planner/TacticalPlanner';
 import { ProfilePage } from '@/features/profile/pages/ProfilePage';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { AdminLayout } from '@/features/admin/AdminLayout';
@@ -291,6 +292,16 @@ function MainLayout() {
               element={
                 <div className="absolute inset-0 z-40 bg-slate-900">
                   <TelemetryPage />
+                </div>
+              }
+            />
+
+            {/* Tactical Planner */}
+            <Route
+              path="/planner"
+              element={
+                <div className="absolute inset-0 z-40 bg-slate-900">
+                  <TacticalPlanner />
                 </div>
               }
             />

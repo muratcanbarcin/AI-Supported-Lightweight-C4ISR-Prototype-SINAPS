@@ -1,41 +1,29 @@
 package com.sinaps.c4isr_backend.controller;
 
+import com.sinaps.c4isr_backend.dto.DeployRequest;
 import com.sinaps.c4isr_backend.model.Task;
 import com.sinaps.c4isr_backend.repository.TaskRepository;
+import com.sinaps.c4isr_backend.service.TaskService;
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
-/**
- * ============================================================================
- * Task Controller - Operational Task Management
- * ============================================================================
- *
- * Provides REST endpoints for creating and querying tasks assigned to
- * field assets (drones, vehicles, soldiers).
- *
- * Endpoints:
- * - GET  /api/v1/tasks           → List all tasks (most recent first)
- * - POST /api/v1/tasks           → Create / assign a new task
- * ============================================================================
- */
 @RestController
 @RequestMapping("/api/v1/tasks")
+@RequiredArgsConstructor
+@CrossOrigin(origins = "*")
 public class TaskController {
 
+    private static final Logger log = LoggerFactory.getLogger(TaskController.class);
+
     private final TaskRepository taskRepository;
+    private final TaskService taskService;
 
-    public TaskController(TaskRepository taskRepository) {
-        this.taskRepository = taskRepository;
-    }
-
-    /**
-     * Fetch all tasks, ordered by creation date (most recent first).
-     *
-     * GET /api/v1/tasks
-     * Optional query param: ?assetId=DRONE-001
-     */
     @GetMapping
     public ResponseEntity<List<Task>> getAllTasks(
             @RequestParam(required = false) String assetId) {
@@ -49,18 +37,6 @@ public class TaskController {
         return ResponseEntity.ok(tasks);
     }
 
-    /**
-     * Create and assign a new task.
-     *
-     * POST /api/v1/tasks
-     * Request body (JSON):
-     * {
-     *   "assetId": "DRONE-001",
-     *   "title": "Reconnaissance Zone Alpha",
-     *   "description": "Perform aerial sweep of area 39.92N 32.85E within 500m radius",
-     *   "status": "PENDING"          // optional, defaults to PENDING
-     * }
-     */
     @PostMapping
     public ResponseEntity<Task> createTask(@RequestBody Task task) {
         if (task.getStatus() == null || task.getStatus().isBlank()) {
@@ -68,5 +44,26 @@ public class TaskController {
         }
         Task saved = taskRepository.save(task);
         return ResponseEntity.ok(saved);
+    }
+
+    /**
+     * Deploy an asset to a tactical zone.
+     *
+     * POST /api/v1/tasks/deploy
+     * { "assetId": "14IUS-TB2-01", "zoneId": "uuid-of-zone" }
+     */
+    @PostMapping("/deploy")
+    public ResponseEntity<?> deployAsset(@RequestBody DeployRequest request) {
+        try {
+            Task task = taskService.deployAsset(request.getAssetId(), request.getZoneId());
+            log.info("Deploy task created: {} → {}", request.getAssetId(), task.getZoneName());
+            return ResponseEntity.ok(task);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", e.getMessage(),
+                    "assetId", String.valueOf(request.getAssetId()),
+                    "zoneId", String.valueOf(request.getZoneId())
+            ));
+        }
     }
 }

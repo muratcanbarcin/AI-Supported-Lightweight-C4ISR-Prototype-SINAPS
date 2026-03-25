@@ -8,6 +8,7 @@ import authService from '@/services/authService';
 const navItems = [
   { path: "/map", label: "HARİTA" },
   { path: "/telemetry", label: "CANLI AKIŞ" },
+  { path: "/planner", label: "PLANLAMA" },
   { path: "/analysis", label: "ANALİZ" },
   { path: "/assets", label: "BİRİM DURUMU" },
   { path: "/tasks", label: "GÖREVLER" },

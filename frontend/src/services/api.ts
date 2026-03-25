@@ -432,6 +432,27 @@ export async function deleteZone(zoneId: string): Promise<void> {
 }
 
 // =============================================================================
+// DEPLOYMENT API
+// =============================================================================
+
+export interface DeployTaskResponse {
+  id: number;
+  assetId: string;
+  title: string;
+  description: string;
+  status: string;
+  taskType: string;
+  zoneId: string;
+  zoneName: string;
+  createdAt: string;
+}
+
+export async function deployAsset(assetId: string, zoneId: string): Promise<DeployTaskResponse> {
+  const response = await api.post<DeployTaskResponse>('/tasks/deploy', { assetId, zoneId });
+  return response.data;
+}
+
+// =============================================================================
 // ASSET ACTIONS API
 // =============================================================================
 
