@@ -238,7 +238,53 @@ class ChatResponse(PydanticBaseModel):
 
 
 # Minimum cosine similarity for RAG context to be considered "relevant"
-RAG_RELEVANCE_THRESHOLD = 0.35
+# Must match rag_engine.SIMILARITY_THRESHOLD (Sniper: 0.50)
+RAG_RELEVANCE_THRESHOLD = 0.50
+
+
+# ── Domain keyword cross-check (fixes cross-category hallucinations) ──────
+# The English embedding model (all-MiniLM-L6-v2) can't reliably distinguish
+# Turkish military categories.  Shared template phrases like "TEHDİT SEVİYESİ
+# YÜKSEK" cause fuel rules to score 0.70+ for IHA/IFF queries.
+# This simple keyword check catches those domain mismatches.
+
+_DOMAIN_KEYWORDS = {
+    "air":     {"iha", "drone", "hava", "iff", "uçuş", "iniş", "radar", "tanımlanamayan", "uav", "sürü", "jamming", "rth"},
+    "vehicle": {"araç", "yakıt", "motor", "konvoy", "lastik", "palet", "zırhlı", "ikmal", "depo"},
+    "medical": {"kalp", "spo2", "yaralı", "medevac", "nabız", "oksijen", "vücut", "sağlık", "biyometri", "tansiy"},
+    "cyber":   {"gps", "siber", "telsiz", "sinyal", "frekans", "spoofing", "şifre", "iletişim", "ağ"},
+    "ground":  {"sivil", "roe", "çatışma", "pusu", "esir", "mevzi", "piyade", "devriye"},
+}
+
+
+def _detect_domain(text: str) -> str | None:
+    """Return the best-matching domain key, or None if ambiguous."""
+    text_lower = text.lower()
+    best_domain = None
+    best_count = 0
+    for domain, keywords in _DOMAIN_KEYWORDS.items():
+        count = sum(1 for kw in keywords if kw in text_lower)
+        if count > best_count:
+            best_count = count
+            best_domain = domain
+    return best_domain if best_count >= 1 else None
+
+
+def _validate_rag_relevance(query: str, rule_text: str) -> bool:
+    """Return False if the query and rule clearly belong to different domains."""
+    q_domain = _detect_domain(query)
+    r_domain = _detect_domain(rule_text)
+
+    if q_domain and r_domain and q_domain != r_domain:
+        logger.warning(
+            "RAG domain MISMATCH — cited_rule cleared",
+            query_domain=q_domain,
+            rule_domain=r_domain,
+            query_preview=query[:60],
+            rule_preview=rule_text[:60],
+        )
+        return False
+    return True
 
 
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
@@ -252,6 +298,7 @@ async def chat_with_ai(request: ChatRequest):
         1. Embed the commander's query
         2. Search pgvector tactical_memory for relevant doctrine / rules
         3. FILTER: Only keep RAG results above relevance threshold
+        3b. CROSS-CHECK: Validate domain keyword relevance
         4. Build Llama prompt with [DOKTRIN] and [SORU] blocks
         5. Generate concise Turkish free-form response via Llama
         6. Return response + cited rule (if relevant)
@@ -288,11 +335,20 @@ async def chat_with_ai(request: ChatRequest):
             rag_context_str = "\n".join(doctrine_lines)
             cited_rule = relevant_rag[0].get("context", "") if relevant_rag else ""
 
+            # ── Step 2b: Domain keyword cross-check ──────────────────
+            # If the top rule's domain doesn't match the query's domain,
+            # clear cited_rule (don't show it), but still pass context to
+            # LLM so it can make its own judgment via KURAL 2.
+            if cited_rule and not _validate_rag_relevance(query, cited_rule):
+                cited_rule = ""  # Don't display misleading rule
+                rag_context_str = ""  # Don't confuse the LLM either
+
             logger.info(
                 "RAG context RELEVANT for chat",
                 raw_hits=len(raw_rag_results),
                 relevant_hits=len(relevant_rag),
                 top_score=round(top_score, 4),
+                cited_rule_kept=bool(cited_rule),
             )
         else:
             logger.info(

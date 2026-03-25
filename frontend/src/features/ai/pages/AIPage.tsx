@@ -135,6 +135,7 @@ export function AIPage() {
     const [isTyping, setIsTyping] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const isSendingRef = useRef(false);  // Guards useEffect from clobbering during send
 
     // ── Scroll to bottom ─────────────────────────────────────────
     const scrollToBottom = useCallback(() => {
@@ -165,6 +166,10 @@ export function AIPage() {
             setMessages([]);
             return;
         }
+
+        // Skip re-fetch if we're in the middle of sending
+        // (handleSend will reload messages itself after the round-trip)
+        if (isSendingRef.current) return;
 
         let cancelled = false;
         (async () => {
@@ -212,6 +217,8 @@ export function AIPage() {
     const handleSend = async () => {
         if (!input.trim() || isTyping) return;
 
+        isSendingRef.current = true;  // Prevent useEffect from clobbering
+
         // Auto-create session if none selected
         let sessionId = activeSessionId;
         if (sessionId === null) {
@@ -222,6 +229,7 @@ export function AIPage() {
                 sessionId = session.id;
             } catch (err) {
                 console.error('[AIPage] Auto-create session failed:', err);
+                isSendingRef.current = false;
                 return;
             }
         }
@@ -239,16 +247,12 @@ export function AIPage() {
         setIsTyping(true);
 
         try {
-            const aiResponse = await sendSessionMessage(sessionId, query);
+            await sendSessionMessage(sessionId, query);
 
-            const aiMsg: UIMessage = {
-                id: String(aiResponse.id),
-                sender: 'AI',
-                text: aiResponse.content,
-                timestamp: formatTime(aiResponse.createdAt),
-                citedRule: aiResponse.citedRule || undefined,
-            };
-            setMessages((prev) => [...prev, aiMsg]);
+            // Reload ALL messages from DB (single source of truth)
+            // This prevents any mismatch between optimistic and real state
+            const dbMessages = await fetchSessionMessages(sessionId);
+            setMessages(dbMessages.map(dbToUI));
 
             // Refresh session list to update title & ordering
             loadSessions();
@@ -262,6 +266,7 @@ export function AIPage() {
             setMessages((prev) => [...prev, errorMsg]);
         } finally {
             setIsTyping(false);
+            isSendingRef.current = false;  // Re-enable useEffect
         }
     };
 

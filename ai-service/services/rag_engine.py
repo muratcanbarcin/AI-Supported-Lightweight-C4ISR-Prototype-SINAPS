@@ -130,35 +130,36 @@ class RAGEngine:
 
     # ── Core: search (pgvector cosine similarity + threshold) ──────
 
-    # Minimum cosine similarity to be considered relevant.
+    # "Sniper" approach — moderate threshold, strictly Top-1 result.
     # pgvector <=> returns distance in [0, 2], so similarity = 1 - distance.
-    # 0.40 threshold eliminates cross-category hallucinations (e.g. fuel
-    # rules retrieved for a UAV query).
-    SIMILARITY_THRESHOLD: float = 0.7
+    # 0.50 threshold balances between false negatives (too strict) and
+    # hallucination (too loose). Only the single best match is returned.
+    SIMILARITY_THRESHOLD: float = 0.50
 
     def search(
         self,
         query_text: str,
-        top_k: int = 2,
+        top_k: int = 1,
         category_filter: Optional[str] = None,
     ) -> List[dict]:
         """
-        Semantic search over tactical_memory using pgvector cosine distance.
+        "Sniper" semantic search — returns ONLY the Top-1 best match
+        above the 0.50 similarity threshold.
 
-        Server-side similarity threshold (>0.40) ensures only genuinely
-        relevant doctrine is returned.  If no row passes the threshold,
-        an empty list is returned — signalling the LLM to use its own
-        tactical reasoning instead of hallucinating with irrelevant context.
+        If no row passes the threshold, returns [] so the LLM falls back
+        to autonomous tactical reasoning.
 
         Args:
             query_text:       Natural language query
-            top_k:            Maximum results to return (default 2)
+            top_k:            Forced to 1 (sniper mode)
             category_filter:  Optional — restrict to a specific category
 
         Returns:
             List of dicts with keys: context, category, source, score
-            (empty list if nothing exceeds the similarity threshold)
+            (empty list if nothing exceeds 0.50 similarity)
         """
+        # Force top_k=1 regardless of caller
+        top_k = 1
         self._ensure_ready()
 
         # Graceful degradation when DB is not available
@@ -187,7 +188,7 @@ class RAGEngine:
                 {self._col_context}  AS context,
                 {self._col_category} AS category,
                 {self._col_source}   AS source,
-                (1 - (embedding <=> %s::vector)) AS score
+                (1 - (embedding <=> %s::vector)) AS similarity
             FROM tactical_memory
             WHERE embedding IS NOT NULL
               AND (1 - (embedding <=> %s::vector)) > %s
@@ -199,10 +200,9 @@ class RAGEngine:
             params.append(category_filter)
 
         sql += """
-            ORDER BY score DESC
-            LIMIT %s
+            ORDER BY similarity DESC
+            LIMIT 1
         """
-        params.append(top_k)
 
         # ── Execute ──────────────────────────────────────────────────
         results: List[dict] = []
@@ -210,11 +210,25 @@ class RAGEngine:
             with db_manager.get_cursor() as cur:
                 cur.execute(sql, params)
                 for row in cur.fetchall():
+                    sim = round(float(row["similarity"]), 4)
+                    ctx = row["context"]
+                    cat = row["category"]
+                    src = row["source"]
+
+                    # ── Per-result debug log (critical for vector tuning) ──
+                    logger.info(
+                        "RAG HIT (Sniper Top-1)",
+                        similarity=sim,
+                        category=cat,
+                        source=src,
+                        context_preview=ctx[:120] if ctx else "",
+                    )
+
                     results.append({
-                        "context":  row["context"],
-                        "category": row["category"],
-                        "source":   row["source"],
-                        "score":    round(float(row["score"]), 4),
+                        "context":  ctx,
+                        "category": cat,
+                        "source":   src,
+                        "score":    sim,
                     })
         except Exception as exc:
             logger.warning(f"pgvector search failed — returning empty: {exc}")
@@ -224,16 +238,15 @@ class RAGEngine:
 
         if results:
             logger.info(
-                "RAG search — relevant doctrine found",
+                "RAG search — sniper hit",
                 query=query_text[:80],
-                hits=len(results),
-                top_score=results[0]["score"],
+                similarity=results[0]["score"],
                 threshold=self.SIMILARITY_THRESHOLD,
                 elapsed_ms=round(elapsed, 1),
             )
         else:
             logger.info(
-                "RAG search — NO doctrine above threshold",
+                "RAG search — NO doctrine above threshold (LLM will use autonomous reasoning)",
                 query=query_text[:80],
                 threshold=self.SIMILARITY_THRESHOLD,
                 elapsed_ms=round(elapsed, 1),
