@@ -133,6 +133,7 @@ public class SimulationEngine {
 
     @Scheduled(fixedRate = 3000)
     public void tick() {
+        logisticsTickCounter++;
         List<Telemetry> allLatest = telemetryService.getLatestTelemetry();
         int moved = 0;
         int logisticsUpdated = 0;
@@ -162,7 +163,11 @@ public class SimulationEngine {
         }
 
         if (moved > 0 || logisticsUpdated > 0) {
-            log.info("SimEngine tick: moved={}, logistics={}", moved, logisticsUpdated);
+            log.info("SimEngine tick #{}: moved={}, logistics={}, total_assets={}",
+                    logisticsTickCounter, moved, logisticsUpdated, allLatest.size());
+        } else {
+            log.debug("SimEngine tick #{}: no changes (total_assets={})",
+                    logisticsTickCounter, allLatest.size());
         }
     }
 
@@ -251,6 +256,15 @@ public class SimulationEngine {
     }
 
     // ─── Logistics sub-routine (refuel / drain while stationary) ────
+    //
+    // IMPORTANT: We must ALWAYS emit a new telemetry row even when
+    // battery is fully charged/drained. Otherwise the frontend loses
+    // the "live" feed and Gemma 2 has no fresh data to analyse.
+    // The tick counter throttles stable units to 1 row per ~15 s.
+    //
+    private int logisticsTickCounter = 0;
+    private static final int STABLE_EMIT_EVERY_N_TICKS = 5; // 5 × 3 s = 15 s
+
     private boolean processLogistics(Telemetry t, Map<String, Object> payload,
                                      String status, String zoneIdStr) {
         UUID zoneId = UUID.fromString(zoneIdStr);
@@ -261,19 +275,24 @@ public class SimulationEngine {
         int battery = t.getBatteryLevel() != null ? t.getBatteryLevel() : 80;
         boolean isBase = zone.getZoneType() == ZoneType.BASE;
 
+        boolean batteryChanged;
         if (isBase) {
-            if (battery >= BATTERY_MAX) return false;
+            batteryChanged = battery < BATTERY_MAX;
             battery = Math.min(battery + REFUEL_PER_TICK, BATTERY_MAX);
         } else {
-            if (battery <= BATTERY_MIN) return false;
+            batteryChanged = battery > BATTERY_MIN;
             battery = Math.max(battery - DRAIN_PER_TICK, BATTERY_MIN);
+        }
+
+        // Throttle: if battery is stable, only emit every Nth tick
+        if (!batteryChanged && (logisticsTickCounter % STABLE_EMIT_EVERY_N_TICKS != 0)) {
+            return false;
         }
 
         Map<String, Object> newPayload = new HashMap<>(payload);
         newPayload.put("deployment_zone", zone.getName());
         newPayload.put("deployment_zone_id", zone.getId().toString());
 
-        // Threat generation only for active operation areas (not safe bases)
         String threat = isBase ? "NORMAL" : generateThreatLevel(status);
         newPayload.put("threatLevel", threat);
 
