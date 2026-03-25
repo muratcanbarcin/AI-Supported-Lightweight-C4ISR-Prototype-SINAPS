@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
     createChatSession,
     fetchChatSessions,
@@ -127,9 +128,15 @@ function Sidebar({ sessions, activeId, onSelect, onNew, onDelete, collapsed, onT
 // ============================ MAIN PAGE ======================================
 
 export function AIPage() {
+    // ── Router hooks ─────────────────────────────────────────────
+    const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
+    const navigate = useNavigate();
+
+    // ── Derive activeSessionId from URL param ───────────────────
+    const activeSessionId = urlSessionId ? Number(urlSessionId) : null;
+
     // ── State ────────────────────────────────────────────────────
     const [sessions, setSessions] = useState<ChatSessionDTO[]>([]);
-    const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
     const [messages, setMessages] = useState<UIMessage[]>([]);
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -187,16 +194,15 @@ export function AIPage() {
         return () => { cancelled = true; };
     }, [activeSessionId]);
 
-    // ── Create new session ───────────────────────────────────────
-    const handleNewSession = async () => {
-        try {
-            const session = await createChatSession();
-            setSessions((prev) => [session, ...prev]);
-            setActiveSessionId(session.id);
-            setMessages([]);
-        } catch (err) {
-            console.error('[AIPage] Failed to create session:', err);
-        }
+    // ── Navigate to session (sidebar click) ──────────────────────
+    const handleSelectSession = (id: number) => {
+        navigate('/ai/' + id);
+    };
+
+    // ── Create new session (clears URL, waits for first message) ─
+    const handleNewSession = () => {
+        navigate('/ai');
+        setMessages([]);
     };
 
     // ── Delete session ───────────────────────────────────────────
@@ -205,7 +211,7 @@ export function AIPage() {
             await deleteChatSession(id);
             setSessions((prev) => prev.filter((s) => s.id !== id));
             if (activeSessionId === id) {
-                setActiveSessionId(null);
+                navigate('/ai');
                 setMessages([]);
             }
         } catch (err) {
@@ -225,8 +231,9 @@ export function AIPage() {
             try {
                 const session = await createChatSession();
                 setSessions((prev) => [session, ...prev]);
-                setActiveSessionId(session.id);
                 sessionId = session.id;
+                // Update URL to the new session (replace so back button goes to /ai)
+                navigate('/ai/' + sessionId, { replace: true });
             } catch (err) {
                 console.error('[AIPage] Auto-create session failed:', err);
                 isSendingRef.current = false;
@@ -278,7 +285,7 @@ export function AIPage() {
             <Sidebar
                 sessions={sessions}
                 activeId={activeSessionId}
-                onSelect={setActiveSessionId}
+                onSelect={handleSelectSession}
                 onNew={handleNewSession}
                 onDelete={handleDeleteSession}
                 collapsed={sidebarCollapsed}

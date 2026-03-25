@@ -346,6 +346,14 @@ function MainLayout() {
                 </div>
               }
             />
+            <Route
+              path="/ai/:sessionId"
+              element={
+                <div className="absolute inset-0 z-40 bg-slate-900">
+                  <AIPage />
+                </div>
+              }
+            />
 
             {/* Profile */}
             <Route
