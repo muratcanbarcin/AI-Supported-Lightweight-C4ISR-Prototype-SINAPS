@@ -24,20 +24,19 @@ public class TelemetryResponseDTO {
     private Integer batteryLevel;
     private String alignment;
     private Integer threatLevel;
+    private Boolean isSimulated;
     private Map<String, Object> payload;
 
     public static TelemetryResponseDTO fromEntity(Telemetry t) {
         Map<String, Object> cleanPayload = null;
-        // Default to FRIEND if unknown, to satisfy user request "unknown olmasın"
-        // Or we could try to infer from ID.
         String alignment = "FRIEND"; 
         Integer threatLevel = 0;
+        Boolean isSimulated = true;
 
         if (t.getPayload() != null) {
             cleanPayload = new HashMap<>(t.getPayload());
             cleanPayload.values().removeIf(v -> v == null);
 
-            // 1. Try to get alignment from payload
             if (t.getPayload().containsKey("alignment")) {
                 Object alignObj = t.getPayload().get("alignment");
                 if (alignObj != null && !alignObj.toString().equalsIgnoreCase("UNKNOWN")) {
@@ -45,12 +44,9 @@ public class TelemetryResponseDTO {
                 }
             }
             
-            // 2. Enforce Friend -> 0 Threat Logic
             if ("FRIEND".equalsIgnoreCase(alignment)) {
                 threatLevel = 0;
             } else {
-                // If FOE, try to get threat level. Default to High (e.g. 50) if missing?
-                // User said "friend 0, foe high".
                 if (t.getPayload().containsKey("threat_level")) {
                     Object tl = t.getPayload().get("threat_level");
                     if (tl instanceof Number) {
@@ -58,10 +54,15 @@ public class TelemetryResponseDTO {
                     }
                 }
                 
-                // If FOE but threat is 0, bump it up? 
-                // Let's keep it as is from simulator, but DTO enforces Friend=0.
                 if (threatLevel == 0 && "FOE".equalsIgnoreCase(alignment)) {
-                     threatLevel = 50; // Fallback for FOE without threat score
+                     threatLevel = 50;
+                }
+            }
+
+            if (t.getPayload().containsKey("is_simulated")) {
+                Object simObj = t.getPayload().get("is_simulated");
+                if (simObj instanceof Boolean) {
+                    isSimulated = (Boolean) simObj;
                 }
             }
 
@@ -81,6 +82,7 @@ public class TelemetryResponseDTO {
                 .batteryLevel(t.getBatteryLevel())
                 .alignment(alignment)
                 .threatLevel(threatLevel)
+                .isSimulated(isSimulated)
                 .payload(cleanPayload)
                 .build();
     }

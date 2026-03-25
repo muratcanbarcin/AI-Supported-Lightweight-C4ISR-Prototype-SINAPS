@@ -6,6 +6,7 @@ import { RadarRings } from './components/RadarRings';
 import { AssetBoundsCircle } from './components/AssetBoundsCircle';
 import { GeofencePolygon } from './components/GeofencePolygon';
 import { ThreatMarkers } from './components/ThreatMarkers';
+import { TacticalZones } from './components/TacticalZones';
 import { UnitDetailsModal } from './components/UnitDetailsModal';
 import { AIAnalysisPanel } from './components/AIAnalysisPanel';
 import { ConnectionWarning } from '@/features/control/ConnectionWarning';
@@ -160,6 +161,9 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
   const [isAnalysisPanelOpen, setIsAnalysisPanelOpen] = useState(false);
   const [focusTarget, setFocusTarget] = useState<string | null>(null);
 
+  // Zone draw mode
+  const [zoneDrawMode, setZoneDrawMode] = useState(false);
+
   // Transform assets for map display with positions relative to user location
   const assets = useMemo(() => {
     // If we have real positions from API, use them
@@ -245,6 +249,30 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
         onToggle={() => setIsAnalysisPanelOpen(!isAnalysisPanelOpen)}
       />
 
+      {/* Zone Draw Mode Toggle */}
+      <button
+        onClick={() => setZoneDrawMode(!zoneDrawMode)}
+        className={`absolute top-4 right-4 z-[1000] flex items-center gap-2 px-3 py-2
+          rounded-lg text-[11px] font-bold border shadow-lg backdrop-blur-sm transition-all
+          ${zoneDrawMode
+            ? 'bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse'
+            : 'bg-slate-900/80 border-slate-700/50 text-slate-400 hover:border-slate-500 hover:text-slate-300'
+          }`}
+      >
+        <i className={`fa-solid ${zoneDrawMode ? 'fa-xmark' : 'fa-draw-polygon'} text-xs`} />
+        {zoneDrawMode ? 'Çizim Modundan Çık' : 'Alan Çizim Modu'}
+      </button>
+
+      {zoneDrawMode && (
+        <div className="absolute top-14 right-4 z-[1000] bg-slate-900/90 backdrop-blur-sm
+          border border-amber-500/30 rounded-lg px-3 py-1.5 shadow-lg">
+          <span className="text-[10px] text-amber-400 font-mono">
+            <i className="fa-solid fa-crosshairs mr-1.5" />
+            Haritada bir noktaya tıklayın
+          </span>
+        </div>
+      )}
+
       {/* Classification Legend */}
       <div className="absolute bottom-6 left-4 z-[1000] flex flex-col gap-1.5
         bg-slate-900/90 backdrop-blur-sm border border-slate-700/50 rounded-lg px-3 py-2 shadow-lg">
@@ -302,6 +330,12 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
 
         {/* Threat Markers - centered relative to user */}
         <ThreatMarkers center={mapCenter} />
+
+        {/* Tactical Zones (Bases & Operation Areas) */}
+        <TacticalZones
+          drawMode={zoneDrawMode}
+          onDrawComplete={() => setZoneDrawMode(false)}
+        />
 
         {/* Asset Markers - with classification-based styling */}
         {assets.map((asset) => (

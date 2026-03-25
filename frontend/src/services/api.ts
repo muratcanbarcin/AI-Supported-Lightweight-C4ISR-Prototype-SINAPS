@@ -412,6 +412,26 @@ export async function sendSessionMessage(sessionId: number, content: string): Pr
 }
 
 // =============================================================================
+// TACTICAL ZONES API
+// =============================================================================
+
+import type { TacticalZone } from '@/types';
+
+export async function fetchZones(): Promise<TacticalZone[]> {
+  const response = await api.get<TacticalZone[]>('/zones');
+  return response.data;
+}
+
+export async function createZone(zone: Omit<TacticalZone, 'id' | 'createdAt'>): Promise<TacticalZone> {
+  const response = await api.post<TacticalZone>('/zones', zone);
+  return response.data;
+}
+
+export async function deleteZone(zoneId: string): Promise<void> {
+  await api.delete(`/zones/${zoneId}`);
+}
+
+// =============================================================================
 // ASSET ACTIONS API
 // =============================================================================
 

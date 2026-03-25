@@ -146,3 +146,56 @@
     opacity: 0.5;
   }
 }
+
+/* =============================================================================
+   TACTICAL ZONE LABELS
+   Military radar-style transparent labels centered inside zone circles.
+   ============================================================================= */
+
+.zone-label {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  white-space: nowrap;
+}
+
+.zone-label::before {
+  display: none !important;
+}
+
+.zone-label .zone-base {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #93c5fd;
+  text-shadow:
+    0 0 6px rgba(59, 130, 246, 0.6),
+    0 0 12px rgba(59, 130, 246, 0.3),
+    1px 1px 2px rgba(0, 0, 0, 0.8);
+  padding: 2px 6px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 2px;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(2px);
+}
+
+.zone-label .zone-oparea {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fca5a5;
+  text-shadow:
+    0 0 6px rgba(239, 68, 68, 0.6),
+    0 0 12px rgba(239, 68, 68, 0.3),
+    1px 1px 2px rgba(0, 0, 0, 0.8);
+  padding: 2px 6px;
+  border: 1px dashed rgba(239, 68, 68, 0.35);
+  border-radius: 2px;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(2px);
+}

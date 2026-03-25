@@ -37,6 +37,10 @@ public class Asset {
     @Column(length = 2000)
     private String description;
 
+    @Builder.Default
+    @Column(name = "is_simulated", nullable = false)
+    private Boolean isSimulated = true;
+
     @PrePersist
     protected void onCreate() {
         if (inventoryStatus == null) {
@@ -44,6 +48,9 @@ public class Asset {
         }
         if (commissionDate == null) {
             commissionDate = LocalDateTime.now();
+        }
+        if (isSimulated == null) {
+            isSimulated = true;
         }
     }
 }

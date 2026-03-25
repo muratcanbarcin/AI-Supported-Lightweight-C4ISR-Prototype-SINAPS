@@ -14,5 +14,7 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
 
     List<Asset> findByType(AssetType type);
 
+    List<Asset> findByIsSimulated(Boolean isSimulated);
+
     boolean existsByName(String name);
 }

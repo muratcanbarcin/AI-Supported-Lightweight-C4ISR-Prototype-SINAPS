@@ -303,3 +303,19 @@ export interface PaginatedResponse<T> {
   page: number;
   size: number;
 }
+
+// =============================================================================
+// TACTICAL ZONES
+// =============================================================================
+
+export type ZoneType = 'BASE' | 'OPERATION_AREA';
+
+export interface TacticalZone {
+  id: string;
+  name: string;
+  zoneType: ZoneType;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  createdAt?: string;
+}
