@@ -1,8 +1,10 @@
 package com.sinaps.c4isr_backend.service;
 
 import com.sinaps.c4isr_backend.model.AssetType;
+import com.sinaps.c4isr_backend.model.SystemLog;
 import com.sinaps.c4isr_backend.model.TacticalZone;
 import com.sinaps.c4isr_backend.model.Telemetry;
+import com.sinaps.c4isr_backend.repository.SystemLogRepository;
 import com.sinaps.c4isr_backend.repository.TacticalZoneRepository;
 import com.sinaps.c4isr_backend.repository.TelemetryRepository;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,7 @@ public class SimulationEngine {
 
     private final TelemetryRepository telemetryRepository;
     private final TacticalZoneRepository zoneRepository;
+    private final SystemLogRepository systemLogRepository;
 
     private static final GeometryFactory GF = new GeometryFactory(new PrecisionModel(), 4326);
     private static final double EARTH_RADIUS_M = 6_371_000.0;
@@ -101,15 +104,29 @@ public class SimulationEngine {
                 Map<String, Object> newPayload = new HashMap<>(payload);
                 double newLat, newLon;
 
+                newPayload.put("deployment_zone", zone.getName());
+                newPayload.put("deployment_zone_id", zone.getId().toString());
+
                 double arrivalThreshold = Math.max(zone.getRadiusMeters() * 0.5, 1000);
 
                 if (dist <= arrivalThreshold) {
                     newLat = tgtLat;
                     newLon = tgtLon;
                     newPayload.put("status", "IN_MISSION");
+                    newPayload.put("distance_remaining_m", 0L);
                     newPayload.put("arrived_at", LocalDateTime.now().toString());
+
                     log.info("ARRIVED: {} reached {} (dist={}m)",
                             t.getSourceId(), zone.getName(), Math.round(dist));
+
+                    systemLogRepository.save(SystemLog.builder()
+                            .assetId(t.getSourceId())
+                            .eventType("ARRIVAL")
+                            .message(String.format(
+                                    "Birlik %s, %s operasyon bölgesine başarıyla intikal etti ve göreve başladı. "
+                                    + "(Son mesafe: %d m)",
+                                    t.getSourceId(), zone.getName(), Math.round(dist)))
+                            .build());
                 } else {
                     double bearing = bearing(curLat, curLon, tgtLat, tgtLon);
                     double[] dest = destinationPoint(curLat, curLon, bearing, step);
@@ -120,7 +137,7 @@ public class SimulationEngine {
                     double heading = Math.toDegrees(bearing);
                     if (heading < 0) heading += 360;
                     newPayload.put("heading", Math.round(heading * 10.0) / 10.0);
-                    newPayload.put("distance_remaining_m", Math.round(dist - step));
+                    newPayload.put("distance_remaining_m", Math.max(0L, Math.round(dist - step)));
                 }
 
                 int battery = t.getBatteryLevel() != null ? t.getBatteryLevel() : 80;

@@ -301,8 +301,9 @@ def _extract_mentions(query: str) -> list[str]:
 def _fetch_mention_context(mention_ids: list[str]) -> str:
     """
     Query PostgreSQL for real-time status of mentioned assets.
-    Joins assets + latest telemetry to provide the LLM with live
-    position, battery, speed, and payload data.
+    Joins assets + latest telemetry (including live lat/lng from
+    the telemetry location column) to provide the LLM with live
+    position, battery, speed, deployment status and payload data.
 
     Returns a formatted Turkish context block, or empty string.
     """
@@ -314,22 +315,19 @@ def _fetch_mention_context(mention_ids: list[str]) -> str:
     try:
         with db_manager.get_cursor(dict_cursor=True) as cur:
             for asset_id in mention_ids:
-                # ── Future: Zone / Army Group lookups ──────────────
-                # if asset_id.startswith("ZONE-") or asset_id.startswith("ARMY-"):
-                #     cur.execute("SELECT * FROM zones WHERE id = %s", (asset_id,))
-                #     ...
-                #     continue
-
-                # ── Asset + latest telemetry lookup ───────────────
                 cur.execute("""
                     SELECT
-                        a.id, a.name, a.type, a.status, a.alignment,
+                        a.id, a.name, a.type, a.alignment,
                         a.last_latitude, a.last_longitude, a.last_altitude,
                         t.speed, t.battery_level, t.payload,
-                        t.timestamp AS telemetry_time
+                        t.timestamp AS telemetry_time,
+                        ST_Y(t.location::geometry) AS live_lat,
+                        ST_X(t.location::geometry) AS live_lon,
+                        t.altitude AS live_alt
                     FROM assets a
                     LEFT JOIN LATERAL (
-                        SELECT speed, battery_level, payload, timestamp
+                        SELECT speed, battery_level, payload, timestamp,
+                               location, altitude
                         FROM telemetry
                         WHERE source_id = a.id
                         ORDER BY timestamp DESC
@@ -346,51 +344,61 @@ def _fetch_mention_context(mention_ids: list[str]) -> str:
                     )
                     continue
 
-                # Format human-readable Turkish summary
+                lat = row.get('live_lat') or row.get('last_latitude') or 0
+                lon = row.get('live_lon') or row.get('last_longitude') or 0
+                alt = row.get('live_alt') or row.get('last_altitude') or 0
+
+                payload = row.get('payload') or {}
+                if not isinstance(payload, dict):
+                    payload = {}
+
+                p_status = payload.get('status', '')
+                _STATUS_TR = {
+                    'EN_ROUTE': 'İNTİKAL HALİNDE (EN_ROUTE)',
+                    'IN_MISSION': 'GÖREV BÖLGESİNDE (IN_MISSION)',
+                    'STOPPED': 'DURDURULDU',
+                    'ONLINE': 'AKTİF',
+                    'IDLE': 'BEKLEMEDE',
+                    'PATROL': 'DEVRIYE',
+                    'COMBAT': 'MUHAREBE',
+                }
+                status_display = _STATUS_TR.get(p_status, p_status) if p_status else 'AKTİF'
+
                 line = (
                     f"@{row['id']} ({row['name']}) | "
-                    f"Tip: {row['type']} | Durum: {row['status']} | "
-                    f"Konum: {row['last_latitude']:.4f}°N, {row['last_longitude']:.4f}°E | "
-                    f"İrtifa: {row['last_altitude']}m"
+                    f"Tip: {row['type']} | "
+                    f"★ RESMİ DURUM: {status_display} | "
+                    f"Konum: {lat:.4f}°N, {lon:.4f}°E | "
+                    f"İrtifa: {alt}m"
                 )
 
                 if row.get('speed') is not None:
-                    line += f" | Hız: {row['speed']} km/s"
+                    line += f" | Hız: {row['speed']:.1f} m/s"
                 if row.get('battery_level') is not None:
                     line += f" | Batarya: %{row['battery_level']}"
 
-                # Extract payload-specific fields
-                payload = row.get('payload') or {}
-                if isinstance(payload, dict):
-                    # Deployment / movement status (Phase 4)
-                    p_status = payload.get('status')
-                    if p_status:
-                        status_labels = {
-                            'EN_ROUTE': 'İNTİKAL HALİNDE',
-                            'IN_MISSION': 'GÖREV BÖLGESİNDE',
-                            'STOPPED': 'DURDURULDU',
-                        }
-                        line += f" | Durum: {status_labels.get(p_status, p_status)}"
-                    if 'deployment_zone' in payload:
-                        line += f" | Hedef Bölge: {payload['deployment_zone']}"
-                    if 'distance_remaining_m' in payload:
-                        dist_km = payload['distance_remaining_m'] / 1000
+                if payload.get('deployment_zone'):
+                    line += f" | Hedef Bölge: {payload['deployment_zone']}"
+                dist_rem = payload.get('distance_remaining_m')
+                if dist_rem is not None:
+                    try:
+                        dist_km = float(dist_rem) / 1000
                         line += f" | Kalan Mesafe: {dist_km:.1f} km"
-                    if 'arrived_at' in payload:
-                        line += f" | Varış: {payload['arrived_at']}"
+                    except (ValueError, TypeError):
+                        line += f" | Kalan Mesafe: {dist_rem}"
+                if payload.get('arrived_at'):
+                    line += f" | Varış Zamanı: {payload['arrived_at']}"
+                if payload.get('heading') is not None:
+                    line += f" | Yön: {payload['heading']}°"
 
-                    if 'fuel_level' in payload:
-                        line += f" | Yakıt: %{payload['fuel_level']}"
-                    if 'engine_status' in payload:
-                        line += f" | Motor: {payload['engine_status']}"
-                    if 'heart_rate' in payload:
-                        line += f" | Nabız: {payload['heart_rate']} bpm"
-                    if 'spo2' in payload:
-                        line += f" | SpO2: %{payload['spo2']}"
-                    if 'mission' in payload:
-                        line += f" | Görev: {payload['mission']}"
-                    if 'heading' in payload:
-                        line += f" | Yön: {payload['heading']}°"
+                if 'fuel_level' in payload:
+                    line += f" | Yakıt: %{payload['fuel_level']}"
+                if 'engine_status' in payload:
+                    line += f" | Motor: {payload['engine_status']}"
+                if 'heart_rate' in payload:
+                    line += f" | Nabız: {payload['heart_rate']} bpm"
+                if 'spo2' in payload:
+                    line += f" | SpO2: %{payload['spo2']}"
 
                 context_lines.append(line)
 
