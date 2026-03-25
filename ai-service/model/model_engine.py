@@ -159,7 +159,18 @@ LLAMA_CHAT_SYSTEM_PROMPT = (
     "MANTIK KURALI: Sana verilen [DOKTRIN] içeriği ile [SORU] arasında anlamsal "
     "bir bağ yoksa, bu doktrini SESSİZCE yok say. Asla 'Doktrin mantıksız', "
     "'Bağlantı yok', 'Göreve başlıyorum' gibi açıklamalar veya mazeretler üretme. "
-    "Sadece komutanın sorusuna odaklan ve doğrudan askeri planını sun."
+    "Sadece komutanın sorusuna odaklan ve doğrudan askeri planını sun.\n\n"
+    "MENTION KURALI: Eğer komutan mesajında @ ile bir birim etiketlemişse "
+    "(Örn: @ANKA-01, @TB2-ALFA-01), sana sağlanan [SAHADAN CANLI VERİ] bloğunu "
+    "kullanarak o birimin anlık durumuna, yakıtına, bataryasına veya konumuna "
+    "göre spesifik taktikler ver. Canlı veriyi mutlaka cevabına entegre et.\n\n"
+    "LOJİSTİK VE KAPASİTE KURALI: Etiketlenen (@) askeri birimlerin (TB2, ANKA vb.) "
+    "batarya veya yakıt seviyesi %50'nin üzerindeyse, uzun süreli sınır ötesi "
+    "devriyeler ve kritik operasyonlar için KESİNLİKLE 'YETERLİ' ve 'GÖREVE HAZIR' "
+    "olarak değerlendir. %80 ve üzeri tam kapasitedir. ASLA sivil dronlar gibi "
+    "'30 dakika uçabilir', 'yedek batarya takın' gibi uçuş süresi halüsinasyonları "
+    "(uydurma rakamlar) üretme. Rakam uydurmak yerine sadece yüzdeye bakarak "
+    "taktiksel onay veya ret ver."
 )
 
 
@@ -560,6 +571,7 @@ class ModelEngine:
         query: str,
         rag_context: str = "",
         history: list[dict] | None = None,
+        mention_context: str = "",
         max_new_tokens: int = 1024
     ) -> str:
         """
@@ -569,11 +581,12 @@ class ModelEngine:
         Uses Llama-3.1 chat template with system/user/assistant roles.
 
         Args:
-            query:          Commander's question (free text)
-            rag_context:    Pre-formatted doctrine context string (may be empty)
-            history:        List of {"role": "user"|"assistant", "content": "..."}
-                            from previous turns (most recent last).  Max 6 kept.
-            max_new_tokens: Maximum tokens to generate (default 384)
+            query:           Commander's question (free text)
+            rag_context:     Pre-formatted doctrine context string (may be empty)
+            history:         List of {"role": "user"|"assistant", "content": "..."}
+                             from previous turns (most recent last).  Max 6 kept.
+            mention_context: Real-time data for @mentioned assets (may be empty)
+            max_new_tokens:  Maximum tokens to generate (default 1024)
 
         Returns:
             Free-form Turkish text response string
@@ -588,10 +601,12 @@ class ModelEngine:
         # ── Build Llama-3.1 prompt with system + history + user roles ─────
         doctrine_block = rag_context if rag_context else "(Doktrin bilgisi bulunamadı — kendi askeri zekanı kullan.)"
 
-        user_message = (
-            f"[DOKTRIN]: {doctrine_block}\n\n"
-            f"[SORU]: {query}"
-        )
+        # Build user message with optional mention data
+        parts = [f"[DOKTRIN]: {doctrine_block}"]
+        if mention_context:
+            parts.append(f"\n\n[SAHADAN CANLI VERİ - MENTION EDİLEN BİRİMLER]:\n{mention_context}")
+        parts.append(f"\n\n[SORU]: {query}")
+        user_message = "".join(parts)
 
         messages = [
             {"role": "system", "content": LLAMA_CHAT_SYSTEM_PROMPT},
