@@ -4,6 +4,7 @@ import com.sinaps.c4isr_backend.model.AssetType;
 import com.sinaps.c4isr_backend.model.SystemLog;
 import com.sinaps.c4isr_backend.model.TacticalZone;
 import com.sinaps.c4isr_backend.model.Telemetry;
+import com.sinaps.c4isr_backend.model.ZoneType;
 import com.sinaps.c4isr_backend.repository.SystemLogRepository;
 import com.sinaps.c4isr_backend.repository.TacticalZoneRepository;
 import com.sinaps.c4isr_backend.repository.TelemetryRepository;
@@ -20,8 +21,10 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * Simulation Engine — moves EN_ROUTE simulated assets toward their
- * deployment zones every tick, inserting a new telemetry row each time.
+ * Simulation Engine — handles three responsibilities every tick:
+ *   1. Movement  : EN_ROUTE assets advance toward their target zone.
+ *   2. Arrival   : Assets reaching a zone transition to IN_MISSION (op-area) or IDLE (base).
+ *   3. Logistics : BASE zones refuel (+2/tick), OPERATION_AREAs drain (-1/tick).
  *
  * Physical hardware prototypes (is_simulated=false) are NEVER touched.
  */
@@ -38,13 +41,14 @@ public class SimulationEngine {
     private static final GeometryFactory GF = new GeometryFactory(new PrecisionModel(), 4326);
     private static final double EARTH_RADIUS_M = 6_371_000.0;
 
+    private static final int REFUEL_PER_TICK    = 2;
+    private static final int DRAIN_PER_TICK     = 1;
+    private static final int BATTERY_MAX        = 100;
+    private static final int BATTERY_MIN        = 5;
+
     /*
      * Step size per 3-second tick (meters).
      * Deliberately high for demo visibility on a country-scale map.
-     *   DRONE  → 5 km/tick  ≈ 6 000 km/h simulated
-     *   VEHICLE→ 2 km/tick  ≈ 2 400 km/h simulated
-     *   SOLDIER→ 0.8 km/tick≈  960 km/h simulated
-     *   SENSOR → 0 (stationary)
      */
     private static double stepMeters(AssetType type) {
         return switch (type) {
@@ -67,6 +71,7 @@ public class SimulationEngine {
     public void tick() {
         List<Telemetry> allLatest = telemetryRepository.findLatestTelemetryBySource();
         int moved = 0;
+        int logisticsUpdated = 0;
 
         for (Telemetry t : allLatest) {
             Map<String, Object> payload = t.getPayload();
@@ -78,93 +83,141 @@ public class SimulationEngine {
             if (!isSimulated) continue;
 
             String status = Objects.toString(payload.get("status"), "");
-            if (!"EN_ROUTE".equalsIgnoreCase(status)) continue;
-
             String zoneIdStr = Objects.toString(payload.get("deployment_zone_id"), "");
-            if (zoneIdStr.isBlank()) continue;
 
             try {
-                UUID zoneId = UUID.fromString(zoneIdStr);
-                Optional<TacticalZone> zoneOpt = zoneRepository.findById(zoneId);
-                if (zoneOpt.isEmpty()) continue;
-
-                TacticalZone zone = zoneOpt.get();
-                if (t.getLocation() == null) continue;
-
-                double curLat = t.getLocation().getY();
-                double curLon = t.getLocation().getX();
-                double tgtLat = zone.getLatitude();
-                double tgtLon = zone.getLongitude();
-
-                double dist = haversine(curLat, curLon, tgtLat, tgtLon);
-                double step = stepMeters(t.getSourceType());
-
-                if (step <= 0) continue;
-
-                Map<String, Object> newPayload = new HashMap<>(payload);
-                double newLat, newLon;
-
-                newPayload.put("deployment_zone", zone.getName());
-                newPayload.put("deployment_zone_id", zone.getId().toString());
-
-                double arrivalThreshold = Math.max(zone.getRadiusMeters() * 0.5, 1000);
-
-                if (dist <= arrivalThreshold) {
-                    newLat = tgtLat;
-                    newLon = tgtLon;
-                    newPayload.put("status", "IN_MISSION");
-                    newPayload.put("distance_remaining_m", 0L);
-                    newPayload.put("arrived_at", LocalDateTime.now().toString());
-
-                    log.info("ARRIVED: {} reached {} (dist={}m)",
-                            t.getSourceId(), zone.getName(), Math.round(dist));
-
-                    systemLogRepository.save(SystemLog.builder()
-                            .assetId(t.getSourceId())
-                            .eventType("ARRIVAL")
-                            .message(String.format(
-                                    "Birlik %s, %s operasyon bölgesine başarıyla intikal etti ve göreve başladı. "
-                                    + "(Son mesafe: %d m)",
-                                    t.getSourceId(), zone.getName(), Math.round(dist)))
-                            .build());
-                } else {
-                    double bearing = bearing(curLat, curLon, tgtLat, tgtLon);
-                    double[] dest = destinationPoint(curLat, curLon, bearing, step);
-                    newLat = dest[0];
-                    newLon = dest[1];
-                    newPayload.put("status", "EN_ROUTE");
-
-                    double heading = Math.toDegrees(bearing);
-                    if (heading < 0) heading += 360;
-                    newPayload.put("heading", Math.round(heading * 10.0) / 10.0);
-                    newPayload.put("distance_remaining_m", Math.max(0L, Math.round(dist - step)));
+                // ── BRANCH 1: EN_ROUTE → Movement toward target zone ──
+                if ("EN_ROUTE".equalsIgnoreCase(status) && !zoneIdStr.isBlank()) {
+                    if (processMovement(t, payload, zoneIdStr)) moved++;
                 }
-
-                int battery = t.getBatteryLevel() != null ? t.getBatteryLevel() : 80;
-                battery = Math.max(battery - 1, 5);
-
-                Telemetry newTelemetry = Telemetry.builder()
-                        .sourceId(t.getSourceId())
-                        .sourceType(t.getSourceType())
-                        .timestamp(LocalDateTime.now())
-                        .location(GF.createPoint(new Coordinate(newLon, newLat)))
-                        .altitude(t.getAltitude())
-                        .speed(speedMps(t.getSourceType()))
-                        .batteryLevel(battery)
-                        .payload(newPayload)
-                        .build();
-
-                telemetryRepository.save(newTelemetry);
-                moved++;
-
+                // ── BRANCH 2: Stationary at a zone → Logistics (refuel/drain) ──
+                else if (("IN_MISSION".equalsIgnoreCase(status) || "IDLE".equalsIgnoreCase(status))
+                        && !zoneIdStr.isBlank()) {
+                    if (processLogistics(t, payload, status, zoneIdStr)) logisticsUpdated++;
+                }
             } catch (Exception e) {
                 log.warn("SimEngine error for {}: {}", t.getSourceId(), e.getMessage());
             }
         }
 
-        if (moved > 0) {
-            log.info("SimEngine tick: moved {} units", moved);
+        if (moved > 0 || logisticsUpdated > 0) {
+            log.info("SimEngine tick: moved={}, logistics={}", moved, logisticsUpdated);
         }
+    }
+
+    // ─── Movement sub-routine ───────────────────────────────────────
+    private boolean processMovement(Telemetry t, Map<String, Object> payload, String zoneIdStr) {
+        UUID zoneId = UUID.fromString(zoneIdStr);
+        Optional<TacticalZone> zoneOpt = zoneRepository.findById(zoneId);
+        if (zoneOpt.isEmpty() || t.getLocation() == null) return false;
+
+        TacticalZone zone = zoneOpt.get();
+        double step = stepMeters(t.getSourceType());
+        if (step <= 0) return false;
+
+        double curLat = t.getLocation().getY();
+        double curLon = t.getLocation().getX();
+        double tgtLat = zone.getLatitude();
+        double tgtLon = zone.getLongitude();
+        double dist   = haversine(curLat, curLon, tgtLat, tgtLon);
+
+        Map<String, Object> newPayload = new HashMap<>(payload);
+        newPayload.put("deployment_zone", zone.getName());
+        newPayload.put("deployment_zone_id", zone.getId().toString());
+
+        double newLat, newLon;
+        double arrivalThreshold = Math.max(zone.getRadiusMeters() * 0.5, 1000);
+
+        if (dist <= arrivalThreshold) {
+            newLat = tgtLat;
+            newLon = tgtLon;
+            newPayload.put("distance_remaining_m", 0L);
+            newPayload.put("arrived_at", LocalDateTime.now().toString());
+
+            boolean isBase = zone.getZoneType() == ZoneType.BASE;
+            String arrivalStatus = isBase ? "IDLE" : "IN_MISSION";
+            newPayload.put("status", arrivalStatus);
+
+            String logMsg = isBase
+                    ? String.format("Birlik %s, %s üssüne döndü ve hazır duruma geçti. (Son mesafe: %d m)",
+                            t.getSourceId(), zone.getName(), Math.round(dist))
+                    : String.format("Birlik %s, %s operasyon bölgesine başarıyla intikal etti ve göreve başladı. (Son mesafe: %d m)",
+                            t.getSourceId(), zone.getName(), Math.round(dist));
+
+            systemLogRepository.save(SystemLog.builder()
+                    .assetId(t.getSourceId())
+                    .eventType(isBase ? "RTB_COMPLETE" : "ARRIVAL")
+                    .message(logMsg)
+                    .build());
+
+            log.info("{}: {} reached {} → {}", isBase ? "RTB" : "ARRIVED",
+                    t.getSourceId(), zone.getName(), arrivalStatus);
+        } else {
+            double brg  = bearing(curLat, curLon, tgtLat, tgtLon);
+            double[] dest = destinationPoint(curLat, curLon, brg, step);
+            newLat = dest[0];
+            newLon = dest[1];
+            newPayload.put("status", "EN_ROUTE");
+
+            double heading = Math.toDegrees(brg);
+            if (heading < 0) heading += 360;
+            newPayload.put("heading", Math.round(heading * 10.0) / 10.0);
+            newPayload.put("distance_remaining_m", Math.max(0L, Math.round(dist - step)));
+        }
+
+        int battery = t.getBatteryLevel() != null ? t.getBatteryLevel() : 80;
+        battery = Math.max(battery - DRAIN_PER_TICK, BATTERY_MIN);
+
+        telemetryRepository.save(Telemetry.builder()
+                .sourceId(t.getSourceId())
+                .sourceType(t.getSourceType())
+                .timestamp(LocalDateTime.now())
+                .location(GF.createPoint(new Coordinate(newLon, newLat)))
+                .altitude(t.getAltitude())
+                .speed(speedMps(t.getSourceType()))
+                .batteryLevel(battery)
+                .payload(newPayload)
+                .build());
+        return true;
+    }
+
+    // ─── Logistics sub-routine (refuel / drain while stationary) ────
+    private boolean processLogistics(Telemetry t, Map<String, Object> payload,
+                                     String status, String zoneIdStr) {
+        UUID zoneId = UUID.fromString(zoneIdStr);
+        Optional<TacticalZone> zoneOpt = zoneRepository.findById(zoneId);
+        if (zoneOpt.isEmpty()) return false;
+
+        TacticalZone zone = zoneOpt.get();
+        int battery = t.getBatteryLevel() != null ? t.getBatteryLevel() : 80;
+        boolean isBase = zone.getZoneType() == ZoneType.BASE;
+
+        if (isBase) {
+            if (battery >= BATTERY_MAX) return false;
+            battery = Math.min(battery + REFUEL_PER_TICK, BATTERY_MAX);
+        } else {
+            if (battery <= BATTERY_MIN) return false;
+            battery = Math.max(battery - DRAIN_PER_TICK, BATTERY_MIN);
+        }
+
+        Map<String, Object> newPayload = new HashMap<>(payload);
+        newPayload.put("deployment_zone", zone.getName());
+        newPayload.put("deployment_zone_id", zone.getId().toString());
+
+        double lat = t.getLocation() != null ? t.getLocation().getY() : zone.getLatitude();
+        double lon = t.getLocation() != null ? t.getLocation().getX() : zone.getLongitude();
+
+        telemetryRepository.save(Telemetry.builder()
+                .sourceId(t.getSourceId())
+                .sourceType(t.getSourceType())
+                .timestamp(LocalDateTime.now())
+                .location(GF.createPoint(new Coordinate(lon, lat)))
+                .altitude(t.getAltitude())
+                .speed(0.0)
+                .batteryLevel(battery)
+                .payload(newPayload)
+                .build());
+        return true;
     }
 
     // ════════════════════════════════════════════════════════════════
