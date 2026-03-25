@@ -617,23 +617,28 @@ class ModelEngine:
             add_generation_prompt=True
         )
 
-        # Tokenize
+        # Tokenize — max_length applies to PROMPT ONLY (not generation output).
+        # Llama-3.1 supports 128K context, but we cap at 4096 for RTX 3080 VRAM safety.
         inputs = self._llama_tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=1024
+            max_length=4096
         ).to("cuda")
 
-        # Generate
+        prompt_len = inputs['input_ids'].shape[1]
+        logger.info("[Llama] Prompt tokenized", prompt_tokens=prompt_len, max_new_tokens=max_new_tokens)
+
+        # Generate — max_new_tokens guarantees 1024 tokens exclusively for output,
+        # regardless of how long the prompt/history is.
         with torch.no_grad():
             outputs = self._llama_model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=True,
-                temperature=0.4,
+                temperature=0.3,
                 top_p=0.9,
-                repetition_penalty=1.2,
+                repetition_penalty=1.1,
                 pad_token_id=self._llama_tokenizer.pad_token_id
             )
 
