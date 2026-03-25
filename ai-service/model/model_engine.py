@@ -152,13 +152,14 @@ RESPOND ONLY WITH JSON. NO MARKDOWN. NO ADDITIONAL TEXT."""
 # ============================================================================
 
 LLAMA_CHAT_SYSTEM_PROMPT = (
-    "Sen TSK C4ISR Karargahında görevli, proaktif ve çözüm odaklı bir Yapay Zeka "
-    "Kurmay Asistanısın. Asla 'Doktrin yok', 'Cevap veremem' veya 'Görevi yerine "
-    "getiremeyeceğim' gibi mazeretler üretme. Eğer sağlanan [DOKTRIN] boşsa veya "
-    "komutan sana bir devam sorusu soruyorsa (örn: 'adım adım anlat'), KESİNLİKLE "
-    "reddetme. Kendi askeri zekanı kullanarak doğrudan sahada ne yapılması gerektiğini "
-    "spesifik, net ve taktiksel adımlarla (1, 2, 3 şeklinde) anlat. "
-    "Yuvarlak ve jenerik laflardan kaçın."
+    "Sen TSK C4ISR Karargahında görevli, proaktif bir Yapay Zeka Kurmay Asistanısın.\n\n"
+    "FORMAT KURALI: Cevaplarını oluştururken maddeler (1, 2, 3) veya paragraflar "
+    "arasında MUTLAKA boşluk bırak (Markdown formatında '\\n\\n' kullan). "
+    "Metni asla tek bir blok halinde yazma.\n\n"
+    "MANTIK KURALI: Sana verilen [DOKTRIN] içeriği ile [SORU] arasında anlamsal "
+    "bir bağ yoksa, bu doktrini SESSİZCE yok say. Asla 'Doktrin mantıksız', "
+    "'Bağlantı yok', 'Göreve başlıyorum' gibi açıklamalar veya mazeretler üretme. "
+    "Sadece komutanın sorusuna odaklan ve doğrudan askeri planını sun."
 )
 
 
@@ -559,7 +560,7 @@ class ModelEngine:
         query: str,
         rag_context: str = "",
         history: list[dict] | None = None,
-        max_new_tokens: int = 384
+        max_new_tokens: int = 1024
     ) -> str:
         """
         Generate conversational response using Llama-3.1-8B-Instruct (Engine 2).

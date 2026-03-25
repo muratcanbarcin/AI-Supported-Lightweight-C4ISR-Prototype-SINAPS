@@ -344,7 +344,7 @@ export function AIPage() {
 
                                             {/* Bubble */}
                                             <div className={`
-                                                p-4 rounded-sm text-sm leading-relaxed border
+                                                p-4 rounded-sm text-sm leading-relaxed border whitespace-pre-wrap
                                                 ${msg.sender === 'USER'
                                                     ? 'bg-sky-600/20 border-sky-500/30 text-slate-100 rounded-tr-none'
                                                     : 'bg-slate-800/60 border-slate-700/50 text-slate-200 rounded-tl-none relative'}
@@ -357,17 +357,6 @@ export function AIPage() {
                                                 )}
 
                                                 {msg.text}
-
-                                                {/* RAG Cited Rule */}
-                                                {msg.citedRule && (
-                                                    <div className="mt-3 pt-3 border-t border-slate-700/30">
-                                                        <blockquote className="text-xs text-slate-400 italic border-l-2 border-sky-500/40 pl-3 leading-relaxed">
-                                                            <span className="text-sky-400/70 font-bold not-italic text-[10px] uppercase tracking-wider">Referans Kural:</span>
-                                                            <br />
-                                                            {msg.citedRule}
-                                                        </blockquote>
-                                                    </div>
-                                                )}
                                             </div>
 
                                             {/* Timestamp */}

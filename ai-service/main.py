@@ -238,8 +238,8 @@ class ChatResponse(PydanticBaseModel):
 
 
 # Minimum cosine similarity for RAG context to be considered "relevant"
-# Must match rag_engine.SIMILARITY_THRESHOLD (Sniper: 0.50)
-RAG_RELEVANCE_THRESHOLD = 0.50
+# Must match rag_engine.SIMILARITY_THRESHOLD (Sniper: 0.65)
+RAG_RELEVANCE_THRESHOLD = 0.65
 
 
 # ── Domain keyword cross-check (fixes cross-category hallucinations) ──────

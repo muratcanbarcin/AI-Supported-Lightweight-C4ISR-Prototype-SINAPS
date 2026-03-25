@@ -130,11 +130,11 @@ class RAGEngine:
 
     # ── Core: search (pgvector cosine similarity + threshold) ──────
 
-    # "Sniper" approach — moderate threshold, strictly Top-1 result.
+    # "Sniper" approach — strict threshold, strictly Top-1 result.
     # pgvector <=> returns distance in [0, 2], so similarity = 1 - distance.
-    # 0.50 threshold balances between false negatives (too strict) and
-    # hallucination (too loose). Only the single best match is returned.
-    SIMILARITY_THRESHOLD: float = 0.50
+    # 0.65 threshold eliminates false positives from the English embedding
+    # model on Turkish text. Only the single best match is returned.
+    SIMILARITY_THRESHOLD: float = 0.65
 
     def search(
         self,
