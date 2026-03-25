@@ -5,7 +5,7 @@
  */
 
 export { default as api, checkBackendHealth, isConnectionError, AUTH_TOKEN_KEY, AUTH_USER_KEY } from './api';
-export { fetchTasks, createTask, fetchTacticalAnalyses, fetchAlertAnalyses, fetchSystemLogs, sendAiChat, postEmergencyStop } from './api';
+export { fetchTasks, createTask, fetchTacticalAnalyses, fetchAlertAnalyses, fetchAllSystemLogs, fetchSystemLogs, sendAiChat, postEmergencyStop } from './api';
 export { createChatSession, fetchChatSessions, deleteChatSession, fetchSessionMessages, sendSessionMessage } from './api';
 export { fetchZones, createZone, deleteZone, deployAsset } from './api';
 export type { DeployTaskResponse } from './api';

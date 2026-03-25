@@ -260,6 +260,9 @@ export interface TaskDTO {
   title: string;
   description: string | null;
   status: string;
+  taskType: string | null;
+  zoneId: string | null;
+  zoneName: string | null;
   createdAt: string;
 }
 
@@ -322,6 +325,15 @@ export interface SystemLogDTO {
   eventType: string;
   message: string;
   createdAt: string;
+}
+
+/**
+ * Fetch ALL system logs (most recent first).
+ * GET /api/v1/system-logs
+ */
+export async function fetchAllSystemLogs(): Promise<SystemLogDTO[]> {
+  const response = await api.get<SystemLogDTO[]>('/system-logs');
+  return response.data;
 }
 
 /**

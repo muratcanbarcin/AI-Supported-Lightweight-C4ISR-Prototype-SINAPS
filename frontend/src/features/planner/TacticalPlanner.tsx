@@ -166,10 +166,8 @@ export function TacticalPlanner() {
   // ─── Derived data ──────────────────────────────────────────────────
   const availableAssets = assets.filter((a) => {
     const status = getStatus(a);
-    const zoneId = getDeploymentZoneId(a);
-    const isIdle = !status || status === 'IDLE' || status === 'ONLINE' || status === 'PATROL';
-    const hasNoZone = !zoneId;
-    if (!(isIdle && hasNoZone)) return false;
+    const isAvailable = !status || status === 'IDLE' || status === 'ONLINE' || status === 'PATROL';
+    if (!isAvailable) return false;
     if (filterType !== 'ALL' && a.sourceType !== filterType) return false;
     return true;
   });
