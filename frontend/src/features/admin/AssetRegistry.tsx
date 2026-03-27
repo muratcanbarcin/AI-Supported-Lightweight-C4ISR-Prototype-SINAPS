@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '@/services/api';
 
 interface InventoryAsset {
-    id: number;
+    id: number | string;
     name: string;
     type: 'DRONE' | 'VEHICLE' | 'SOLDIER' | 'SENSOR';
     isSimulated: boolean;
@@ -14,23 +14,44 @@ interface TaskItem {
     status: string;
 }
 
+interface TelemetryLatestItem {
+    sourceId: string;
+    sourceType: 'DRONE' | 'VEHICLE' | 'SOLDIER' | 'SENSOR';
+}
+
 export function AssetRegistry() {
     const [assets, setAssets] = useState<InventoryAsset[]>([]);
     const [tasks, setTasks] = useState<TaskItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     useEffect(() => {
         fetchAssets();
     }, []);
 
     const fetchAssets = async () => {
+        setIsRefreshing(true);
         setIsLoading(true);
         try {
             const assetsRes = await api.get<InventoryAsset[]>('/assets');
             setAssets(assetsRes.data);
         } catch (err) {
-            console.error('Failed to fetch assets', err);
-            setAssets([]);
+            // Fallback: build list from telemetry if inventory endpoint is blocked/unavailable.
+            console.warn('Inventory endpoint failed, falling back to telemetry/latest', err);
+            try {
+                const telemetryRes = await api.get<TelemetryLatestItem[]>('/telemetry/latest');
+                const mappedAssets: InventoryAsset[] = telemetryRes.data.map((t) => ({
+                    id: t.sourceId,
+                    name: t.sourceId,
+                    type: t.sourceType,
+                    isSimulated: true
+                }));
+                setAssets(mappedAssets);
+            } catch (fallbackErr) {
+                console.error('Fallback telemetry fetch failed', fallbackErr);
+                setAssets([]);
+            }
         }
 
         try {
@@ -42,6 +63,8 @@ export function AssetRegistry() {
             setTasks([]);
         } finally {
             setIsLoading(false);
+            setIsRefreshing(false);
+            setLastRefresh(new Date());
         }
     };
 
@@ -60,9 +83,16 @@ export function AssetRegistry() {
                 <span className="text-slate-400 font-mono text-xs uppercase tracking-widest">
                     VARLIKLAR / GERCEK ZAMANLI BACKEND VERISI
                 </span>
-                <button onClick={fetchAssets} className="bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded text-sm font-bold">
-                    YENILE
-                </button>
+                <div className="flex items-center gap-3">
+                    {lastRefresh && (
+                        <span className="text-slate-500 text-xs font-mono">
+                            Son yenileme: {lastRefresh.toLocaleTimeString('tr-TR')}
+                        </span>
+                    )}
+                    <button type="button" onClick={fetchAssets} disabled={isRefreshing} className="bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white px-4 py-2 rounded text-sm font-bold">
+                        {isRefreshing ? 'YENILENIYOR...' : 'YENILE'}
+                    </button>
+                </div>
             </div>
 
             <div className="bg-[#1e293b]/50 border border-slate-700/50 rounded-lg overflow-hidden">

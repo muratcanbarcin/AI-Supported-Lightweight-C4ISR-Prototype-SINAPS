@@ -11,6 +11,7 @@ interface SystemStatusResponse {
 }
 
 export function AdminDashboard() {
+    const FIVE_MINUTES_MS = 5 * 60 * 1000;
     const navigate = useNavigate();
     const [stats, setStats] = useState<SystemStatusResponse>({
         status: 'OFFLINE',
@@ -21,14 +22,16 @@ export function AdminDashboard() {
     });
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     useEffect(() => {
         fetchStats();
-        const interval = setInterval(fetchStats, 10000);
+        const interval = setInterval(fetchStats, FIVE_MINUTES_MS);
         return () => clearInterval(interval);
     }, []);
 
     const fetchStats = async () => {
+        setIsRefreshing(true);
         try {
             const statusRes = await api.get<SystemStatusResponse>('/admin/system-status');
             setStats(statusRes.data);
@@ -38,6 +41,7 @@ export function AdminDashboard() {
             setStats(prev => ({ ...prev, status: 'OFFLINE' }));
         } finally {
             setIsLoading(false);
+            setIsRefreshing(false);
         }
     };
 
@@ -71,7 +75,17 @@ export function AdminDashboard() {
         <div className="space-y-8">
             {/* Welcome Banner */}
             <div className="bg-gradient-to-r from-sky-900/20 to-transparent border-l-4 border-sky-500 p-6 rounded-r-lg">
-                <h2 className="text-2xl font-bold text-white mb-2">Hoşgeldiniz, Komutanım.</h2>
+                <div className="flex items-center justify-between gap-4">
+                    <h2 className="text-2xl font-bold text-white mb-2">Hoşgeldiniz, Komutanım.</h2>
+                    <button
+                        onClick={fetchStats}
+                        type="button"
+                        disabled={isRefreshing}
+                        className="px-3 py-1.5 text-xs font-bold rounded border border-sky-700 text-sky-300 hover:bg-sky-900/30 disabled:opacity-50"
+                    >
+                        {isRefreshing ? 'YENILENIYOR...' : 'MANUEL YENILE'}
+                    </button>
+                </div>
                 <p className="text-slate-400 max-w-2xl">
                     SINAPS Komuta Kontrol Sistemi v2.4 hazır. Sistemler tam kapasite çalışıyor.
                     Aşağıdaki panellerden detaylı durum raporlarına erişebilirsiniz.

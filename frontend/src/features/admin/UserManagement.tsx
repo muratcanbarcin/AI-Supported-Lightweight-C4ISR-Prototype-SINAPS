@@ -57,6 +57,12 @@ export function UserManagement() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (formData.role === 'HAREKAT_SUBAYI' && !formData.assignedZoneId) {
+            alert('HAREKAT_SUBAYI için görev bölgesi seçilmelidir.');
+            return;
+        }
+
         const payload = {
             username: formData.username.trim(),
             password: formData.password,

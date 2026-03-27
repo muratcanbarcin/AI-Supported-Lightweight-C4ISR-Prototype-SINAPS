@@ -27,6 +27,7 @@ interface SystemLogItem {
 }
 
 export function SystemHealth() {
+    const FIVE_MINUTES_MS = 5 * 60 * 1000;
     const [metrics, setMetrics] = useState<SystemStatusResponse>({
         status: 'OFFLINE',
         activeUsers: 0,
@@ -44,29 +45,35 @@ export function SystemHealth() {
         checkedAt: new Date().toISOString()
     });
     const [logs, setLogs] = useState<SystemLogItem[]>([]);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null);
+
+    const checkHealth = async () => {
+        setIsRefreshing(true);
+        const start = Date.now();
+        try {
+            const [statusRes, servicesRes, logsRes] = await Promise.all([
+                api.get<SystemStatusResponse>('/admin/system-status'),
+                api.get<ServiceStatusResponse>('/admin/service-status'),
+                api.get<SystemLogItem[]>('/system-logs/recent', { params: { limit: 12 } })
+            ]);
+
+            setMetrics(statusRes.data);
+            setServices(servicesRes.data);
+            setLogs(logsRes.data);
+            setApiLatency(Date.now() - start);
+        } catch (err) {
+            setMetrics(prev => ({ ...prev, status: 'OFFLINE' }));
+            setApiLatency(0);
+        } finally {
+            setIsRefreshing(false);
+            setLastRefreshAt(new Date());
+        }
+    };
 
     useEffect(() => {
-        const checkHealth = async () => {
-            const start = Date.now();
-            try {
-                const [statusRes, servicesRes, logsRes] = await Promise.all([
-                    api.get<SystemStatusResponse>('/admin/system-status'),
-                    api.get<ServiceStatusResponse>('/admin/service-status'),
-                    api.get<SystemLogItem[]>('/system-logs/recent', { params: { limit: 12 } })
-                ]);
-
-                setMetrics(statusRes.data);
-                setServices(servicesRes.data);
-                setLogs(logsRes.data);
-                setApiLatency(Date.now() - start);
-            } catch (err) {
-                setMetrics(prev => ({ ...prev, status: 'OFFLINE' }));
-                setApiLatency(0);
-            }
-        };
-
         checkHealth();
-        const interval = setInterval(checkHealth, 3000);
+        const interval = setInterval(checkHealth, FIVE_MINUTES_MS);
         return () => clearInterval(interval);
     }, []);
 
@@ -90,10 +97,20 @@ export function SystemHealth() {
                     <i className="fa-solid fa-microchip text-9xl"></i>
                 </div>
 
-                <h3 className="text-white font-bold mb-6 flex items-center gap-2">
-                    <i className="fa-solid fa-gauge-high text-sky-500"></i>
-                    Gerçek Zamanlı Metrikler
-                </h3>
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-white font-bold flex items-center gap-2">
+                        <i className="fa-solid fa-gauge-high text-sky-500"></i>
+                        Gerçek Zamanlı Metrikler
+                    </h3>
+                    <button
+                        onClick={checkHealth}
+                        type="button"
+                        disabled={isRefreshing}
+                        className="px-3 py-1.5 text-xs font-bold rounded border border-sky-700 text-sky-300 hover:bg-sky-900/30 disabled:opacity-50"
+                    >
+                        {isRefreshing ? 'YENILENIYOR...' : 'MANUEL YENILE'}
+                    </button>
+                </div>
 
                 <div className="space-y-6 relative z-10">
                     {/* API Latency Meter (frontend -> backend round-trip) */}
@@ -133,10 +150,20 @@ export function SystemHealth() {
 
             {/* Service Status List */}
             <div className="bg-[#0f172a] border border-slate-800 rounded-lg p-6 shadow-xl">
-                <h3 className="text-white font-bold mb-6 flex items-center gap-2">
-                    <i className="fa-solid fa-network-wired text-emerald-500"></i>
-                    Servis Durumları
-                </h3>
+                <div className="flex items-center justify-between mb-6 gap-3">
+                    <h3 className="text-white font-bold flex items-center gap-2">
+                        <i className="fa-solid fa-network-wired text-emerald-500"></i>
+                        Servis Durumları
+                    </h3>
+                    <button
+                        onClick={checkHealth}
+                        type="button"
+                        disabled={isRefreshing}
+                        className="px-3 py-1.5 text-xs font-bold rounded border border-sky-700 text-sky-300 hover:bg-sky-900/30 disabled:opacity-50"
+                    >
+                        {isRefreshing ? 'YENILENIYOR...' : 'YENILE'}
+                    </button>
+                </div>
 
                 <div className="space-y-4">
                     <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded border border-slate-800">
@@ -179,6 +206,9 @@ export function SystemHealth() {
                         <StatusIndicator status={services.dockerEngine} />
                     </div>
                 </div>
+                <div className="mt-4 text-[11px] text-slate-500 font-mono">
+                    Son kontrol: {lastRefreshAt ? lastRefreshAt.toLocaleString('tr-TR') : '-'}
+                </div>
             </div>
 
             <div className="col-span-1 lg:col-span-2 bg-black border border-slate-800 rounded-lg p-4 font-mono text-xs h-40 overflow-hidden relative">
@@ -187,7 +217,7 @@ export function SystemHealth() {
                     {logs.length > 0 ? logs.map(log => (
                         <p key={log.id}>
                             <span className="text-emerald-500">[{log.eventType || 'INFO'}]</span>{' '}
-                            {new Date(log.createdAt).toISOString()} - {log.message || 'Mesaj yok'}
+                            {new Date(log.createdAt).toLocaleString('tr-TR')} - {log.message || 'Mesaj yok'}
                             {log.assetId ? ` (asset: ${log.assetId})` : ''}
                         </p>
                     )) : (
