@@ -529,6 +529,24 @@ public class TelemetryService {
     }
 
     /**
+     * Save telemetry and conditionally trigger AI analysis based on threat level.
+     * Used by SimulationEngine to route simulated data through the standard
+     * AI pipeline exactly like real hardware data.
+     *
+     * @param telemetry   The telemetry entity to save
+     * @param threatLevel "NORMAL", "SUSPICIOUS", or "CRITICAL"
+     * @return The saved telemetry entity
+     */
+    public Telemetry saveAndAnalyzeIfNeeded(Telemetry telemetry, String threatLevel) {
+        Telemetry saved = repository.save(telemetry);
+        if ("CRITICAL".equals(threatLevel) || "SUSPICIOUS".equals(threatLevel)) {
+            log.info("SimEngine AI trigger: {} — threat={}", saved.getSourceId(), threatLevel);
+            triggerAIAnalysis(saved);
+        }
+        return saved;
+    }
+
+    /**
      * Get all telemetry records.
      */
     public List<Telemetry> findAll() {

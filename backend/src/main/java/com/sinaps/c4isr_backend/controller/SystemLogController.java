@@ -30,6 +30,17 @@ public class SystemLogController {
     }
 
     /**
+     * Fetch ALL system logs (most recent first).
+     *
+     * GET /api/v1/system-logs
+     */
+    @GetMapping
+    public ResponseEntity<List<SystemLog>> getAllLogs() {
+        List<SystemLog> logs = systemLogRepository.findAllByOrderByCreatedAtDesc();
+        return ResponseEntity.ok(logs);
+    }
+
+    /**
      * Fetch all system logs for an asset (most recent first).
      *
      * GET /api/v1/system-logs/{assetId}
