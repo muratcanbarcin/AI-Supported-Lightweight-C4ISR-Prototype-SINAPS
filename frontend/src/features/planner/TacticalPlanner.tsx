@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { fetchLatestTelemetry, fetchZones, deployAsset } from '@/services/api';
-import type { TelemetryDTO, TacticalZone } from '@/types';
+import { fetchZones, deployAsset } from '@/services/api';
+import api from '@/services/api';
+import type { TacticalZone } from '@/types';
 
 // ─── Asset type icon/color mapping ──────────────────────────────────
 const TYPE_META: Record<string, { icon: string; color: string; label: string }> = {
@@ -50,7 +51,12 @@ function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id
 // ═════════════════════════════════════════════════════════════════════
 
 export function TacticalPlanner() {
-  const [assets, setAssets] = useState<TelemetryDTO[]>([]);
+  const [assets, setAssets] = useState<Array<{
+    id: number | string;
+    name: string;
+    type: 'DRONE' | 'VEHICLE' | 'SOLDIER' | 'SENSOR';
+    isSimulated: boolean;
+  }>>([]);
   const [zones, setZones] = useState<TacticalZone[]>([]);
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -73,8 +79,11 @@ export function TacticalPlanner() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [telemetry, zoneData] = await Promise.all([fetchLatestTelemetry(), fetchZones()]);
-      setAssets(telemetry);
+      const [assetData, zoneData] = await Promise.all([
+        api.get<Array<{ id: number | string; name: string; type: 'DRONE' | 'VEHICLE' | 'SOLDIER' | 'SENSOR'; isSimulated: boolean }>>('/assets'),
+        fetchZones()
+      ]);
+      setAssets(assetData.data);
       setZones(zoneData);
     } catch (err) {
       console.error('[TacticalPlanner] Failed to load data:', err);
@@ -89,8 +98,8 @@ export function TacticalPlanner() {
 
   // Filter available assets (exclude already deployed in this session)
   const availableAssets = assets.filter((a) => {
-    if (deployedIds.has(a.sourceId)) return false;
-    if (filterType !== 'ALL' && a.sourceType !== filterType) return false;
+    if (deployedIds.has(a.name)) return false;
+    if (filterType !== 'ALL' && a.type !== filterType) return false;
     return true;
   });
 
@@ -127,7 +136,7 @@ export function TacticalPlanner() {
     const assetId = e.dataTransfer.getData('text/plain');
     if (!assetId) return;
 
-    const asset = assets.find((a) => a.sourceId === assetId);
+    const asset = assets.find((a) => a.name === assetId);
     if (!asset) return;
 
     try {
@@ -233,13 +242,13 @@ export function TacticalPlanner() {
               </div>
             ) : (
               availableAssets.map((asset) => {
-                const meta = getTypeMeta(asset.sourceType);
-                const isDragging = draggedAssetId === asset.sourceId;
+                const meta = getTypeMeta(asset.type);
+                const isDragging = draggedAssetId === asset.name;
                 return (
                   <div
-                    key={asset.sourceId}
+                    key={asset.name}
                     draggable
-                    onDragStart={(e) => handleDragStart(e, asset.sourceId)}
+                    onDragStart={(e) => handleDragStart(e, asset.name)}
                     onDragEnd={handleDragEnd}
                     className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg border
                       cursor-grab active:cursor-grabbing transition-all select-none
@@ -259,26 +268,16 @@ export function TacticalPlanner() {
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="text-[11px] font-bold text-slate-200 font-mono truncate">
-                        {asset.sourceId}
+                        {asset.name}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[9px] font-bold uppercase tracking-wider"
                               style={{ color: meta.color }}>
                           {meta.label}
                         </span>
-                        {asset.batteryLevel !== null && (
-                          <span className={`text-[9px] font-mono ${
-                            asset.batteryLevel < 30 ? 'text-red-400' : 'text-slate-500'
-                          }`}>
-                            <i className="fa-solid fa-battery-half mr-0.5" />
-                            {asset.batteryLevel}%
-                          </span>
-                        )}
-                        {asset.speed !== null && asset.speed > 0 && (
-                          <span className="text-[9px] text-slate-500 font-mono">
-                            {asset.speed.toFixed(0)} m/s
-                          </span>
-                        )}
+                        <span className="text-[9px] text-slate-500 font-mono">
+                          #{asset.id}
+                        </span>
                       </div>
                     </div>
 

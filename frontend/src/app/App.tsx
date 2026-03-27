@@ -459,13 +459,33 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!isAdmin) {
-    return <Navigate to="/" replace />;
+    return <ForbiddenAdminAccess />;
   }
 
   return (
     <GlobalPoller>
       {children}
     </GlobalPoller>
+  );
+}
+
+function ForbiddenAdminAccess() {
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center p-6">
+      <div className="max-w-xl w-full border border-red-700/40 bg-red-950/20 rounded-xl p-8 text-center">
+        <div className="text-5xl font-black text-red-400 mb-2">403</div>
+        <h1 className="text-xl font-bold text-white mb-2">Yetkisiz Erişim</h1>
+        <p className="text-slate-300 text-sm mb-6">
+          Bu panel sadece KARARGAH_ADMIN rolüne açıktır.
+        </p>
+        <NavLink
+          to="/"
+          className="inline-block px-4 py-2 rounded bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm"
+        >
+          Ana Sayfaya Dön
+        </NavLink>
+      </div>
+    </div>
   );
 }
 
