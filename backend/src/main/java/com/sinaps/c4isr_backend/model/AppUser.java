@@ -37,4 +37,7 @@ public class AppUser {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;
+
+    @Column(name = "assigned_zone_id")
+    private String assignedZoneId;
 }

@@ -4,6 +4,7 @@ import com.sinaps.c4isr_backend.model.Task;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -33,4 +34,6 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
      * Find all tasks ordered by creation date (most recent first).
      */
     List<Task> findAllByOrderByCreatedAtDesc();
+
+    long countByStatusIn(Collection<String> statuses);
 }

@@ -1,14 +1,24 @@
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 import api from '@/services/api';
 
 interface User {
     id: string;
     username: string;
     role: 'KARARGAH_ADMIN' | 'ORDU_KOMUTANI' | 'HAREKAT_SUBAYI';
+    assignedZoneId?: string | null;
+}
+
+interface TacticalZone {
+    id: string;
+    name: string;
+    zoneType: 'BASE' | 'OPERATION_AREA';
 }
 
 export function UserManagement() {
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
     const [users, setUsers] = useState<User[]>([]);
+    const [zones, setZones] = useState<TacticalZone[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -17,11 +27,12 @@ export function UserManagement() {
     const [formData, setFormData] = useState({
         username: '',
         password: '',
-        role: 'HAREKAT_SUBAYI' as User['role']
+        role: 'HAREKAT_SUBAYI' as User['role'],
+        assignedZoneId: ''
     });
 
     useEffect(() => {
-        fetchUsers();
+        Promise.all([fetchUsers(), fetchZones()]);
     }, []);
 
     const fetchUsers = async () => {
@@ -35,17 +46,56 @@ export function UserManagement() {
         }
     };
 
+    const fetchZones = async () => {
+        try {
+            const res = await api.get<TacticalZone[]>('/zones');
+            setZones(res.data);
+        } catch (err) {
+            console.error('Failed to fetch zones', err);
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        const payload = {
+            username: formData.username.trim(),
+            password: formData.password,
+            role: formData.role,
+            assignedZoneId: formData.assignedZoneId || null
+        };
+
         try {
-            await api.post('/admin/users', formData);
-            setShowModal(false);
-            setFormData({ username: '', password: '', role: 'HAREKAT_SUBAYI' });
-            fetchUsers();
+            const token = localStorage.getItem('sinaps_auth_token');
+            const response = await axios.post('/api/v1/admin/users', payload, {
+                baseURL: API_BASE_URL.replace('/api/v1', ''),
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+
+            if (response.status >= 200 && response.status < 300) {
+                await fetchUsers();
+                setShowModal(false);
+                setFormData({ username: '', password: '', role: 'HAREKAT_SUBAYI', assignedZoneId: '' });
+                return;
+            }
+            alert('Kayıt Başarısız');
         } catch (err) {
             console.error('Failed to create user', err);
-            alert('Failed to register user');
+            alert('Kayıt Başarısız');
         }
+    };
+
+    const handleRoleChange = (role: User['role']) => {
+        setFormData(prev => ({
+            ...prev,
+            role,
+            assignedZoneId: role === 'HAREKAT_SUBAYI' ? prev.assignedZoneId : ''
+        }));
+    };
+
+    const getZoneName = (zoneId?: string | null) => {
+        if (!zoneId) return '-';
+        const zone = zones.find(z => z.id === zoneId);
+        return zone ? zone.name : zoneId;
     };
 
     const handleDeleteClick = (id: string) => {
@@ -57,7 +107,7 @@ export function UserManagement() {
         if (!userToDelete) return;
         try {
             await api.delete(`/admin/users/${userToDelete}`);
-            fetchUsers();
+            setUsers(prev => prev.filter(user => user.id !== userToDelete));
             setShowDeleteModal(false);
             setUserToDelete(null);
         } catch (err) {
@@ -93,7 +143,7 @@ export function UserManagement() {
                             <div className="flex justify-between items-start">
                                 <div>
                                     <h4 className="font-bold text-white text-sm">{user.username}</h4>
-                                    <div className="text-xs text-slate-400 font-mono mt-0.5">OPERATÖR</div>
+                                    <div className="text-xs text-slate-400 font-mono mt-0.5">{getZoneName(user.assignedZoneId)}</div>
                                 </div>
                                 <span className={`text-[9px] px-1.5 py-0.5 rounded border ${user.role === 'KARARGAH_ADMIN' ? 'border-amber-500/50 text-amber-500' : 'border-sky-500/50 text-sky-500'
                                     }`}>
@@ -132,10 +182,26 @@ export function UserManagement() {
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Sistem Rolü</label>
-                                <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value as User['role'] })} className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white">
+                                <select value={formData.role} onChange={e => handleRoleChange(e.target.value as User['role'])} className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white">
                                     <option value="KARARGAH_ADMIN">KARARGAH_ADMIN</option>
                                     <option value="ORDU_KOMUTANI">ORDU_KOMUTANI</option>
                                     <option value="HAREKAT_SUBAYI">HAREKAT_SUBAYI</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Görev Bölgesi (Assigned Zone)</label>
+                                <select
+                                    value={formData.assignedZoneId}
+                                    onChange={e => setFormData({ ...formData, assignedZoneId: e.target.value })}
+                                    disabled={formData.role !== 'HAREKAT_SUBAYI'}
+                                    className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <option value="">Seçiniz</option>
+                                    {zones.map(zone => (
+                                        <option key={zone.id} value={zone.id}>
+                                            {zone.name}
+                                        </option>
+                                    ))}
                                 </select>
                             </div>
                             <div className="pt-4 flex justify-end gap-3">

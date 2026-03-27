@@ -1,49 +1,67 @@
 import { useState, useEffect } from 'react';
 import api from '@/services/api';
 
+interface SystemStatusResponse {
+    status: string;
+    activeUsers: number;
+    totalAssets: number;
+    activeTasks: number;
+    totalZones: number;
+}
+
+interface ServiceStatusResponse {
+    backend: string;
+    database: string;
+    aiService: string;
+    mqttBroker: string;
+    dockerEngine: string;
+    checkedAt: string;
+}
+
+interface SystemLogItem {
+    id: number;
+    assetId: string | null;
+    eventType: string | null;
+    message: string | null;
+    createdAt: string;
+}
+
 export function SystemHealth() {
-    const [metrics, setMetrics] = useState({
-        apiLatency: 0,
-        dbStatus: 'Unknown',
-        uptime: '0h 0m',
-        memoryUsage: 0
+    const [metrics, setMetrics] = useState<SystemStatusResponse>({
+        status: 'OFFLINE',
+        activeUsers: 0,
+        totalAssets: 0,
+        activeTasks: 0,
+        totalZones: 0
     });
+    const [apiLatency, setApiLatency] = useState(0);
+    const [services, setServices] = useState<ServiceStatusResponse>({
+        backend: 'OFFLINE',
+        database: 'OFFLINE',
+        aiService: 'OFFLINE',
+        mqttBroker: 'OFFLINE',
+        dockerEngine: 'UNAVAILABLE',
+        checkedAt: new Date().toISOString()
+    });
+    const [logs, setLogs] = useState<SystemLogItem[]>([]);
 
     useEffect(() => {
         const checkHealth = async () => {
             const start = Date.now();
             try {
-                // Fetch real metrics from Actuator
-                const [healthRes, cpuRes, memRes] = await Promise.all([
-                    api.get('/actuator/health'),
-                    api.get('/actuator/metrics/system.cpu.usage'),
-                    api.get('/actuator/metrics/jvm.memory.used')
+                const [statusRes, servicesRes, logsRes] = await Promise.all([
+                    api.get<SystemStatusResponse>('/admin/system-status'),
+                    api.get<ServiceStatusResponse>('/admin/service-status'),
+                    api.get<SystemLogItem[]>('/system-logs/recent', { params: { limit: 12 } })
                 ]);
 
-                const end = Date.now();
-                const latency = end - start;
-
-                // Parse CPU Usage (0.0 to 1.0) -> Percentage
-                const cpuUsage = (cpuRes.data.measurements[0].value * 100).toFixed(1);
-
-                // Parse Memory Usage
-                const memUsed = memRes.data.measurements[0].value; // Bytes
-                const maxMem = 1024 * 1024 * 512; // Assuming ~512MB heap for prototype
-                const memPercentage = Math.min(Math.round((memUsed / maxMem) * 100), 100);
-
-                setMetrics({
-                    apiLatency: latency,
-                    dbStatus: healthRes.data.status === 'UP' ? 'CONNECTED' : 'ISSUES',
-                    uptime: 'ONLINE', // Actuator 'uptime' endpoint can also be added if needed
-                    memoryUsage: memPercentage
-                });
+                setMetrics(statusRes.data);
+                setServices(servicesRes.data);
+                setLogs(logsRes.data);
+                setApiLatency(Date.now() - start);
             } catch (err) {
-                setMetrics(prev => ({
-                    ...prev,
-                    apiLatency: 0,
-                    dbStatus: 'DISCONNECTED',
-                    uptime: 'OFFLINE'
-                }));
+                setMetrics(prev => ({ ...prev, status: 'OFFLINE' }));
+                setApiLatency(0);
             }
         };
 
@@ -53,7 +71,7 @@ export function SystemHealth() {
     }, []);
 
     const StatusIndicator = ({ status }: { status: string }) => {
-        const isGood = status === 'CONNECTED' || status === 'ONLINE';
+        const isGood = status === 'ONLINE';
         return (
             <span className={`px-2 py-1 rounded text-xs font-bold border ${isGood
                 ? 'bg-emerald-950/30 text-emerald-400 border-emerald-900/50'
@@ -78,31 +96,36 @@ export function SystemHealth() {
                 </h3>
 
                 <div className="space-y-6 relative z-10">
-                    {/* Latency Meter */}
+                    {/* API Latency Meter (frontend -> backend round-trip) */}
                     <div>
                         <div className="flex justify-between text-sm mb-2">
                             <span className="text-slate-400">API Gecikme Süresi (Latency)</span>
-                            <span className="text-sky-400 font-mono">{metrics.apiLatency}ms</span>
+                            <span className="text-sky-400 font-mono">{apiLatency}ms</span>
                         </div>
                         <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
                             <div
-                                className={`h-full transition-all duration-300 ${metrics.apiLatency < 100 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                                style={{ width: `${Math.min(metrics.apiLatency / 2, 100)}%` }} // Scale visualization
+                                className={`h-full transition-all duration-300 ${apiLatency > 0 && apiLatency < 150 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                                style={{ width: `${Math.min(apiLatency / 2, 100)}%` }}
                             ></div>
                         </div>
                     </div>
 
-                    {/* Memory Usage (Simulated) */}
-                    <div>
-                        <div className="flex justify-between text-sm mb-2">
-                            <span className="text-slate-400">Sunucu Bellek Kullanımı</span>
-                            <span className="text-indigo-400 font-mono">{metrics.memoryUsage}%</span>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="bg-slate-900/50 border border-slate-800 rounded p-3">
+                            <div className="text-slate-400">Toplam Kullanıcı</div>
+                            <div className="text-white font-bold text-lg">{metrics.activeUsers}</div>
                         </div>
-                        <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                            <div
-                                className="h-full bg-indigo-500 transition-all duration-500"
-                                style={{ width: `${metrics.memoryUsage}%` }}
-                            ></div>
+                        <div className="bg-slate-900/50 border border-slate-800 rounded p-3">
+                            <div className="text-slate-400">Toplam Varlık</div>
+                            <div className="text-white font-bold text-lg">{metrics.totalAssets}</div>
+                        </div>
+                        <div className="bg-slate-900/50 border border-slate-800 rounded p-3">
+                            <div className="text-slate-400">Aktif Görev</div>
+                            <div className="text-white font-bold text-lg">{metrics.activeTasks}</div>
+                        </div>
+                        <div className="bg-slate-900/50 border border-slate-800 rounded p-3">
+                            <div className="text-slate-400">Toplam Bölge</div>
+                            <div className="text-white font-bold text-lg">{metrics.totalZones}</div>
                         </div>
                     </div>
                 </div>
@@ -121,7 +144,7 @@ export function SystemHealth() {
                             <i className="fa-solid fa-database text-slate-500"></i>
                             <span className="text-slate-300 text-sm">PostgreSQL Veritabanı</span>
                         </div>
-                        <StatusIndicator status={metrics.dbStatus} />
+                        <StatusIndicator status={services.database} />
                     </div>
 
                     <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded border border-slate-800">
@@ -129,34 +152,47 @@ export function SystemHealth() {
                             <i className="fa-solid fa-server text-slate-500"></i>
                             <span className="text-slate-300 text-sm">Spring Boot Backend</span>
                         </div>
-                        <StatusIndicator status={metrics.apiLatency > 0 ? 'ONLINE' : 'OFFLINE'} />
+                        <StatusIndicator status={services.backend} />
+                    </div>
+
+                    <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded border border-slate-800">
+                        <div className="flex items-center gap-3">
+                            <i className="fa-solid fa-brain text-slate-500"></i>
+                            <span className="text-slate-300 text-sm">AI Service</span>
+                        </div>
+                        <StatusIndicator status={services.aiService} />
                     </div>
 
                     <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded border border-slate-800">
                         <div className="flex items-center gap-3">
                             <i className="fa-solid fa-tower-broadcast text-slate-500"></i>
-                            <span className="text-slate-300 text-sm">MQTT Broker (Mosquitto)</span>
+                            <span className="text-slate-300 text-sm">MQTT Broker Akışı</span>
                         </div>
-                        <StatusIndicator status="ONLINE" /> {/* Assuming online for prototype */}
+                        <StatusIndicator status={services.mqttBroker} />
                     </div>
 
                     <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded border border-slate-800">
                         <div className="flex items-center gap-3">
                             <i className="fa-brands fa-docker text-slate-500"></i>
-                            <span className="text-slate-300 text-sm">Container Health</span>
+                            <span className="text-slate-300 text-sm">Docker Engine</span>
                         </div>
-                        <StatusIndicator status="ONLINE" />
+                        <StatusIndicator status={services.dockerEngine} />
                     </div>
                 </div>
             </div>
 
-            {/* Logs Console */}
             <div className="col-span-1 lg:col-span-2 bg-black border border-slate-800 rounded-lg p-4 font-mono text-xs h-40 overflow-hidden relative">
                 <div className="absolute top-2 right-2 text-slate-600">SYSTEM.LOG</div>
                 <div className="space-y-1 text-slate-400">
-                    <p><span className="text-emerald-500">[INFO]</span> {new Date().toISOString()} - Sağlık taraması başlatıldı.</p>
-                    <p><span className="text-sky-500">[DEBUG]</span> {new Date().toISOString()} - Veritabanı bağlantısı doğrulandı (Latency: {metrics.apiLatency}ms).</p>
-                    <p><span className="text-emerald-500">[INFO]</span> {new Date().toISOString()} - Tüm servisler nominal değerlerde çalışıyor.</p>
+                    {logs.length > 0 ? logs.map(log => (
+                        <p key={log.id}>
+                            <span className="text-emerald-500">[{log.eventType || 'INFO'}]</span>{' '}
+                            {new Date(log.createdAt).toISOString()} - {log.message || 'Mesaj yok'}
+                            {log.assetId ? ` (asset: ${log.assetId})` : ''}
+                        </p>
+                    )) : (
+                        <p><span className="text-slate-500">[INFO]</span> Veritabaninda son sistem logu bulunamadi.</p>
+                    )}
                     <p className="animate-pulse">_</p>
                 </div>
             </div>

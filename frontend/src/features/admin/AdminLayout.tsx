@@ -15,7 +15,7 @@ export function AdminLayout() {
 
     const menuItems = [
         { path: '/admin/dashboard', icon: 'fa-chart-line', label: 'Panel' },
-        { path: '/admin/assets', icon: 'fa-layer-group', label: 'Envanter Yönetimi' },
+        { path: '/admin/assets', icon: 'fa-layer-group', label: 'Varlıklar' },
         { path: '/admin/users', icon: 'fa-users-gear', label: 'Personel' },
         { path: '/admin/system', icon: 'fa-server', label: 'Sistem Sağlığı' },
     ];

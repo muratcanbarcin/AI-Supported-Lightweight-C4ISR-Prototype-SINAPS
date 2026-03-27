@@ -148,4 +148,11 @@ public class MqttListenerService implements MqttCallback {
     public void deliveryComplete(IMqttDeliveryToken token) {
         // We are a subscriber, not a publisher
     }
+
+    /**
+     * Exposes MQTT broker connectivity for health/status APIs.
+     */
+    public boolean isBrokerConnected() {
+        return client != null && client.isConnected();
+    }
 }

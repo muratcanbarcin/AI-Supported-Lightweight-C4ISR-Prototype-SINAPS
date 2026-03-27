@@ -2,43 +2,46 @@ import { useState, useEffect } from 'react';
 import api from '@/services/api';
 import { useNavigate } from 'react-router-dom';
 
+interface SystemStatusResponse {
+    status: 'ONLINE' | 'OFFLINE' | string;
+    activeUsers: number;
+    totalAssets: number;
+    activeTasks: number;
+    totalZones: number;
+}
+
 export function AdminDashboard() {
     const navigate = useNavigate();
-    const [stats, setStats] = useState({
-        assetCount: 0,
-        userCount: 0,
-        systemStatus: 'ONLINE',
-        lastUpdate: new Date()
+    const [stats, setStats] = useState<SystemStatusResponse>({
+        status: 'OFFLINE',
+        activeUsers: 0,
+        totalAssets: 0,
+        activeTasks: 0,
+        totalZones: 0
     });
+    const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         fetchStats();
+        const interval = setInterval(fetchStats, 10000);
+        return () => clearInterval(interval);
     }, []);
 
     const fetchStats = async () => {
         try {
-            // Concurrent fetching for performance
-            const [assetsRes, usersRes] = await Promise.all([
-                api.get('/assets'),
-                api.get('/users')
-            ]);
-
-            setStats({
-                assetCount: assetsRes.data.length,
-                userCount: usersRes.data.length,
-                systemStatus: 'ONLINE',
-                lastUpdate: new Date()
-            });
+            const statusRes = await api.get<SystemStatusResponse>('/admin/system-status');
+            setStats(statusRes.data);
+            setLastUpdate(new Date());
         } catch (err) {
             console.error('Failed to fetch dashboard stats', err);
-            setStats(prev => ({ ...prev, systemStatus: 'OFFLINE' }));
+            setStats(prev => ({ ...prev, status: 'OFFLINE' }));
         } finally {
             setIsLoading(false);
         }
     };
 
-    const StatCard = ({ title, value, icon, color, onClick }: any) => (
+    const StatCard = ({ title, value, icon, color, onClick }: { title: string; value: string | number; icon: string; color: string; onClick: () => void }) => (
         <div
             onClick={onClick}
             className="bg-[#1e293b]/50 border border-slate-700/50 p-6 rounded-xl hover:border-sky-500/50 hover:bg-[#1e293b]/80 transition-all cursor-pointer group"
@@ -55,11 +58,11 @@ export function AdminDashboard() {
                 </div>
             </div>
             <div className="mt-4 flex items-center gap-2 text-xs">
-                <span className="text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-900/50">
-                    <i className="fa-solid fa-arrow-up mr-1"></i>
-                    AKTİF
-                </span>
-                <span className="text-slate-500">Son güncelleme: {stats.lastUpdate.toLocaleTimeString()}</span>
+                {lastUpdate ? (
+                    <span className="text-slate-500">Son güncelleme: {lastUpdate.toLocaleTimeString()}</span>
+                ) : (
+                    <span className="text-slate-500">Henüz güncelleme yok</span>
+                )}
             </div>
         </div>
     );
@@ -76,24 +79,31 @@ export function AdminDashboard() {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatCard
                     title="Toplam Varlık"
-                    value={stats.assetCount}
+                    value={stats.totalAssets}
                     icon="fa-plane"
                     color="sky"
                     onClick={() => navigate('/admin/assets')}
                 />
                 <StatCard
                     title="Personel Sayısı"
-                    value={stats.userCount}
+                    value={stats.activeUsers}
                     icon="fa-users"
                     color="indigo"
                     onClick={() => navigate('/admin/users')}
                 />
                 <StatCard
+                    title="Aktif Görev"
+                    value={stats.activeTasks}
+                    icon="fa-list-check"
+                    color="amber"
+                    onClick={() => navigate('/tasks')}
+                />
+                <StatCard
                     title="Sistem Durumu"
-                    value={stats.systemStatus}
+                    value={stats.status}
                     icon="fa-server"
                     color="emerald"
                     onClick={() => navigate('/admin/system')}

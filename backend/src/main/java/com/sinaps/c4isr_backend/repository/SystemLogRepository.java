@@ -33,4 +33,6 @@ public interface SystemLogRepository extends JpaRepository<SystemLog, Long> {
      * Find all logs ordered by creation date (most recent first).
      */
     List<SystemLog> findAllByOrderByCreatedAtDesc();
+
+    List<SystemLog> findTop50ByOrderByCreatedAtDesc();
 }

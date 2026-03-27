@@ -41,6 +41,20 @@ public class SystemLogController {
     }
 
     /**
+     * Fetch recent system logs across all assets.
+     * GET /api/v1/system-logs/recent?limit=20
+     */
+    @GetMapping("/recent")
+    public ResponseEntity<List<SystemLog>> getRecentLogs(@RequestParam(defaultValue = "20") int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 50));
+        List<SystemLog> logs = systemLogRepository.findTop50ByOrderByCreatedAtDesc();
+        if (logs.size() > safeLimit) {
+            return ResponseEntity.ok(logs.subList(0, safeLimit));
+        }
+        return ResponseEntity.ok(logs);
+    }
+
+    /**
      * Create a new system log entry.
      *
      * POST /api/v1/system-logs
