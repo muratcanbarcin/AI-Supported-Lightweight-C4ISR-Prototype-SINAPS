@@ -5,8 +5,6 @@ import type { LoginRequest, LoginResponse, AuthState } from '@/types';
  * Authentication Service
  * 
  * Handles login/logout operations with the Spring Boot backend.
- * Note: If AuthController is not yet implemented in the backend,
- * this will fall back to mock authentication for development.
  */
 
 const AUTH_ENDPOINT = '/auth';
@@ -19,47 +17,17 @@ export const AUTH_RANK_KEY = 'sinaps_auth_rank';
  * @returns Login response with token and user info
  */
 export async function login(credentials: LoginRequest): Promise<LoginResponse> {
-  try {
-    const response = await api.post<LoginResponse>(`${AUTH_ENDPOINT}/login`, credentials);
+  const response = await api.post<LoginResponse>(`${AUTH_ENDPOINT}/login`, credentials);
+  const { token, username, role } = response.data;
 
-    const { token, username } = response.data;
+  // Store auth data in localStorage
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+  localStorage.setItem(AUTH_USER_KEY, JSON.stringify({ username, role }));
+  localStorage.setItem(AUTH_ROLES_KEY, JSON.stringify([role]));
+  localStorage.removeItem(AUTH_FULLNAME_KEY);
+  localStorage.removeItem(AUTH_RANK_KEY);
 
-    // Store auth data in localStorage
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-    localStorage.setItem(AUTH_USER_KEY, username);
-    if (response.data.roles) {
-      localStorage.setItem(AUTH_ROLES_KEY, JSON.stringify(response.data.roles));
-    }
-    if (response.data.fullName) {
-      localStorage.setItem(AUTH_FULLNAME_KEY, response.data.fullName);
-    }
-    if (response.data.rank) {
-      localStorage.setItem(AUTH_RANK_KEY, response.data.rank);
-    }
-
-    return response.data;
-  } catch (error) {
-    // If backend auth is not available, use mock authentication for dev
-    console.warn('[AuthService] Backend auth not available, using mock auth');
-
-    // Mock authentication - accept any credentials for development
-    const mockToken = `mock_jwt_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    const mockResponse: LoginResponse = {
-      token: mockToken,
-      username: credentials.username,
-      roles: ['ROLE_ADMIN'],
-      fullName: 'Test User',
-      rank: 'Yüzbaşı',
-    };
-
-    localStorage.setItem(AUTH_TOKEN_KEY, mockToken);
-    localStorage.setItem(AUTH_USER_KEY, credentials.username);
-    localStorage.setItem(AUTH_ROLES_KEY, JSON.stringify(mockResponse.roles));
-    localStorage.setItem(AUTH_FULLNAME_KEY, mockResponse.fullName || '');
-    localStorage.setItem(AUTH_RANK_KEY, mockResponse.rank || '');
-
-    return mockResponse;
-  }
+  return response.data;
 }
 
 /**
@@ -81,12 +49,20 @@ export function logout(): void {
  */
 export function getAuthState(): AuthState {
   const token = localStorage.getItem(AUTH_TOKEN_KEY);
-  const username = localStorage.getItem(AUTH_USER_KEY);
+  const rawUser = localStorage.getItem(AUTH_USER_KEY);
+  let user: AuthState['user'] = null;
+  if (rawUser) {
+    try {
+      user = JSON.parse(rawUser);
+    } catch {
+      user = null;
+    }
+  }
 
   return {
     isAuthenticated: !!token,
     token,
-    username
+    user
   };
 }
 
@@ -101,7 +77,15 @@ export function isAuthenticated(): boolean {
  * Get stored username
  */
 export function getUsername(): string | null {
-  return localStorage.getItem(AUTH_USER_KEY);
+  try {
+    const user = localStorage.getItem(AUTH_USER_KEY);
+    if (!user) {
+      return null;
+    }
+    return JSON.parse(user).username ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -133,8 +117,15 @@ export function getRoles(): string[] {
  * Check if user has admin privileges
  */
 export function isAdmin(): boolean {
-  const roles = getRoles();
-  return roles.includes('ROLE_ADMIN') || roles.includes('ROLE_COMMANDER');
+  try {
+    const user = localStorage.getItem(AUTH_USER_KEY);
+    if (!user) {
+      return false;
+    }
+    return JSON.parse(user).role === 'KARARGAH_ADMIN';
+  } catch {
+    return false;
+  }
 }
 
 export default {

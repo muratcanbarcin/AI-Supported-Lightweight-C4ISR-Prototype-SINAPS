@@ -2,13 +2,9 @@ import { useState, useEffect } from 'react';
 import api from '@/services/api';
 
 interface User {
-    id: number;
+    id: string;
     username: string;
-    fullName: string;
-    rank: string;
-    role: 'ROLE_ADMIN' | 'ROLE_USER' | 'ROLE_COMMANDER';
-    active: boolean;
-    lastLogin: string;
+    role: 'KARARGAH_ADMIN' | 'ORDU_KOMUTANI' | 'HAREKAT_SUBAYI';
 }
 
 export function UserManagement() {
@@ -16,14 +12,12 @@ export function UserManagement() {
     const [isLoading, setIsLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
-    const [userToDelete, setUserToDelete] = useState<number | null>(null);
+    const [userToDelete, setUserToDelete] = useState<string | null>(null);
 
     const [formData, setFormData] = useState({
         username: '',
         password: '',
-        fullName: '',
-        rank: 'Private',
-        role: 'ROLE_USER'
+        role: 'HAREKAT_SUBAYI' as User['role']
     });
 
     useEffect(() => {
@@ -32,7 +26,7 @@ export function UserManagement() {
 
     const fetchUsers = async () => {
         try {
-            const res = await api.get<User[]>('/users');
+            const res = await api.get<User[]>('/admin/users');
             setUsers(res.data);
         } catch (err) {
             console.error('Failed to fetch users', err);
@@ -44,9 +38,9 @@ export function UserManagement() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await api.post('/users', formData);
+            await api.post('/admin/users', formData);
             setShowModal(false);
-            setFormData({ username: '', password: '', fullName: '', rank: 'Private', role: 'ROLE_USER' });
+            setFormData({ username: '', password: '', role: 'HAREKAT_SUBAYI' });
             fetchUsers();
         } catch (err) {
             console.error('Failed to create user', err);
@@ -54,7 +48,7 @@ export function UserManagement() {
         }
     };
 
-    const handleDeleteClick = (id: number) => {
+    const handleDeleteClick = (id: string) => {
         setUserToDelete(id);
         setShowDeleteModal(true);
     };
@@ -62,7 +56,7 @@ export function UserManagement() {
     const confirmDelete = async () => {
         if (!userToDelete) return;
         try {
-            await api.delete(`/users/${userToDelete}`);
+            await api.delete(`/admin/users/${userToDelete}`);
             fetchUsers();
             setShowDeleteModal(false);
             setUserToDelete(null);
@@ -98,12 +92,12 @@ export function UserManagement() {
                         <div className="flex-1">
                             <div className="flex justify-between items-start">
                                 <div>
-                                    <h4 className="font-bold text-white text-sm">{user.fullName || user.username}</h4>
-                                    <div className="text-xs text-slate-400 font-mono mt-0.5">{user.rank}</div>
+                                    <h4 className="font-bold text-white text-sm">{user.username}</h4>
+                                    <div className="text-xs text-slate-400 font-mono mt-0.5">OPERATÖR</div>
                                 </div>
-                                <span className={`text-[9px] px-1.5 py-0.5 rounded border ${user.role === 'ROLE_ADMIN' ? 'border-amber-500/50 text-amber-500' : 'border-sky-500/50 text-sky-500'
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded border ${user.role === 'KARARGAH_ADMIN' ? 'border-amber-500/50 text-amber-500' : 'border-sky-500/50 text-sky-500'
                                     }`}>
-                                    {user.role.replace('ROLE_', '')}
+                                    {user.role}
                                 </span>
                             </div>
                             <div className="mt-3 flex justify-between items-center">
@@ -129,18 +123,8 @@ export function UserManagement() {
                         <h3 className="text-lg font-bold text-white mb-6">Yeni Personel Yetkilendirme</h3>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
-                                <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Ad Soyad</label>
-                                <input required value={formData.fullName} onChange={e => setFormData({ ...formData, fullName: e.target.value })} className="input-field w-full bg-slate-800 border border-slate-600 rounded p-2 text-white" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Kullanıcı Adı (Sicil No)</label>
-                                    <input required value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} className="input-field w-full bg-slate-800 border border-slate-600 rounded p-2 text-white" />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Rütbe</label>
-                                    <input required value={formData.rank} onChange={e => setFormData({ ...formData, rank: e.target.value })} className="input-field w-full bg-slate-800 border border-slate-600 rounded p-2 text-white" />
-                                </div>
+                                <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Kullanıcı Adı (Sicil No)</label>
+                                <input required value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} className="input-field w-full bg-slate-800 border border-slate-600 rounded p-2 text-white" />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Başlangıç Şifresi</label>
@@ -148,10 +132,10 @@ export function UserManagement() {
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Sistem Rolü</label>
-                                <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value as any })} className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white">
-                                    <option value="ROLE_USER">OPERATÖR (Standart)</option>
-                                    <option value="ROLE_ADMIN">YÖNETİCİ (Tam Erişim)</option>
-                                    <option value="ROLE_COMMANDER">KOMUTAN (Sadece Okuma)</option>
+                                <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value as User['role'] })} className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white">
+                                    <option value="KARARGAH_ADMIN">KARARGAH_ADMIN</option>
+                                    <option value="ORDU_KOMUTANI">ORDU_KOMUTANI</option>
+                                    <option value="HAREKAT_SUBAYI">HAREKAT_SUBAYI</option>
                                 </select>
                             </div>
                             <div className="pt-4 flex justify-end gap-3">

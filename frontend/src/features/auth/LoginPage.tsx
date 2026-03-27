@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import authService from '@/services/authService';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/features/auth/AuthContext';
 
-interface LoginPageProps {
-    onLogin: () => void;
-}
-
-export function LoginPage({ onLogin }: LoginPageProps) {
+export function LoginPage() {
+    const navigate = useNavigate();
+    const { login } = useAuth();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -17,12 +16,12 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         setError(null);
         
         try {
-            // Attempt real authentication via authService
-            await authService.login({ username, password });
-            onLogin();
+            await login({ username, password });
+            navigate('/', { replace: true });
         } catch (err) {
             console.error('[LoginPage] Authentication error:', err);
             setError('Kimlik doğrulama başarısız. Lütfen tekrar deneyin.');
+        } finally {
             setIsLoading(false);
         }
     };

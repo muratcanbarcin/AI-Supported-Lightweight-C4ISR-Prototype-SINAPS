@@ -87,7 +87,11 @@ api.interceptors.response.use(
           console.warn('[API] Unauthorized - Token may be expired');
           localStorage.removeItem(AUTH_TOKEN_KEY);
           localStorage.removeItem(AUTH_USER_KEY);
+          localStorage.removeItem(AUTH_ROLES_KEY);
           window.dispatchEvent(new CustomEvent('auth:logout'));
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
           break;
         case 403:
           console.warn('[API] Forbidden - Insufficient permissions');

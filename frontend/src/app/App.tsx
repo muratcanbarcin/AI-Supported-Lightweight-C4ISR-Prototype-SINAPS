@@ -33,6 +33,7 @@ import { AnalysisPage } from '@/features/analysis/pages/AnalysisPage';
 import { TacticalPlanner } from '@/features/planner/TacticalPlanner';
 import { ProfilePage } from '@/features/profile/pages/ProfilePage';
 import { LoginPage } from '@/features/auth/LoginPage';
+import { useAuth } from '@/features/auth/AuthContext';
 import { AdminLayout } from '@/features/admin/AdminLayout';
 import { AssetRegistry } from '@/features/admin/AssetRegistry';
 import { UserManagement } from '@/features/admin/UserManagement';
@@ -41,7 +42,6 @@ import { SystemHealth } from '@/features/admin/SystemHealth';
 
 // Services
 import { checkHealth, fetchLatestTelemetry } from '@/services/api';
-import authService from '@/services/authService';
 
 // Types
 import type { ConnectionStatus, AlertItem, Telemetry } from '@/types';
@@ -77,6 +77,7 @@ export function useGlobalState() {
 // =============================================================================
 
 function GlobalPoller({ children }: { children: React.ReactNode }) {
+  const { logout, isAuthenticated } = useAuth();
   const { alerts, connectionStatus: alertsConnectionStatus } = useAlerts({
     pollingInterval: 5000,
     enabled: true,
@@ -101,11 +102,8 @@ function GlobalPoller({ children }: { children: React.ReactNode }) {
           connectionStatus,
           alerts,
           alertCount: alerts.length,
-          isAuthenticated: true,
-          logout: () => {
-            authService.logout();
-            window.location.href = '/login';
-          },
+          isAuthenticated,
+          logout,
         }}
       >
         {children}
@@ -435,16 +433,10 @@ function MapViewWrapper({ onOpenProfile }: { onOpenProfile: (id: string) => void
 // =============================================================================
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
-
-  useEffect(() => {
-    const handleLogout = () => setIsAuthenticated(false);
-    window.addEventListener('auth:logout', handleLogout);
-    return () => window.removeEventListener('auth:logout', handleLogout);
-  }, []);
+  const { isAuthenticated } = useAuth();
 
   if (!isAuthenticated) {
-    return <LoginPage onLogin={() => setIsAuthenticated(true)} />;
+    return <Navigate to="/login" replace />;
   }
 
   return (
@@ -459,17 +451,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 // =============================================================================
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
-  const [isAdmin, setIsAdmin] = useState(authService.isAdmin());
-
-  useEffect(() => {
-    const handleLogout = () => {
-      setIsAuthenticated(false);
-      setIsAdmin(false);
-    };
-    window.addEventListener('auth:logout', handleLogout);
-    return () => window.removeEventListener('auth:logout', handleLogout);
-  }, []);
+  const { isAuthenticated, user } = useAuth();
+  const isAdmin = user?.role === 'KARARGAH_ADMIN';
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -495,34 +478,25 @@ export function App() {
     <BrowserRouter>
       <Routes>
         {/* Login Route (public) */}
-        <Route
-          path="/login"
-          element={
-            <LoginPage
-              onLogin={() => {
-                window.location.href = '/';
-              }}
-            />
-          }
-        />
+        <Route path="/login" element={<LoginPage />} />
 
         {/* Admin Panel Routes */}
         <Route
-          path="/admin/*"
+          path="/admin"
           element={
             <AdminRoute>
-              <Routes>
-                <Route element={<AdminLayout />}>
-                  <Route path="dashboard" element={<AdminDashboard />} />
-                  <Route path="assets" element={<AssetRegistry />} />
-                  <Route path="users" element={<UserManagement />} />
-                  <Route path="system" element={<SystemHealth />} />
-                  <Route index element={<Navigate to="dashboard" />} />
-                </Route>
-              </Routes>
+              <GlobalPoller>
+                <AdminLayout />
+              </GlobalPoller>
             </AdminRoute>
           }
-        />
+        >
+          <Route path="dashboard" element={<AdminDashboard />} />
+          <Route path="assets" element={<AssetRegistry />} />
+          <Route path="users" element={<UserManagement />} />
+          <Route path="system" element={<SystemHealth />} />
+          <Route index element={<Navigate to="dashboard" replace />} />
+        </Route>
 
         {/* All other routes are protected */}
         <Route

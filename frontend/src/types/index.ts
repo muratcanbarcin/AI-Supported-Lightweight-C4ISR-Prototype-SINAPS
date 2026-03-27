@@ -241,15 +241,16 @@ export interface LoginRequest {
 export interface LoginResponse {
   token: string;
   username: string;
-  roles?: string[];
-  fullName?: string;
-  rank?: string;
+  role: 'KARARGAH_ADMIN' | 'ORDU_KOMUTANI' | 'HAREKAT_SUBAYI';
 }
 
 export interface AuthState {
   isAuthenticated: boolean;
   token: string | null;
-  username: string | null;
+  user: {
+    username: string;
+    role: 'KARARGAH_ADMIN' | 'ORDU_KOMUTANI' | 'HAREKAT_SUBAYI';
+  } | null;
 }
 
 // =============================================================================

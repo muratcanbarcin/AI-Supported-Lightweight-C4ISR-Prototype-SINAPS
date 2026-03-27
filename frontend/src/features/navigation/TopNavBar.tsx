@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import authService from '@/services/authService';
+import { useAuth } from '@/features/auth/AuthContext';
 
 /**
  * Route configuration for navigation tabs
@@ -19,6 +19,7 @@ const navItems = [
 export function TopNavBar() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { logout, user } = useAuth();
 
   // Determine active path - check if current path starts with nav item path
   const isActive = (path: string) => {
@@ -35,7 +36,7 @@ export function TopNavBar() {
   };
 
   const handleLogout = () => {
-    authService.logout();
+    logout();
     navigate('/login');
   };
 
@@ -55,7 +56,7 @@ export function TopNavBar() {
         <ul className="flex items-center gap-1 bg-slate-800/30 p-1 rounded-sm border border-slate-700/30 backdrop-blur-md">
 
           {(() => {
-            const isAdmin = authService.isAdmin();
+            const isAdmin = user?.role === 'KARARGAH_ADMIN';
             const displayItems = [...navItems];
             if (isAdmin) {
               displayItems.push({ path: '/admin', label: 'YÖNETİM' });

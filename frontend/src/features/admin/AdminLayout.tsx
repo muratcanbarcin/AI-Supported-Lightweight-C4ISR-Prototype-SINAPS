@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import authService from '@/services/authService';
+import { useAuth } from '@/features/auth/AuthContext';
 
 export function AdminLayout() {
     const navigate = useNavigate();
     const location = useLocation();
+    const { logout } = useAuth();
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
     const handleLogout = () => {
-        authService.logout();
+        logout();
         navigate('/login');
     };
 
