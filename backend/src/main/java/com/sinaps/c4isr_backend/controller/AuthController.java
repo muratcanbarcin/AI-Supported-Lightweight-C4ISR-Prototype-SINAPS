@@ -2,17 +2,16 @@ package com.sinaps.c4isr_backend.controller;
 
 import com.sinaps.c4isr_backend.dto.LoginRequest;
 import com.sinaps.c4isr_backend.dto.LoginResponse;
-import com.sinaps.c4isr_backend.model.User;
-import com.sinaps.c4isr_backend.repository.UserRepository;
+import com.sinaps.c4isr_backend.model.AppUser;
+import com.sinaps.c4isr_backend.repository.AppUserRepository;
+import com.sinaps.c4isr_backend.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.Optional;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -20,34 +19,22 @@ import java.util.UUID;
 @CrossOrigin(origins = "*")
 public class AuthController {
 
-    private final UserRepository userRepository;
+    private final AppUserRepository appUserRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-        Optional<User> userOpt = userRepository.findByUsername(request.getUsername());
+        Optional<AppUser> userOpt = appUserRepository.findByUsername(request.getUsername());
 
         if (userOpt.isPresent()) {
-            User user = userOpt.get();
-
-            // Check if user is active
-            if (!user.isActive()) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Account is deactivated");
-            }
-
-            // Plain text password check (prototype)
-            if (user.getPassword().equals(request.getPassword())) {
-                String token = UUID.randomUUID().toString();
-
-                // Update last login timestamp
-                user.setLastLogin(LocalDateTime.now());
-                userRepository.save(user);
-
+            AppUser user = userOpt.get();
+            if (passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+                String token = jwtUtil.generateToken(user);
                 return ResponseEntity.ok(LoginResponse.builder()
                         .token(token)
                         .username(user.getUsername())
-                        .roles(Collections.singletonList(user.getRole().name()))
-                        .fullName(user.getFullName())
-                        .rank(user.getRank())
+                        .role(user.getRole().name())
                         .build());
             }
         }
