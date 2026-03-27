@@ -2,7 +2,6 @@ package com.sinaps.c4isr_backend.controller;
 
 import com.sinaps.c4isr_backend.dto.DeployRequest;
 import com.sinaps.c4isr_backend.model.Task;
-import com.sinaps.c4isr_backend.repository.TaskRepository;
 import com.sinaps.c4isr_backend.service.TaskService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -21,19 +20,12 @@ public class TaskController {
 
     private static final Logger log = LoggerFactory.getLogger(TaskController.class);
 
-    private final TaskRepository taskRepository;
     private final TaskService taskService;
 
     @GetMapping
     public ResponseEntity<List<Task>> getAllTasks(
             @RequestParam(required = false) String assetId) {
-
-        List<Task> tasks;
-        if (assetId != null && !assetId.isBlank()) {
-            tasks = taskRepository.findByAssetIdOrderByCreatedAtDesc(assetId);
-        } else {
-            tasks = taskRepository.findAllByOrderByCreatedAtDesc();
-        }
+        List<Task> tasks = taskService.getAllTasks(assetId);
         return ResponseEntity.ok(tasks);
     }
 
@@ -42,7 +34,7 @@ public class TaskController {
         if (task.getStatus() == null || task.getStatus().isBlank()) {
             task.setStatus("PENDING");
         }
-        Task saved = taskRepository.save(task);
+        Task saved = taskService.createTask(task);
         return ResponseEntity.ok(saved);
     }
 

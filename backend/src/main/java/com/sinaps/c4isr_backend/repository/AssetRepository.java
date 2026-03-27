@@ -16,5 +16,7 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
 
     List<Asset> findByIsSimulated(Boolean isSimulated);
 
+    List<Asset> findByAssignedZoneId(String assignedZoneId);
+
     boolean existsByName(String name);
 }

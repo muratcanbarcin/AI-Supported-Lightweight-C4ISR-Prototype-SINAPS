@@ -34,6 +34,8 @@ public interface TelemetryRepository extends JpaRepository<Telemetry, Long> {
      */
     Optional<Telemetry> findTopBySourceIdOrderByTimestampDesc(String sourceId);
 
+    long deleteBySourceId(String sourceId);
+
     /**
      * Get the latest telemetry for each unique source (for map display).
      * Uses a subquery to find the max timestamp per source.

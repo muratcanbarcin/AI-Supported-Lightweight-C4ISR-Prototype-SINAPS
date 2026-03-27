@@ -1,15 +1,17 @@
 package com.sinaps.c4isr_backend.controller;
 
+import com.sinaps.c4isr_backend.dto.AssetRegistrationRequest;
 import com.sinaps.c4isr_backend.model.Asset;
 import com.sinaps.c4isr_backend.model.SystemLog;
 import com.sinaps.c4isr_backend.model.Telemetry;
-import com.sinaps.c4isr_backend.repository.AssetRepository;
 import com.sinaps.c4isr_backend.repository.SystemLogRepository;
 import com.sinaps.c4isr_backend.repository.TelemetryRepository;
+import com.sinaps.c4isr_backend.service.AssetService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -40,24 +42,35 @@ public class AssetController {
 
     private static final Logger log = LoggerFactory.getLogger(AssetController.class);
 
+    private final AssetService assetService;
     private final TelemetryRepository telemetryRepository;
     private final SystemLogRepository systemLogRepository;
-    private final AssetRepository assetRepository;
 
     @GetMapping
     public List<Asset> getAllAssets() {
-        return assetRepository.findAll();
+        return assetService.getAllAssets();
     }
 
     @PostMapping
-    public Asset createAsset(@RequestBody Asset asset) {
-        return assetRepository.save(asset);
+    @PreAuthorize("hasRole('KARARGAH_ADMIN')")
+    public ResponseEntity<?> createAsset(@RequestBody AssetRegistrationRequest request) {
+        try {
+            Asset createdAsset = assetService.registerAsset(request);
+            return ResponseEntity.ok(createdAsset);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteAsset(@PathVariable Long id) {
-        assetRepository.deleteById(id);
-        return ResponseEntity.ok().build();
+    @PreAuthorize("hasRole('KARARGAH_ADMIN')")
+    public ResponseEntity<?> deleteAsset(@PathVariable String id) {
+        try {
+            assetService.deleteAssetByIdentifier(id);
+            return ResponseEntity.ok().build();
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
     }
 
     /**

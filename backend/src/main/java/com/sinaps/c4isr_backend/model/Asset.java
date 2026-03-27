@@ -41,6 +41,9 @@ public class Asset {
     @Column(name = "is_simulated", nullable = false)
     private Boolean isSimulated = true;
 
+    @Column(name = "assigned_zone_id")
+    private String assignedZoneId;
+
     @PrePersist
     protected void onCreate() {
         if (inventoryStatus == null) {

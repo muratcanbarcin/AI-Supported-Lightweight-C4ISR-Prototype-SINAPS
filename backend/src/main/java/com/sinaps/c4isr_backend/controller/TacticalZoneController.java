@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,12 +28,14 @@ public class TacticalZoneController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('KARARGAH_ADMIN')")
     public TacticalZone createZone(@RequestBody TacticalZone zone) {
         log.info("Creating tactical zone: {} ({})", zone.getName(), zone.getZoneType());
         return zoneRepository.save(zone);
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('KARARGAH_ADMIN')")
     public ResponseEntity<?> deleteZone(@PathVariable UUID id) {
         if (!zoneRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
@@ -43,6 +46,7 @@ public class TacticalZoneController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('KARARGAH_ADMIN')")
     public ResponseEntity<TacticalZone> updateZone(@PathVariable UUID id, @RequestBody TacticalZone updated) {
         return zoneRepository.findById(id)
                 .map(zone -> {
