@@ -14,12 +14,12 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,18 +36,23 @@ public class AssetService {
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
     public List<Asset> getAllAssets() {
-        AppUser currentUser = getCurrentAppUser();
+        String currentUsername = SecurityContextHolder.getContext().getAuthentication().getName();
+        AppUser currentUser = appUserRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // STRICT DATA ISOLATION
         if (currentUser.getRole() == Role.KARARGAH_ADMIN) {
             return assetRepository.findAll();
         }
-        if (currentUser.getRole() == Role.HAREKAT_SUBAYI) {
-            String zoneId = currentUser.getAssignedZoneId();
-            if (zoneId == null || zoneId.isBlank()) {
-                return List.of();
+        if (currentUser.getRole() == Role.HAREKAT_SUBAYI || currentUser.getRole() == Role.ORDU_KOMUTANI) {
+            String assignedZoneId = currentUser.getAssignedZoneId();
+            // If user has no assigned zone, they can see nothing.
+            if (assignedZoneId == null || assignedZoneId.isBlank()) {
+                return Collections.emptyList();
             }
-            return assetRepository.findByAssignedZoneId(zoneId);
+            return assetRepository.findByAssignedZoneId(assignedZoneId);
         }
-        return List.of();
+        return Collections.emptyList();
     }
 
     @Transactional
@@ -58,8 +63,10 @@ public class AssetService {
         if (request.getType() == null) {
             throw new IllegalArgumentException("type is required");
         }
-        if (request.getInitialLatitude() == null || request.getInitialLongitude() == null) {
-            throw new IllegalArgumentException("initialLatitude and initialLongitude are required");
+        Double latitude = request.getLatitude() != null ? request.getLatitude() : request.getInitialLatitude();
+        Double longitude = request.getLongitude() != null ? request.getLongitude() : request.getInitialLongitude();
+        if (latitude == null || longitude == null) {
+            throw new IllegalArgumentException("latitude/longitude (or initialLatitude/initialLongitude) are required");
         }
 
         String normalizedAssetId = request.getId().trim();
@@ -75,12 +82,11 @@ public class AssetService {
                 .build();
         Asset savedAsset = assetRepository.save(asset);
 
-        Point location = geometryFactory.createPoint(
-                new Coordinate(request.getInitialLongitude(), request.getInitialLatitude())
-        );
+        Point location = geometryFactory.createPoint(new Coordinate(longitude, latitude));
         Map<String, Object> initialPayload = new HashMap<>();
         initialPayload.put("status", "IDLE");
-        initialPayload.put("isSimulated", true);
+        initialPayload.put("is_simulated", savedAsset.getIsSimulated());
+        initialPayload.put("battery", 100);
 
         Telemetry initialTelemetry = Telemetry.builder()
                 .sourceId(savedAsset.getName())
@@ -112,20 +118,10 @@ public class AssetService {
             throw new IllegalArgumentException("Asset not found: " + assetIdentifier);
         }
 
-        telemetryRepository.deleteBySourceId(asset.getName());
+        // Delete child records first to avoid FK violations.
+        telemetryRepository.deleteByAssetId(asset.getName());
         taskRepository.deleteByAssetId(asset.getName());
-        assetRepository.delete(asset);
-    }
-
-    private AppUser getCurrentAppUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new IllegalStateException("No authenticated user found");
-        }
-
-        String username = authentication.getName();
-        return appUserRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalStateException("Authenticated user not found: " + username));
+        assetRepository.deleteById(asset.getId());
     }
 
     private String normalizeNullable(String value) {

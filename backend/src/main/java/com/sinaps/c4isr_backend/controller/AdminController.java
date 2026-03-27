@@ -92,13 +92,18 @@ public class AdminController {
         }
 
         try {
-            AppUser user = AppUser.builder()
-                    .username(normalizedUsername)
-                    // BCrypt is explicitly applied before persistence.
-                    .password(passwordEncoder.encode(normalizedPassword))
-                    .role(request.getRole())
-                    .assignedZoneId(assignedZoneId)
-                    .build();
+            AppUser user = new AppUser();
+            user.setUsername(normalizedUsername);
+            // BCrypt is explicitly applied before persistence.
+            user.setPassword(passwordEncoder.encode(normalizedPassword));
+            user.setRole(request.getRole());
+            // CRITICAL: Persist assignedZoneId from DTO.
+            user.setAssignedZoneId(assignedZoneId);
+
+            log.info("Creating user={} role={} assignedZoneId={}",
+                    normalizedUsername,
+                    request.getRole(),
+                    assignedZoneId);
 
             AppUser savedUser = appUserRepository.save(user);
             return ResponseEntity.ok(savedUser);

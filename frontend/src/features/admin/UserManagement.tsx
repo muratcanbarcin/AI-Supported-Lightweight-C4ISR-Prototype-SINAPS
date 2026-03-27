@@ -63,12 +63,21 @@ export function UserManagement() {
             return;
         }
 
+        const normalizedAssignedZoneId = formData.role === 'HAREKAT_SUBAYI'
+            ? formData.assignedZoneId?.trim()
+            : '';
+        if (formData.role === 'HAREKAT_SUBAYI' && !normalizedAssignedZoneId) {
+            alert('Görev bölgesi seçimi zorunludur. Bölge listesi yüklenmediyse sayfayı yenileyin.');
+            return;
+        }
+
         const payload = {
             username: formData.username.trim(),
             password: formData.password,
             role: formData.role,
-            assignedZoneId: formData.assignedZoneId || null
+            assignedZoneId: normalizedAssignedZoneId || null
         };
+        console.log("Sending User:", payload);
 
         try {
             const token = localStorage.getItem('sinaps_auth_token');

@@ -8,6 +8,8 @@ public class AssetRegistrationRequest {
     private String id;
     private AssetType type;
     private Boolean isSimulated;
+    private Double latitude;
+    private Double longitude;
     private Double initialLatitude;
     private Double initialLongitude;
     private String assignedZoneId;
