@@ -2,6 +2,7 @@ package com.sinaps.c4isr_backend.controller;
 
 import com.sinaps.c4isr_backend.model.TacticalZone;
 import com.sinaps.c4isr_backend.repository.TacticalZoneRepository;
+import com.sinaps.c4isr_backend.service.TacticalZoneService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,10 +22,11 @@ public class TacticalZoneController {
     private static final Logger log = LoggerFactory.getLogger(TacticalZoneController.class);
 
     private final TacticalZoneRepository zoneRepository;
+    private final TacticalZoneService tacticalZoneService;
 
     @GetMapping
     public List<TacticalZone> getAllZones() {
-        return zoneRepository.findAll();
+        return tacticalZoneService.getAllZones();
     }
 
     @PostMapping

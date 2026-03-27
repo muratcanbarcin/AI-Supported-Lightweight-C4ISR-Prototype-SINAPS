@@ -55,7 +55,7 @@ public class AssetController {
     @PreAuthorize("hasRole('KARARGAH_ADMIN')")
     public ResponseEntity<?> createAsset(@RequestBody AssetRegistrationRequest request) {
         try {
-            Asset createdAsset = assetService.registerAsset(request);
+            Asset createdAsset = assetService.createAsset(request);
             return ResponseEntity.ok(createdAsset);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
@@ -66,7 +66,7 @@ public class AssetController {
     @PreAuthorize("hasRole('KARARGAH_ADMIN')")
     public ResponseEntity<?> deleteAsset(@PathVariable String id) {
         try {
-            assetService.deleteAssetByIdentifier(id);
+            assetService.deleteAsset(id);
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));

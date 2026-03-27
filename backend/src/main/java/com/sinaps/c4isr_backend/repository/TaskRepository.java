@@ -37,5 +37,7 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
 
     List<Task> findByZoneIdOrderByCreatedAtDesc(String zoneId);
 
+    long deleteByAssetId(String assetId);
+
     long countByStatusIn(Collection<String> statuses);
 }

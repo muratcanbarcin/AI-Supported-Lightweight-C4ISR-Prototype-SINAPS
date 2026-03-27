@@ -35,12 +35,13 @@ export function AssetRegistry() {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [deleteInProgressId, setDeleteInProgressId] = useState<string | null>(null);
+    const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [formData, setFormData] = useState({
         id: '',
         type: 'DRONE' as InventoryAsset['type'],
         isSimulated: true,
-        initialLatitude: '',
-        initialLongitude: '',
+        latitude: '',
+        longitude: '',
         assignedZoneId: '',
     });
 
@@ -105,8 +106,10 @@ export function AssetRegistry() {
                 id: formData.id.trim(),
                 type: formData.type,
                 isSimulated: formData.isSimulated,
-                initialLatitude: Number(formData.initialLatitude),
-                initialLongitude: Number(formData.initialLongitude),
+                latitude: Number(formData.latitude),
+                longitude: Number(formData.longitude),
+                initialLatitude: Number(formData.latitude),
+                initialLongitude: Number(formData.longitude),
                 assignedZoneId: formData.assignedZoneId || null,
             });
             setShowCreateModal(false);
@@ -114,14 +117,15 @@ export function AssetRegistry() {
                 id: '',
                 type: 'DRONE',
                 isSimulated: true,
-                initialLatitude: '',
-                initialLongitude: '',
+                latitude: '',
+                longitude: '',
                 assignedZoneId: '',
             });
             await fetchAssets();
+            setToast({ type: 'success', message: 'Birlik başarıyla eklendi.' });
         } catch (err) {
             console.error('Failed to create asset', err);
-            alert('Birlik kaydı başarısız');
+            setToast({ type: 'error', message: 'Kayıt Başarısız' });
         } finally {
             setIsSubmitting(false);
         }
@@ -135,10 +139,11 @@ export function AssetRegistry() {
         setDeleteInProgressId(identifier);
         try {
             await api.delete(`/assets/${encodeURIComponent(identifier)}`);
-            await fetchAssets();
+            setAssets(prev => prev.filter(a => String(a.name || a.id) !== identifier));
+            setToast({ type: 'success', message: `${identifier} silindi.` });
         } catch (err) {
             console.error('Failed to delete asset', err);
-            alert('Silme işlemi başarısız');
+            setToast({ type: 'error', message: 'Silme işlemi başarısız' });
         } finally {
             setDeleteInProgressId(null);
         }
@@ -155,6 +160,14 @@ export function AssetRegistry() {
 
     return (
         <div className="space-y-6">
+            {toast && (
+                <div className={`rounded border px-3 py-2 text-sm font-semibold ${toast.type === 'success'
+                    ? 'bg-emerald-900/30 border-emerald-600/50 text-emerald-300'
+                    : 'bg-red-900/30 border-red-600/50 text-red-300'
+                    }`}>
+                    {toast.message}
+                </div>
+            )}
             <div className="flex justify-between items-center bg-[#1e293b]/50 p-4 rounded-lg border border-slate-700/50">
                 <span className="text-slate-400 font-mono text-xs uppercase tracking-widest">
                     VARLIKLAR / GERCEK ZAMANLI BACKEND VERISI
@@ -291,8 +304,8 @@ export function AssetRegistry() {
                                         required
                                         type="number"
                                         step="0.000001"
-                                        value={formData.initialLatitude}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, initialLatitude: e.target.value }))}
+                                        value={formData.latitude}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, latitude: e.target.value }))}
                                         className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white"
                                     />
                                 </div>
@@ -302,8 +315,8 @@ export function AssetRegistry() {
                                         required
                                         type="number"
                                         step="0.000001"
-                                        value={formData.initialLongitude}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, initialLongitude: e.target.value }))}
+                                        value={formData.longitude}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, longitude: e.target.value }))}
                                         className="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white"
                                     />
                                 </div>

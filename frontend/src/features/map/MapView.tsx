@@ -11,6 +11,7 @@ import { UnitDetailsModal } from './components/UnitDetailsModal';
 import { AIAnalysisPanel } from './components/AIAnalysisPanel';
 import { ConnectionWarning } from '@/features/control/ConnectionWarning';
 import { useAssets } from '@/hooks/useAssets';
+import { useAuth } from '@/features/auth/AuthContext';
 import type { AssetSummary, MapAsset, DisplayAssetType, MiddlewareClassification } from '@/types';
 import './MapView.css';
 
@@ -151,6 +152,9 @@ interface MapViewProps {
 }
 
 export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
+  const { user } = useAuth();
+  const roleValue = user?.role as string | undefined;
+  const canDrawZone = roleValue === 'KARARGAH_ADMIN' || roleValue === 'ROLE_KARARGAH_ADMIN';
   const { userLocation, locationError } = useUserLocation();
   const mapCenter = userLocation || DEFAULT_CENTER;
 
@@ -249,28 +253,32 @@ export function MapView({ onOpenProfile, focusedAssetId }: MapViewProps) {
         onToggle={() => setIsAnalysisPanelOpen(!isAnalysisPanelOpen)}
       />
 
-      {/* Zone Draw Mode Toggle (left side to avoid AI panel overlap on right) */}
-      <button
-        onClick={() => setZoneDrawMode(!zoneDrawMode)}
-        className={`absolute top-4 left-4 z-[1000] flex items-center gap-2 px-3 py-2
-          rounded-lg text-[11px] font-bold border shadow-lg backdrop-blur-sm transition-all
-          ${zoneDrawMode
-            ? 'bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse'
-            : 'bg-slate-900/80 border-slate-700/50 text-slate-400 hover:border-slate-500 hover:text-slate-300'
-          }`}
-      >
-        <i className={`fa-solid ${zoneDrawMode ? 'fa-xmark' : 'fa-draw-polygon'} text-xs`} />
-        {zoneDrawMode ? 'Çizim Modundan Çık' : 'Alan Çizim Modu'}
-      </button>
+      {/* Zone Draw Mode Toggle (Admin only) */}
+      {canDrawZone && (
+        <>
+          <button
+            onClick={() => setZoneDrawMode(!zoneDrawMode)}
+            className={`absolute top-4 left-4 z-[1000] flex items-center gap-2 px-3 py-2
+              rounded-lg text-[11px] font-bold border shadow-lg backdrop-blur-sm transition-all
+              ${zoneDrawMode
+                ? 'bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse'
+                : 'bg-slate-900/80 border-slate-700/50 text-slate-400 hover:border-slate-500 hover:text-slate-300'
+              }`}
+          >
+            <i className={`fa-solid ${zoneDrawMode ? 'fa-xmark' : 'fa-draw-polygon'} text-xs`} />
+            {zoneDrawMode ? 'Çizim Modundan Çık' : 'Alan Çizim Modu'}
+          </button>
 
-      {zoneDrawMode && (
-        <div className="absolute top-14 left-4 z-[1000] bg-slate-900/90 backdrop-blur-sm
-          border border-amber-500/30 rounded-lg px-3 py-1.5 shadow-lg">
-          <span className="text-[10px] text-amber-400 font-mono">
-            <i className="fa-solid fa-crosshairs mr-1.5" />
-            Haritada bir noktaya tıklayın
-          </span>
-        </div>
+          {zoneDrawMode && (
+            <div className="absolute top-14 left-4 z-[1000] bg-slate-900/90 backdrop-blur-sm
+              border border-amber-500/30 rounded-lg px-3 py-1.5 shadow-lg">
+              <span className="text-[10px] text-amber-400 font-mono">
+                <i className="fa-solid fa-crosshairs mr-1.5" />
+                Haritada bir noktaya tıklayın
+              </span>
+            </div>
+          )}
+        </>
       )}
 
       {/* Classification Legend */}

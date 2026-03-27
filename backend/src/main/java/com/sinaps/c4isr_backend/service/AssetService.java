@@ -7,6 +7,7 @@ import com.sinaps.c4isr_backend.model.Role;
 import com.sinaps.c4isr_backend.model.Telemetry;
 import com.sinaps.c4isr_backend.repository.AppUserRepository;
 import com.sinaps.c4isr_backend.repository.AssetRepository;
+import com.sinaps.c4isr_backend.repository.TaskRepository;
 import com.sinaps.c4isr_backend.repository.TelemetryRepository;
 import lombok.RequiredArgsConstructor;
 import org.locationtech.jts.geom.Coordinate;
@@ -29,6 +30,7 @@ public class AssetService {
 
     private final AssetRepository assetRepository;
     private final TelemetryRepository telemetryRepository;
+    private final TaskRepository taskRepository;
     private final AppUserRepository appUserRepository;
 
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
@@ -38,16 +40,18 @@ public class AssetService {
         if (currentUser.getRole() == Role.KARARGAH_ADMIN) {
             return assetRepository.findAll();
         }
-
-        String zoneId = currentUser.getAssignedZoneId();
-        if (zoneId == null || zoneId.isBlank()) {
-            return List.of();
+        if (currentUser.getRole() == Role.HAREKAT_SUBAYI) {
+            String zoneId = currentUser.getAssignedZoneId();
+            if (zoneId == null || zoneId.isBlank()) {
+                return List.of();
+            }
+            return assetRepository.findByAssignedZoneId(zoneId);
         }
-        return assetRepository.findByAssignedZoneId(zoneId);
+        return List.of();
     }
 
     @Transactional
-    public Asset registerAsset(AssetRegistrationRequest request) {
+    public Asset createAsset(AssetRegistrationRequest request) {
         if (request.getId() == null || request.getId().isBlank()) {
             throw new IllegalArgumentException("id is required");
         }
@@ -76,7 +80,7 @@ public class AssetService {
         );
         Map<String, Object> initialPayload = new HashMap<>();
         initialPayload.put("status", "IDLE");
-        initialPayload.put("registered_by", "admin");
+        initialPayload.put("isSimulated", true);
 
         Telemetry initialTelemetry = Telemetry.builder()
                 .sourceId(savedAsset.getName())
@@ -94,7 +98,7 @@ public class AssetService {
     }
 
     @Transactional
-    public void deleteAssetByIdentifier(String assetIdentifier) {
+    public void deleteAsset(String assetIdentifier) {
         Asset asset = assetRepository.findByName(assetIdentifier).orElse(null);
         if (asset == null) {
             try {
@@ -109,6 +113,7 @@ public class AssetService {
         }
 
         telemetryRepository.deleteBySourceId(asset.getName());
+        taskRepository.deleteByAssetId(asset.getName());
         assetRepository.delete(asset);
     }
 

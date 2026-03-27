@@ -164,12 +164,17 @@ export function TacticalPlanner() {
   }, [loadData]);
 
   // ─── Derived data ──────────────────────────────────────────────────
-  const availableAssets = assets.filter((a) => {
+  const availableUnits = assets.filter((a) => {
     const status = getStatus(a);
     const isAvailable = !status || status === 'IDLE' || status === 'ONLINE' || status === 'PATROL';
-    if (!isAvailable) return false;
-    if (filterType !== 'ALL' && a.sourceType !== filterType) return false;
-    return true;
+    return isAvailable;
+  });
+  const filteredAvailableUnits = availableUnits.filter((a) => (
+    filterType === 'ALL' || a.sourceType === filterType
+  ));
+  const deployedUnits = assets.filter((a) => {
+    const s = getStatus(a);
+    return s === 'EN_ROUTE' || s === 'IN_MISSION';
   });
 
   const operationZones = zones.filter((z) => z.zoneType === 'OPERATION_AREA');
@@ -183,11 +188,6 @@ export function TacticalPlanner() {
   }, [assets]);
 
   // ─── Count helpers ─────────────────────────────────────────────────
-  const deployedCount = assets.filter((a) => {
-    const s = getStatus(a);
-    return s === 'EN_ROUTE' || s === 'IN_MISSION';
-  }).length;
-
   const idleAtBaseCount = assets.filter((a) => {
     const s = getStatus(a);
     const zId = getDeploymentZoneId(a);
@@ -359,12 +359,12 @@ export function TacticalPlanner() {
           {/* Stats */}
           <div className="flex items-center gap-4">
             <div className="text-center px-3">
-              <div className="text-xl font-black text-sky-400">{availableAssets.length}</div>
+              <div className="text-xl font-black text-sky-400">{availableUnits.length}</div>
               <div className="text-[9px] text-slate-500 uppercase tracking-wider">Hazır Birim</div>
             </div>
             <div className="w-px h-8 bg-slate-700" />
             <div className="text-center px-3">
-              <div className="text-xl font-black text-amber-400">{deployedCount}</div>
+              <div className="text-xl font-black text-amber-400">{deployedUnits.length}</div>
               <div className="text-[9px] text-slate-500 uppercase tracking-wider">Sevk Edilen</div>
             </div>
             <div className="w-px h-8 bg-slate-700" />
@@ -393,7 +393,7 @@ export function TacticalPlanner() {
                 <i className="fa-solid fa-layer-group mr-2 text-sky-500" />
                 Hazır Birimler
               </h2>
-              <span className="text-[10px] text-slate-600 font-mono">{availableAssets.length} adet</span>
+              <span className="text-[10px] text-slate-600 font-mono">{availableUnits.length} adet</span>
             </div>
             {/* Type filter */}
             <div className="flex gap-1">
@@ -415,13 +415,13 @@ export function TacticalPlanner() {
 
           {/* Asset cards */}
           <div className="flex-1 overflow-y-auto p-3 space-y-1.5 scrollbar-thin">
-            {availableAssets.length === 0 ? (
+            {filteredAvailableUnits.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-slate-600">
                 <i className="fa-solid fa-inbox text-2xl mb-2" />
                 <span className="text-xs">Uygun birim yok</span>
               </div>
             ) : (
-              availableAssets.map((asset) => {
+              filteredAvailableUnits.map((asset) => {
                 const meta = getTypeMeta(asset.sourceType);
                 const isDragging = draggedAssetId === asset.sourceId;
                 return (
