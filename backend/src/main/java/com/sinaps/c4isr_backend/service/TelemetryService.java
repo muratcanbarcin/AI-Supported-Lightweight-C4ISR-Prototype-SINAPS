@@ -47,6 +47,8 @@ public class TelemetryService {
     private final TelemetryRepository repository;
     private final TacticalAnalysisRepository analysisRepository;
     private final AIServiceClient aiServiceClient;
+    private final com.sinaps.c4isr_backend.repository.AppUserRepository appUserRepository;
+    private final com.sinaps.c4isr_backend.repository.AssetRepository assetRepository;
     private final ObjectMapper objectMapper;
     private final GeometryFactory geometryFactory;
 
@@ -54,11 +56,15 @@ public class TelemetryService {
     public TelemetryService(
             TelemetryRepository repository,
             TacticalAnalysisRepository analysisRepository,
-            AIServiceClient aiServiceClient
+            AIServiceClient aiServiceClient,
+            com.sinaps.c4isr_backend.repository.AppUserRepository appUserRepository,
+            com.sinaps.c4isr_backend.repository.AssetRepository assetRepository
     ) {
         this.repository = repository;
         this.analysisRepository = analysisRepository;
         this.aiServiceClient = aiServiceClient;
+        this.appUserRepository = appUserRepository;
+        this.assetRepository = assetRepository;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         // SRID 4326: WGS84 GPS Coordinate System
@@ -470,7 +476,40 @@ public class TelemetryService {
      * Used for displaying current positions on the map.
      */
     public List<Telemetry> getLatestTelemetry() {
-        return repository.findLatestTelemetryBySource();
+        List<Telemetry> allLatest = repository.findLatestTelemetryBySource();
+
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getName().equals("anonymousUser")) {
+            return java.util.Collections.emptyList();
+        }
+
+        String currentUsername = auth.getName();
+        com.sinaps.c4isr_backend.model.AppUser currentUser = appUserRepository.findByUsername(currentUsername).orElse(null);
+
+        if (currentUser == null) return java.util.Collections.emptyList();
+
+        if (currentUser.getRole() == com.sinaps.c4isr_backend.model.Role.KARARGAH_ADMIN) {
+            return allLatest;
+        }
+
+        if (currentUser.getRole() == com.sinaps.c4isr_backend.model.Role.HAREKAT_SUBAYI || 
+            currentUser.getRole() == com.sinaps.c4isr_backend.model.Role.ORDU_KOMUTANI) {
+            String assignedZoneId = currentUser.getAssignedZoneId();
+            if (assignedZoneId == null || assignedZoneId.isBlank()) {
+                return java.util.Collections.emptyList();
+            }
+
+            List<com.sinaps.c4isr_backend.model.Asset> userAssets = assetRepository.findByAssignedZoneId(assignedZoneId);
+            java.util.Set<String> allowedAssetIds = userAssets.stream()
+                    .map(com.sinaps.c4isr_backend.model.Asset::getName)
+                    .collect(java.util.stream.Collectors.toSet());
+
+            return allLatest.stream()
+                    .filter(t -> allowedAssetIds.contains(t.getSourceId()))
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        return java.util.Collections.emptyList();
     }
 
     /**

@@ -123,9 +123,9 @@ export function AssetRegistry() {
             });
             await fetchAssets();
             setToast({ type: 'success', message: 'Birlik başarıyla eklendi.' });
-        } catch (err) {
-            console.error('Failed to create asset', err);
-            setToast({ type: 'error', message: 'Kayıt Başarısız' });
+        } catch (err: any) {
+            console.error('Failed to create asset', err?.response?.data || err);
+            setToast({ type: 'error', message: 'Kayıt Başarısız: ' + (err?.response?.data?.error || err.message) });
         } finally {
             setIsSubmitting(false);
         }

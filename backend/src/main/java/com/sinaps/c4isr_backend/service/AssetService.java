@@ -28,6 +28,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AssetService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(AssetService.class);
+
     private final AssetRepository assetRepository;
     private final TelemetryRepository telemetryRepository;
     private final TaskRepository taskRepository;
@@ -57,50 +59,58 @@ public class AssetService {
 
     @Transactional
     public Asset createAsset(AssetRegistrationRequest request) {
-        if (request.getId() == null || request.getId().isBlank()) {
-            throw new IllegalArgumentException("id is required");
+        log.info("createAsset called with request: {}", request);
+        try {
+            if (request.getId() == null || request.getId().isBlank()) {
+                throw new IllegalArgumentException("id is required");
+            }
+            if (request.getType() == null) {
+                throw new IllegalArgumentException("type is required");
+            }
+            Double latitude = request.getLatitude() != null ? request.getLatitude() : request.getInitialLatitude();
+            Double longitude = request.getLongitude() != null ? request.getLongitude() : request.getInitialLongitude();
+            if (latitude == null || longitude == null) {
+                throw new IllegalArgumentException("latitude/longitude (or initialLatitude/initialLongitude) are required");
+            }
+
+            String normalizedAssetId = request.getId().trim();
+            if (assetRepository.existsByName(normalizedAssetId)) {
+                throw new IllegalArgumentException("Asset id already exists: " + normalizedAssetId);
+            }
+
+            Asset asset = Asset.builder()
+                    .name(normalizedAssetId)
+                    .type(request.getType())
+                    .isSimulated(request.getIsSimulated() == null ? Boolean.TRUE : request.getIsSimulated())
+                    .assignedZoneId(normalizeNullable(request.getAssignedZoneId()))
+                    .build();
+            Asset savedAsset = assetRepository.save(asset);
+            log.info("Asset saved successfully with id: {}", savedAsset.getId());
+
+            Point location = geometryFactory.createPoint(new Coordinate(longitude, latitude));
+            Map<String, Object> initialPayload = new HashMap<>(); // Standard Map without nesting strings
+            initialPayload.put("status", "IDLE");
+            initialPayload.put("is_simulated", savedAsset.getIsSimulated());
+            initialPayload.put("battery", 100);
+
+            Telemetry initialTelemetry = Telemetry.builder()
+                    .sourceId(savedAsset.getName())
+                    .sourceType(savedAsset.getType())
+                    .timestamp(LocalDateTime.now())
+                    .location(location)
+                    .altitude(0.0)
+                    .speed(0.0)
+                    .batteryLevel(100)
+                    .payload(initialPayload)
+                    .build();
+            telemetryRepository.save(initialTelemetry);
+            log.info("Initial telemetry saved successfully for asset: {}", savedAsset.getName());
+
+            return savedAsset;
+        } catch (Exception e) {
+            log.error("Failed to create asset: {}", e.getMessage(), e);
+            throw e;
         }
-        if (request.getType() == null) {
-            throw new IllegalArgumentException("type is required");
-        }
-        Double latitude = request.getLatitude() != null ? request.getLatitude() : request.getInitialLatitude();
-        Double longitude = request.getLongitude() != null ? request.getLongitude() : request.getInitialLongitude();
-        if (latitude == null || longitude == null) {
-            throw new IllegalArgumentException("latitude/longitude (or initialLatitude/initialLongitude) are required");
-        }
-
-        String normalizedAssetId = request.getId().trim();
-        if (assetRepository.existsByName(normalizedAssetId)) {
-            throw new IllegalArgumentException("Asset id already exists: " + normalizedAssetId);
-        }
-
-        Asset asset = Asset.builder()
-                .name(normalizedAssetId)
-                .type(request.getType())
-                .isSimulated(request.getIsSimulated() == null ? Boolean.TRUE : request.getIsSimulated())
-                .assignedZoneId(normalizeNullable(request.getAssignedZoneId()))
-                .build();
-        Asset savedAsset = assetRepository.save(asset);
-
-        Point location = geometryFactory.createPoint(new Coordinate(longitude, latitude));
-        Map<String, Object> initialPayload = new HashMap<>();
-        initialPayload.put("status", "IDLE");
-        initialPayload.put("is_simulated", savedAsset.getIsSimulated());
-        initialPayload.put("battery", 100);
-
-        Telemetry initialTelemetry = Telemetry.builder()
-                .sourceId(savedAsset.getName())
-                .sourceType(savedAsset.getType())
-                .timestamp(LocalDateTime.now())
-                .location(location)
-                .altitude(0.0)
-                .speed(0.0)
-                .batteryLevel(100)
-                .payload(initialPayload)
-                .build();
-        telemetryRepository.save(initialTelemetry);
-
-        return savedAsset;
     }
 
     @Transactional
