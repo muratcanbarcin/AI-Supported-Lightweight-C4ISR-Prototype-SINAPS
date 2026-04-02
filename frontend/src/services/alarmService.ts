@@ -8,15 +8,15 @@ import type { AlertItem, AlarmDTO, Severity } from '@/types';
  * Maps AlarmDTO to frontend AlertItem format.
  */
 
-const ALARMS_ENDPOINT = '/alarms';
+const ALARMS_ENDPOINT = '/alerts';
 
 /**
- * Fetch active alarms from backend
- * Endpoint: GET /api/v1/alarms/active
+ * Fetch active (unacknowledged) alarms from backend
+ * Endpoint: GET /api/v1/alerts/unacknowledged
  */
 export async function getActiveAlarms(): Promise<AlarmDTO[]> {
   try {
-    const response = await api.get<AlarmDTO[]>(`${ALARMS_ENDPOINT}/active`);
+    const response = await api.get<AlarmDTO[]>(`${ALARMS_ENDPOINT}/unacknowledged`);
     return response.data;
   } catch (error) {
     if (isConnectionError(error)) {
@@ -32,7 +32,7 @@ export async function getActiveAlarms(): Promise<AlarmDTO[]> {
 
 /**
  * Acknowledge an alarm
- * Endpoint: POST /api/v1/alarms/{id}/acknowledge
+ * Endpoint: POST /api/v1/alerts/{id}/acknowledge
  */
 export async function acknowledgeAlarm(alarmId: string): Promise<void> {
   await api.post(`${ALARMS_ENDPOINT}/${alarmId}/acknowledge`);
@@ -40,7 +40,7 @@ export async function acknowledgeAlarm(alarmId: string): Promise<void> {
 
 /**
  * Get alarm statistics
- * Endpoint: GET /api/v1/alarms/stats
+ * Endpoint: GET /api/v1/alerts/stats
  */
 export async function getAlarmStats(): Promise<{ critical: number; warning: number; info: number }> {
   try {

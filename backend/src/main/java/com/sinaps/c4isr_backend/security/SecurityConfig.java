@@ -27,9 +27,26 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/login").permitAll()
-                        .requestMatchers("/api/v1/assets/**").authenticated()
+                        // Public: authentication
+                        .requestMatchers("/api/v1/auth/**").permitAll()
+                        // Public: telemetry (read by dashboard, map, health-check)
+                        .requestMatchers("/api/v1/telemetry/**").permitAll()
+                        // Public: alerts & alarms
+                        .requestMatchers("/api/v1/alerts/**").permitAll()
+                        .requestMatchers("/api/v1/alarms/**").permitAll()
+                        // Public: tactical data feeds
+                        .requestMatchers("/api/v1/zones/**").permitAll()
+                        .requestMatchers("/api/v1/tasks/**").permitAll()
+                        .requestMatchers("/api/v1/analysis/**").permitAll()
+                        .requestMatchers("/api/v1/system-logs/**").permitAll()
+                        .requestMatchers("/api/v1/ai/**").permitAll()
+                        .requestMatchers("/api/v1/ai-analyses/**").permitAll()
+                        .requestMatchers("/api/v1/chats/**").permitAll()
+                        // Public: asset reads
+                        .requestMatchers("/api/v1/assets/**").permitAll()
+                        // Restricted: admin panel
                         .requestMatchers("/api/v1/admin/**").hasRole("KARARGAH_ADMIN")
+                        // Everything else requires authentication
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
