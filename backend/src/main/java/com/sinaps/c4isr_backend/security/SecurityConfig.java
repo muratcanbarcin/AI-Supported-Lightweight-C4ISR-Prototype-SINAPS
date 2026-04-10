@@ -27,6 +27,10 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Public: Swagger UI & OpenAPI docs
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/v3/api-docs/**").permitAll()
+                        .requestMatchers("/swagger-resources/**").permitAll()
                         // Public: authentication
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         // Public: telemetry (read by dashboard, map, health-check)
