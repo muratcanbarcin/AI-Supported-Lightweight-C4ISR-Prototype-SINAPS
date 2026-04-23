@@ -17,8 +17,7 @@ import java.time.LocalDateTime;
 public class Asset {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private String id;
 
     @Column(nullable = false, unique = true)
     private String name; // e.g., "TB2-001"

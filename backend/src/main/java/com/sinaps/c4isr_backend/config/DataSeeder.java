@@ -6,9 +6,12 @@ import com.sinaps.c4isr_backend.repository.AppUserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Component;
 
-@Component
+/**
+ * @deprecated Replaced by {@link DatabaseSeeder} for production-grade demo seeding.
+ * Kept for reference only. Remove @Component to prevent duplicate seeding.
+ */
+// @Component — DISABLED: Use DatabaseSeeder instead
 @RequiredArgsConstructor
 public class DataSeeder implements CommandLineRunner {
 
@@ -17,14 +20,7 @@ public class DataSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (appUserRepository.count() == 0) {
-            AppUser admin = AppUser.builder()
-                    .username("admin")
-                    .password(passwordEncoder.encode("admin123"))
-                    .role(Role.KARARGAH_ADMIN)
-                    .build();
-
-            appUserRepository.save(admin);
-        }
+        // NO-OP: Superseded by DatabaseSeeder
     }
 }
+

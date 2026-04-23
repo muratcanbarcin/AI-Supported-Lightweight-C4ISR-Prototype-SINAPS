@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface AssetRepository extends JpaRepository<Asset, Long> {
+public interface AssetRepository extends JpaRepository<Asset, String> {
     Optional<Asset> findByName(String name);
 
     List<Asset> findByType(AssetType type);

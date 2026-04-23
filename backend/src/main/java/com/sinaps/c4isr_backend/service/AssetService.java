@@ -115,18 +115,10 @@ public class AssetService {
 
     @Transactional
     public void deleteAsset(String assetIdentifier) {
-        Asset asset = assetRepository.findByName(assetIdentifier).orElse(null);
-        if (asset == null) {
-            try {
-                Long numericId = Long.parseLong(assetIdentifier);
-                asset = assetRepository.findById(numericId).orElse(null);
-            } catch (NumberFormatException ignored) {
-                // Identifier is not numeric; continue to not found
-            }
-        }
-        if (asset == null) {
-            throw new IllegalArgumentException("Asset not found: " + assetIdentifier);
-        }
+        // Try by name first, then by direct ID (both are String now)
+        Asset asset = assetRepository.findByName(assetIdentifier)
+                .or(() -> assetRepository.findById(assetIdentifier))
+                .orElseThrow(() -> new IllegalArgumentException("Asset not found: " + assetIdentifier));
 
         // Delete child records first to avoid FK violations.
         telemetryRepository.deleteByAssetId(asset.getName());

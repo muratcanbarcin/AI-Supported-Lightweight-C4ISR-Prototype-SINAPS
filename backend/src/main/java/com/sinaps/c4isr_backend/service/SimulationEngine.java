@@ -60,8 +60,9 @@ public class SimulationEngine {
         return switch (type) {
             case DRONE   -> 5_000;
             case VEHICLE -> 2_000;
-            case SOLDIER ->   800;
-            case SENSOR  ->     0;
+            case SHIP    -> 1_000;
+            case SOLDIER, SOLDIER_WEARABLE -> 800;
+            case SENSOR, ELECTRONIC_WARFARE -> 0;
         };
     }
 
