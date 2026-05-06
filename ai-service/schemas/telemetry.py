@@ -12,7 +12,7 @@
 ============================================================================
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List, Dict, Any, Union, Annotated, Literal
 from datetime import datetime
 from enum import Enum
@@ -258,9 +258,10 @@ class AnalysisResponse(BaseModel):
     context_used: List[ContextItem] = Field(default_factory=list, description="RAG context used")
     processing_time_ms: float = Field(..., description="Total processing time in milliseconds")
     model_version: str = Field(default="gemma-2-9b-it", description="LLM model version")
-    
-    model_config = {
-        "json_schema_extra": {
+
+    model_config = ConfigDict(
+        protected_namespaces=(),
+        json_schema_extra={
             "example": {
                 "decision": "Continue monitoring. Asset operating within normal parameters.",
                 "threat_level": "LOW",
@@ -270,10 +271,10 @@ class AnalysisResponse(BaseModel):
                 "entity_id": "UAV-ALPHA-01",
                 "context_used": [],
                 "processing_time_ms": 245.6,
-                "model_version": "gemma-2-9b-it"
+                "model_version": "gemma-2-9b-it",
             }
-        }
-    }
+        },
+    )
 
 
 # ============================================================================

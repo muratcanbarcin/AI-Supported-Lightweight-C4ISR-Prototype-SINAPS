@@ -24,3 +24,9 @@ numpy==1.26.4
 
 # Logging
 structlog==24.1.0
+
+# Tokenizer chat templates (transformers) need Jinja2 3.1+
+Jinja2>=3.1.0
+
+# Local GPU LLM (4-bit NF4 in model_engine) — PyTorch CUDA ayrı kurulur (cu124 ör. README)
+bitsandbytes>=0.43.0

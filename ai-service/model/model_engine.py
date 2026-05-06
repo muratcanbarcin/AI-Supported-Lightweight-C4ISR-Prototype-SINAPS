@@ -496,7 +496,7 @@ class ModelEngine:
         self,
         telemetry_data: BaseModel,
         retrieved_context: List[Dict[str, Any]] = None,
-        max_new_tokens: int = 512
+        max_new_tokens: int = 896
     ) -> Tuple[str, ThreatLevel, float, str]:
         """
         Generate tactical threat assessment using Gemma-2-9b-it (Engine 1).
@@ -709,7 +709,7 @@ class ModelEngine:
         self,
         telemetry_data: BaseModel,
         retrieved_context: List[Dict[str, Any]] = None,
-        max_new_tokens: int = 512
+        max_new_tokens: int = 896
     ) -> Tuple[str, ThreatLevel, float, str]:
         """Legacy alias → routes to generate_analysis (Gemma engine)."""
         return self.generate_analysis(
@@ -832,28 +832,110 @@ Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactica
             confidence = self._calculate_confidence(threat_level)
             logger.info("Successfully parsed JSON response", threat_level=threat_str)
         except json.JSONDecodeError as e:
-            logger.warning(f"JSON parsing failed: {e}. Attempting text extraction.")
-            decision, threat_level, confidence, reasoning = (
-                self._parse_text_response(response)
+            logger.warning(f"JSON parsing failed: {e}. Trying loose field extraction.")
+            loose = (
+                self._loose_extract_analysis_fields(response)
+                or self._loose_extract_analysis_fields(cleaned)
             )
+            if loose:
+                threat_str, decision, reasoning = loose
+                threat_level = self._map_threat_level(threat_str.upper())
+                confidence = self._calculate_confidence(threat_level)
+                logger.info("Recovered fields from malformed JSON", threat_level=threat_str)
+            else:
+                logger.warning("Loose extraction failed; using keyword fallback.")
+                decision, threat_level, confidence, reasoning = (
+                    self._parse_text_response(response)
+                )
 
         return decision, threat_level, confidence, reasoning
+
+    @staticmethod
+    def _extract_balanced_json_object(text: str) -> Optional[str]:
+        """
+        Extract first balanced `{ ... }` honoring strings and escapes.
+        Naive regex fails on nested objects and on `}` inside quoted text.
+        """
+        start = text.find("{")
+        if start == -1:
+            return None
+        depth = 0
+        in_string = False
+        esc = False
+        for i in range(start, len(text)):
+            c = text[i]
+            if in_string:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == '"':
+                    in_string = False
+            else:
+                if c == '"':
+                    in_string = True
+                elif c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return text[start : i + 1]
+        return None
+
+    @staticmethod
+    def _unescape_json_string(s: str) -> str:
+        if not s:
+            return s
+        return (
+            s.replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\r", "\r")
+            .replace('\\"', '"')
+            .replace("\\\\", "\\")
+        )
+
+    def _loose_extract_analysis_fields(self, text: str) -> Optional[Tuple[str, str, str]]:
+        """
+        When strict JSON fails (truncation, newlines inside strings), pull key fields.
+        Returns (threat_level, decision, reasoning) or None.
+        """
+        tl_m = re.search(r'"threat_level"\s*:\s*"([^"]+)"', text, re.IGNORECASE)
+        if not tl_m:
+            return None
+        threat = tl_m.group(1).strip()
+
+        dec_m = re.search(r'"decision"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL)
+        decision = self._unescape_json_string(dec_m.group(1).strip()) if dec_m else ""
+
+        reasoning = ""
+        # Closed reasoning string
+        rm = re.search(r'"reasoning"\s*:\s*"((?:[^"\\]|\\.)*)"', text, re.DOTALL)
+        if rm:
+            reasoning = self._unescape_json_string(rm.group(1).strip())
+        else:
+            # Truncated / unclosed: take from "reasoning": " to end, strip trailing junk
+            rm2 = re.search(r'"reasoning"\s*:\s*"([\s\S]*)', text, re.IGNORECASE)
+            if rm2:
+                raw = rm2.group(1)
+                # Drop trailing incomplete quote or trailing `}` fragments
+                raw = re.sub(r'"\s*[,}]?\s*$', "", raw.strip())
+                reasoning = self._unescape_json_string(raw.strip())
+
+        return threat, decision if decision else "No decision provided", reasoning if reasoning else "No reasoning provided"
 
     def _clean_llm_response(self, response: str) -> str:
         """Clean LLM response by removing markdown formatting and extracting JSON."""
         text = response.strip()
 
         # Remove markdown code blocks
-        code_block_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
+        code_block_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
         matches = re.findall(code_block_pattern, text)
         if matches:
             text = matches[0].strip()
 
-        # Try to extract JSON object
-        json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
-        json_matches = re.findall(json_pattern, text)
-        if json_matches:
-            text = json_matches[0]
+        balanced = self._extract_balanced_json_object(text)
+        if balanced:
+            return balanced.strip()
 
         return text.strip()
 
