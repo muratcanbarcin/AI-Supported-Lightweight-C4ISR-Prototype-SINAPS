@@ -35,4 +35,6 @@ public interface SystemLogRepository extends JpaRepository<SystemLog, Long> {
     List<SystemLog> findAllByOrderByCreatedAtDesc();
 
     List<SystemLog> findTop50ByOrderByCreatedAtDesc();
+
+    long countByMessageContainingIgnoreCase(String fragment);
 }

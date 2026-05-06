@@ -43,6 +43,13 @@ public class Asset {
     @Column(name = "assigned_zone_id")
     private String assignedZoneId;
 
+    /** Deploy / RTB target — WGS84; synced with tactical zone on deploy */
+    @Column(name = "destination_lat")
+    private Double destinationLat;
+
+    @Column(name = "destination_lng")
+    private Double destinationLng;
+
     @PrePersist
     protected void onCreate() {
         if (inventoryStatus == null) {

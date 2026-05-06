@@ -211,13 +211,17 @@ public class AlertAnalysisController {
 
     private Map<String, Object> convertAlertToMap(AlertService.Alert alert) {
         Map<String, Object> map = new HashMap<>();
-        map.put("id", alert.getId());
+        map.put("id", String.valueOf(alert.getId()));
         map.put("type", alert.getType());
         map.put("sourceId", alert.getSourceId());
         map.put("message", alert.getMessage());
         map.put("severity", alert.getSeverity());
         map.put("timestamp", alert.getTimestamp().toString());
         map.put("acknowledged", alert.isAcknowledged());
+        // Frontend AlarmDTO uyumu (alarmService.ts)
+        map.put("threatType", alert.getType());
+        map.put("detectedAt", alert.getTimestamp().toString());
+        map.put("isAck", alert.isAcknowledged());
         if (alert.getAcknowledgedAt() != null) {
             map.put("acknowledgedAt", alert.getAcknowledgedAt().toString());
         }

@@ -451,6 +451,20 @@ export async function deleteZone(zoneId: string): Promise<void> {
 // DEPLOYMENT API
 // =============================================================================
 
+/** Raw asset row from GET /api/v1/assets (planner zone buckets) */
+export interface PlannerRegistryAsset {
+  id: string;
+  name: string;
+  type: string;
+  assignedZoneId: string | null;
+  isSimulated?: boolean;
+}
+
+export async function fetchPlannerRegistryAssets(): Promise<PlannerRegistryAsset[]> {
+  const response = await api.get<PlannerRegistryAsset[]>('/assets');
+  return response.data;
+}
+
 export interface DeployTaskResponse {
   id: number;
   assetId: string;

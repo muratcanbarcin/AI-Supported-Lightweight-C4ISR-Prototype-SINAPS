@@ -4,14 +4,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sinaps.c4isr_backend.client.AIServiceClient;
-import com.sinaps.c4isr_backend.dto.AIAnalysisResult;
 import com.sinaps.c4isr_backend.dto.SimMessageDTO;
 import com.sinaps.c4isr_backend.dto.SimPayloadDTO;
 import com.sinaps.c4isr_backend.model.AssetType;
-import com.sinaps.c4isr_backend.model.TacticalAnalysis;
 import com.sinaps.c4isr_backend.model.Telemetry;
-import com.sinaps.c4isr_backend.repository.TacticalAnalysisRepository;
 import com.sinaps.c4isr_backend.repository.TelemetryRepository;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -19,16 +15,23 @@ import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Service for processing and managing telemetry data.
@@ -45,8 +48,7 @@ public class TelemetryService {
     private static final Logger log = LoggerFactory.getLogger(TelemetryService.class);
 
     private final TelemetryRepository repository;
-    private final TacticalAnalysisRepository analysisRepository;
-    private final AIServiceClient aiServiceClient;
+    private final AiAnalysisService aiAnalysisService;
     private final com.sinaps.c4isr_backend.repository.AppUserRepository appUserRepository;
     private final com.sinaps.c4isr_backend.repository.AssetRepository assetRepository;
     private final ObjectMapper objectMapper;
@@ -55,14 +57,12 @@ public class TelemetryService {
     // Constructor Injection with AI Service dependencies
     public TelemetryService(
             TelemetryRepository repository,
-            TacticalAnalysisRepository analysisRepository,
-            AIServiceClient aiServiceClient,
+            AiAnalysisService aiAnalysisService,
             com.sinaps.c4isr_backend.repository.AppUserRepository appUserRepository,
             com.sinaps.c4isr_backend.repository.AssetRepository assetRepository
     ) {
         this.repository = repository;
-        this.analysisRepository = analysisRepository;
-        this.aiServiceClient = aiServiceClient;
+        this.aiAnalysisService = aiAnalysisService;
         this.appUserRepository = appUserRepository;
         this.assetRepository = assetRepository;
         this.objectMapper = new ObjectMapper();
@@ -320,8 +320,8 @@ public class TelemetryService {
                 classification = message.middleware().get("classification").toString().toUpperCase();
             }
             if ("CRITICAL".equals(classification) || "SUSPICIOUS".equals(classification)) {
-                log.info("⚠️ Triggering AI analysis for {} — classification: {}", saved.getSourceId(), classification);
-                triggerAIAnalysis(saved);
+                log.info("⚠️ Queuing Gemma analysis for {} — classification: {}", saved.getSourceId(), classification);
+                queueGemmaAnalysisAfterCommit(saved.getId());
             } else {
                 log.debug("Skipping AI analysis for {} — classification: {}", saved.getSourceId(), classification);
             }
@@ -329,90 +329,6 @@ public class TelemetryService {
         } catch (Exception e) {
             log.error("Simulator JSON Parse/Save Error: {}", e.getMessage(), e);
             e.printStackTrace();
-        }
-    }
-
-    /**
-     * Trigger asynchronous AI analysis for the saved telemetry.
-     * 
-     * This method is NON-BLOCKING - it subscribes to the reactive stream
-     * and handles the result when it arrives. Errors are logged but do NOT
-     * affect the original telemetry transaction.
-     * 
-     * @param telemetry The saved telemetry entity to analyze
-     */
-    private void triggerAIAnalysis(Telemetry telemetry) {
-        try {
-            log.debug("Triggering AI analysis for telemetry ID: {}", telemetry.getId());
-            
-            aiServiceClient.analyzeAsync(telemetry)
-                    .subscribe(
-                            // onSuccess: Save the analysis result
-                            result -> handleAIAnalysisResult(telemetry, result),
-                            // onError: Log but don't fail - data is already safely saved
-                            error -> log.error("AI analysis failed for telemetry ID: {} | Error: {}. " +
-                                    "Raw telemetry data remains safely stored.",
-                                    telemetry.getId(), error.getMessage())
-                    );
-                    
-        } catch (Exception e) {
-            // Catch any synchronous errors during subscribe setup
-            log.error("Failed to trigger AI analysis for telemetry ID: {} | Error: {}",
-                    telemetry.getId(), e.getMessage());
-            // DO NOT rethrow - raw data must remain safe
-        }
-    }
-
-    /**
-     * Handle the AI analysis result and persist it to the database.
-     * 
-     * This method is called asynchronously when the AI service responds.
-     * It creates a TacticalAnalysis entity linked to the original telemetry.
-     * 
-     * @param telemetry The original telemetry entity
-     * @param result The AI analysis result
-     */
-    private void handleAIAnalysisResult(Telemetry telemetry, AIAnalysisResult result) {
-        try {
-            log.info("AI analysis received for telemetry ID: {} | Threat: {} | Decision: {}",
-                    telemetry.getId(), result.threatLevel(), result.decision());
-
-            // Check if analysis already exists (avoid duplicates)
-            if (analysisRepository.existsByTelemetryId(telemetry.getId())) {
-                log.warn("Analysis already exists for telemetry ID: {}, skipping duplicate", telemetry.getId());
-                return;
-            }
-
-            // Create and save TacticalAnalysis entity
-            TacticalAnalysis analysis = TacticalAnalysis.builder()
-                    .telemetry(telemetry)
-                    .threatLevel(result.threatLevel())
-                    .decision(result.decision())
-                    .reasoning(result.reasoning())
-                    .confidence(result.confidence())
-                    .rawResponse(serializeToJson(result))
-                    .build();
-
-            TacticalAnalysis savedAnalysis = analysisRepository.save(analysis);
-            log.info(">> Tactical Analysis Saved! ID: {} | Telemetry ID: {} | Threat: {}",
-                    savedAnalysis.getId(), telemetry.getId(), savedAnalysis.getThreatLevel());
-
-        } catch (Exception e) {
-            log.error("Failed to save AI analysis for telemetry ID: {} | Error: {}",
-                    telemetry.getId(), e.getMessage(), e);
-            // DO NOT rethrow - this runs asynchronously and shouldn't crash the app
-        }
-    }
-
-    /**
-     * Serialize an object to JSON string for storage.
-     */
-    private String serializeToJson(Object obj) {
-        try {
-            return objectMapper.writeValueAsString(obj);
-        } catch (Exception e) {
-            log.warn("Failed to serialize object to JSON: {}", e.getMessage());
-            return "{}";
         }
     }
 
@@ -479,20 +395,26 @@ public class TelemetryService {
         List<Telemetry> allLatest = repository.findLatestTelemetryBySource();
 
         org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || auth.getName().equals("anonymousUser")) {
-            return java.util.Collections.emptyList();
+        // Harita / telemetry/latest JWT olmadan da çağrılabilir — prototipte tam görünürlük
+        if (auth == null
+                || !auth.isAuthenticated()
+                || auth instanceof AnonymousAuthenticationToken
+                || "anonymousUser".equalsIgnoreCase(String.valueOf(auth.getPrincipal()))) {
+            return allLatest;
         }
 
         String currentUsername = auth.getName();
         com.sinaps.c4isr_backend.model.AppUser currentUser = appUserRepository.findByUsername(currentUsername).orElse(null);
 
-        if (currentUser == null) return java.util.Collections.emptyList();
+        if (currentUser == null) {
+            return allLatest;
+        }
 
         if (currentUser.getRole() == com.sinaps.c4isr_backend.model.Role.KARARGAH_ADMIN) {
             return allLatest;
         }
 
-        if (currentUser.getRole() == com.sinaps.c4isr_backend.model.Role.HAREKAT_SUBAYI || 
+        if (currentUser.getRole() == com.sinaps.c4isr_backend.model.Role.HAREKAT_SUBAYI ||
             currentUser.getRole() == com.sinaps.c4isr_backend.model.Role.ORDU_KOMUTANI) {
             String assignedZoneId = currentUser.getAssignedZoneId();
             if (assignedZoneId == null || assignedZoneId.isBlank()) {
@@ -500,16 +422,37 @@ public class TelemetryService {
             }
 
             List<com.sinaps.c4isr_backend.model.Asset> userAssets = assetRepository.findByAssignedZoneId(assignedZoneId);
-            java.util.Set<String> allowedAssetIds = userAssets.stream()
-                    .map(com.sinaps.c4isr_backend.model.Asset::getName)
-                    .collect(java.util.stream.Collectors.toSet());
+            Set<String> allowedSourceIds = new HashSet<>();
+            for (com.sinaps.c4isr_backend.model.Asset a : userAssets) {
+                Stream.of(a.getId(), a.getName())
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .forEach(allowedSourceIds::add);
+            }
 
             return allLatest.stream()
-                    .filter(t -> allowedAssetIds.contains(t.getSourceId()))
+                    .filter(t -> allowedSourceIds.contains(t.getSourceId()))
                     .collect(java.util.stream.Collectors.toList());
         }
 
         return java.util.Collections.emptyList();
+    }
+
+    /**
+     * Gemma analizi, telemetri satırı transaction commit sonrasında kuyruklanır (async thread'te görünürlük).
+     */
+    private void queueGemmaAnalysisAfterCommit(Long telemetryId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    aiAnalysisService.analyzeThreatTelemetry(telemetryId);
+                }
+            });
+        } else {
+            aiAnalysisService.analyzeThreatTelemetry(telemetryId);
+        }
     }
 
     /**
@@ -579,8 +522,8 @@ public class TelemetryService {
     public Telemetry saveAndAnalyzeIfNeeded(Telemetry telemetry, String threatLevel) {
         Telemetry saved = repository.save(telemetry);
         if ("CRITICAL".equals(threatLevel) || "SUSPICIOUS".equals(threatLevel)) {
-            log.info("SimEngine AI trigger: {} — threat={}", saved.getSourceId(), threatLevel);
-            triggerAIAnalysis(saved);
+            log.info("SimEngine Gemma queue: {} — threat={}", saved.getSourceId(), threatLevel);
+            queueGemmaAnalysisAfterCommit(saved.getId());
         }
         return saved;
     }

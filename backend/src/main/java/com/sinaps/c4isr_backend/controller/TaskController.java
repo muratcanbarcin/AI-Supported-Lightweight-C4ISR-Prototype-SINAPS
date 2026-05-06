@@ -46,15 +46,22 @@ public class TaskController {
      */
     @PostMapping("/deploy")
     public ResponseEntity<?> deployAsset(@RequestBody DeployRequest request) {
+        String zoneId = request.resolveZoneId();
+        if (zoneId == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "zoneId or targetZoneId is required",
+                    "assetId", String.valueOf(request.getAssetId())
+            ));
+        }
         try {
-            Task task = taskService.deployAsset(request.getAssetId(), request.getZoneId());
+            Task task = taskService.deployAsset(request.getAssetId(), zoneId);
             log.info("Deploy task created: {} → {}", request.getAssetId(), task.getZoneName());
             return ResponseEntity.ok(task);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of(
                     "error", e.getMessage(),
                     "assetId", String.valueOf(request.getAssetId()),
-                    "zoneId", String.valueOf(request.getZoneId())
+                    "zoneId", zoneId
             ));
         }
     }

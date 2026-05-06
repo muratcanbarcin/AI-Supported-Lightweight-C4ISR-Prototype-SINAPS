@@ -77,9 +77,9 @@ export async function getAlerts(): Promise<AlertItem[]> {
 // ============ HELPER FUNCTIONS ============
 
 function mapSeverity(severity: Severity | string): Severity {
-  const upper = severity.toUpperCase();
+  const upper = String(severity).toUpperCase();
   if (upper === 'HIGH' || upper === 'CRITICAL') return 'HIGH';
-  if (upper === 'MEDIUM') return 'MEDIUM';
+  if (upper === 'MEDIUM' || upper === 'WARNING') return 'MEDIUM';
   return 'LOW';
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { fetchLatestTelemetry, fetchZones, deployAsset } from '@/services/api';
+import { fetchLatestTelemetry, fetchZones, deployAsset, fetchPlannerRegistryAssets } from '@/services/api';
+import type { PlannerRegistryAsset } from '@/services/api';
 import type { Telemetry, TacticalZone } from '@/types';
 
 const POLL_INTERVAL_MS = 5_000;
@@ -10,6 +11,9 @@ const TYPE_META: Record<string, { icon: string; color: string; label: string }> 
   VEHICLE: { icon: 'fa-truck-pickup',   color: '#f97316', label: 'KARA'  },
   SOLDIER: { icon: 'fa-person-rifle',   color: '#4ade80', label: 'PİYADE'},
   SENSOR:  { icon: 'fa-satellite-dish', color: '#a855f7', label: 'SENSÖR'},
+  SHIP:    { icon: 'fa-ship',           color: '#22d3ee', label: 'DENİZ' },
+  SOLDIER_WEARABLE: { icon: 'fa-clock', color: '#94a3b8', label: 'GİYİLİR' },
+  ELECTRONIC_WARFARE: { icon: 'fa-bolt', color: '#eab308', label: 'EH' },
 };
 
 function getTypeMeta(type: string) {
@@ -34,6 +38,13 @@ function getStatus(t: Telemetry): string {
 
 function getDeploymentZoneId(t: Telemetry): string {
   return getPayloadField<string>(t, 'deployment_zone_id') ?? '';
+}
+
+/** Planner sütunu: envanterdeki {@code assignedZoneId} öncelikli (TSK konuşlanması). */
+function getUnitBucketZoneId(t: Telemetry, registry: PlannerRegistryAsset[]): string {
+  const row = registry.find((r) => r.id === t.sourceId || r.name === t.sourceId);
+  if (row?.assignedZoneId) return row.assignedZoneId;
+  return getDeploymentZoneId(t);
 }
 
 function getDistanceRemainingKm(t: Telemetry): number | null {
@@ -131,6 +142,7 @@ export function TacticalPlanner() {
   const [draggedAssetId, setDraggedAssetId] = useState<string | null>(null);
   const [hoveredZoneId, setHoveredZoneId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<string>('ALL');
+  const [registry, setRegistry] = useState<PlannerRegistryAsset[]>([]);
   const toastIdRef = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval>>();
 
@@ -147,9 +159,14 @@ export function TacticalPlanner() {
   const loadData = useCallback(async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
     try {
-      const [telemetry, zoneData] = await Promise.all([fetchLatestTelemetry(), fetchZones()]);
+      const [telemetry, zoneData, reg] = await Promise.all([
+        fetchLatestTelemetry(),
+        fetchZones(),
+        fetchPlannerRegistryAssets(),
+      ]);
       setAssets(telemetry);
       setZones(zoneData);
+      setRegistry(reg);
     } catch (err) {
       console.error('[TacticalPlanner] Failed to load data:', err);
     } finally {
@@ -181,16 +198,13 @@ export function TacticalPlanner() {
   const baseZones = zones.filter((z) => z.zoneType === 'BASE');
 
   const getAssetsInZone = useCallback((zoneId: string): Telemetry[] => {
-    return assets.filter((a) => {
-      const deployZoneId = getDeploymentZoneId(a);
-      return deployZoneId === zoneId;
-    });
-  }, [assets]);
+    return assets.filter((a) => getUnitBucketZoneId(a, registry) === zoneId);
+  }, [assets, registry]);
 
   // ─── Count helpers ─────────────────────────────────────────────────
   const idleAtBaseCount = assets.filter((a) => {
     const s = getStatus(a);
-    const zId = getDeploymentZoneId(a);
+    const zId = getUnitBucketZoneId(a, registry);
     return s === 'IDLE' && zId;
   }).length;
 
@@ -227,8 +241,28 @@ export function TacticalPlanner() {
     const isRtb = zone.zoneType === 'BASE';
     try {
       await deployAsset(assetId, zone.id);
+      setRegistry((prev) => prev.map((r) =>
+        (r.id === assetId || r.name === assetId) ? { ...r, assignedZoneId: zone.id } : r
+      ));
+      setAssets((prev) => prev.map((a) => {
+        if (a.sourceId !== assetId) return a;
+        const prevPayload = a.payload && typeof a.payload === 'object'
+          ? { ...(a.payload as Record<string, unknown>) }
+          : {};
+        return {
+          ...a,
+          payload: {
+            ...prevPayload,
+            status: 'EN_ROUTE',
+            deployment_zone_id: zone.id,
+            deployment_zone: zone.name,
+            threatLevel: 'NORMAL',
+          },
+        };
+      }));
       const verb = isRtb ? 'üssüne geri çağrıldı' : 'bölgesine sevk edildi';
       addToast(`${assetId} → ${zone.name} ${verb}!`, 'success');
+      window.dispatchEvent(new Event('sinaps:telemetry-invalidate'));
       loadData(false);
     } catch (err) {
       console.error('[TacticalPlanner] Deploy failed:', err);

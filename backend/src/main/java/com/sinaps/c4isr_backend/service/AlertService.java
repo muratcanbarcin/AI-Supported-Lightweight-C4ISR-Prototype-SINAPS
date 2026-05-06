@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
+
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +43,25 @@ public class AlertService {
 
     public AlertService() {
         this.objectMapper = new ObjectMapper();
+    }
+
+    @PostConstruct
+    public void seedDemoOperationalAlerts() {
+        if (!alerts.isEmpty()) {
+            return;
+        }
+        createTelemetryAlert("161-FILO-YARASA-TB2-01", "LOW_BATTERY",
+                "SINAPS_DEMO — Batarya %22 altına indi; üs rotası önerilir.", Map.of("batteryPct", 21));
+        createTelemetryAlert("TCG-ANADOLU-L400", "SIGNAL_LOSS",
+                "SINAPS_DEMO — UHF bağlantısı zayıf; anten hizalaması kontrol edin.", Map.of("snrDb", -18));
+        createAlert("HOSTILE_DETECTED", "PENCE-KIRPI-01",
+                "SINAPS_DEMO — Sensör füzyonu şüpheli kara hareketi bildirdi.", "WARNING", Map.of("grid", "37.2N 43.4E"));
+        createAlertFromAnalysis("MAVI-TB2-01", "DRONE", "HIGH",
+                "SINAPS_DEMO — Mavi Vatan bölgesinde öncelikli keşif", "Otonom devriye", 0.78);
+        createAlert("INTRUSION", "AKSUNGUR-DZKK-01",
+                "SINAPS_DEMO — Geofence ihlali riski; operatör onayı bekleniyor.", "CRITICAL",
+                Map.of("zone", "MAVI_VATAN"));
+        log.info("[ALERT] Demo operasyonel uyarılar yüklendi ({} adet).", alerts.size());
     }
 
     /**

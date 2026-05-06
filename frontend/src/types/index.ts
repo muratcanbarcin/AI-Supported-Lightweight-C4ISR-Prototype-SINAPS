@@ -16,7 +16,14 @@
 // =============================================================================
 
 /** Backend AssetType enum - MUST match com.sinaps.c4isr_backend.model.AssetType */
-export type AssetType = 'DRONE' | 'SOLDIER' | 'VEHICLE' | 'SENSOR';
+export type AssetType =
+  | 'DRONE'
+  | 'SOLDIER'
+  | 'SOLDIER_WEARABLE'
+  | 'VEHICLE'
+  | 'SHIP'
+  | 'SENSOR'
+  | 'ELECTRONIC_WARFARE';
 
 /** Asset operational status */
 export type AssetStatus = 'ONLINE' | 'WARNING' | 'OFFLINE';

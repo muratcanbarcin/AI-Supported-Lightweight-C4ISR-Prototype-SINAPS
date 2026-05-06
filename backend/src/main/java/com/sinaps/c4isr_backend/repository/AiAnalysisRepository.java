@@ -39,4 +39,6 @@ public interface AiAnalysisRepository extends JpaRepository<AiAnalysis, Long> {
      * Find analyses for an asset by threat level.
      */
     List<AiAnalysis> findByAssetIdAndThreatLevel(String assetId, String threatLevel);
+
+    long countByRecommendationContainingIgnoreCase(String fragment);
 }

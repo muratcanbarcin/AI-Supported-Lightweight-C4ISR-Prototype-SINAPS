@@ -94,7 +94,7 @@ export function useAlerts(options: UseAlertsOptions = {}): UseAlertsResult {
         setIsLoading(false);
       }
     }
-  }, [enabled, alerts.length]);
+  }, [enabled]);
 
   const acknowledgeAlert = useCallback(async (id: string) => {
     try {

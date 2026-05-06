@@ -100,7 +100,7 @@ export function useAssets(options: UseAssetsOptions = {}): UseAssetsResult {
         setIsLoading(false);
       }
     }
-  }, [enabled, assets.length]);
+  }, [enabled]);
 
   // Initial fetch
   useEffect(() => {
@@ -115,11 +115,21 @@ export function useAssets(options: UseAssetsOptions = {}): UseAssetsResult {
   // Polling
   useEffect(() => {
     if (!enabled) return;
-    
+
     const intervalId = setInterval(fetchAssets, pollingInterval);
-    
+
     return () => clearInterval(intervalId);
   }, [enabled, pollingInterval, fetchAssets]);
+
+  // Planlayıcı sevk sonrası haritayı gecikmesiz yenile
+  useEffect(() => {
+    if (!enabled) return;
+    const onInvalidate = () => {
+      fetchAssets();
+    };
+    window.addEventListener('sinaps:telemetry-invalidate', onInvalidate);
+    return () => window.removeEventListener('sinaps:telemetry-invalidate', onInvalidate);
+  }, [enabled, fetchAssets]);
 
   // Listen for connection events
   useEffect(() => {

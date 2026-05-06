@@ -53,7 +53,7 @@ public class SimulationEngine {
     private static final int BATTERY_MIN     = 5;
 
     // ═══ VRAM Protection: per-asset cooldown for AI analysis triggers ═══
-    private static final long ANALYSIS_COOLDOWN_SEC = 60;
+    private static final long ANALYSIS_COOLDOWN_SEC = 30;
     private final ConcurrentHashMap<String, Instant> lastAnalysisTime = new ConcurrentHashMap<>();
 
     private static double stepMeters(AssetType type) {
@@ -75,25 +75,24 @@ public class SimulationEngine {
     // ════════════════════════════════════════════════════════════════
 
     /**
-     * Generate a threat level based on asset's operational status.
-     *
-     *   EN_ROUTE  : 97% NORMAL, 2% SUSPICIOUS, 1% CRITICAL
-     *   IN_MISSION: 70% NORMAL, 20% SUSPICIOUS, 10% CRITICAL
-     *   Other     : always NORMAL (e.g., IDLE at base)
+     * Stochastic threat for simulation ticks.
+     * <ul>
+     *   <li>Base / IDLE (üstte): %99 NORMAL, %1 CRITICAL</li>
+     *   <li>Harekât / EN_ROUTE hedefi operasyon alanı veya IN_MISSION: %97 NORMAL, %3 CRITICAL</li>
+     * </ul>
+     * Gemma kuyruğu: CRITICAL ve SUSPICIOUS (TelemetryService), üs bölgesinde yalnızca seyrek CRITICAL.
      */
-    private static String generateThreatLevel(String status) {
+    private static String generateThreatLevelForTick(String status, boolean contextIsBaseOrRtbCorridor) {
         double roll = ThreadLocalRandom.current().nextDouble();
-        if ("IN_MISSION".equalsIgnoreCase(status)) {
-            if (roll < 0.10) return "CRITICAL";
-            if (roll < 0.30) return "SUSPICIOUS";
-            return "NORMAL";
+        if (contextIsBaseOrRtbCorridor) {
+            return roll < 0.01 ? "CRITICAL" : "NORMAL";
         }
-        if ("EN_ROUTE".equalsIgnoreCase(status)) {
+        if ("IN_MISSION".equalsIgnoreCase(status) || "EN_ROUTE".equalsIgnoreCase(status)) {
             if (roll < 0.01) return "CRITICAL";
-            if (roll < 0.03) return "SUSPICIOUS";
+            if (roll < 0.04) return "SUSPICIOUS";
             return "NORMAL";
         }
-        return "NORMAL";
+        return roll < 0.01 ? "CRITICAL" : "NORMAL";
     }
 
     /**
@@ -111,19 +110,17 @@ public class SimulationEngine {
      * Otherwise, the telemetry is saved without AI analysis.
      */
     private void saveTelemetry(Telemetry telemetry, String threatLevel) {
-        boolean shouldAnalyze = !"NORMAL".equals(threatLevel)
-                && canTriggerAnalysis(telemetry.getSourceId());
+        boolean wantsAnalyze = "CRITICAL".equals(threatLevel) || "SUSPICIOUS".equals(threatLevel);
+        boolean shouldAnalyze = wantsAnalyze && canTriggerAnalysis(telemetry.getSourceId());
 
         if (shouldAnalyze) {
             lastAnalysisTime.put(telemetry.getSourceId(), Instant.now());
             telemetryService.saveAndAnalyzeIfNeeded(telemetry, threatLevel);
-            log.info("THREAT [{}]: {} — AI analysis triggered (cooldown reset)",
-                    threatLevel, telemetry.getSourceId());
+            log.info("THREAT [{}]: {} — Gemma queue (cooldown reset)", threatLevel, telemetry.getSourceId());
         } else {
             telemetryService.save(telemetry);
-            if (!"NORMAL".equals(threatLevel)) {
-                log.debug("THREAT [{}]: {} — AI analysis skipped (cooldown active)",
-                        threatLevel, telemetry.getSourceId());
+            if (wantsAnalyze) {
+                log.debug("THREAT [{}]: {} — Gemma queue skipped (cooldown active)", threatLevel, telemetry.getSourceId());
             }
         }
     }
@@ -195,6 +192,7 @@ public class SimulationEngine {
         double newLat, newLon;
         String finalStatus;
         double arrivalThreshold = Math.max(zone.getRadiusMeters() * 0.5, 1000);
+        boolean zoneIsBase = zone.getZoneType() == ZoneType.BASE;
 
         if (dist <= arrivalThreshold) {
             newLat = tgtLat;
@@ -202,11 +200,10 @@ public class SimulationEngine {
             newPayload.put("distance_remaining_m", 0L);
             newPayload.put("arrived_at", LocalDateTime.now().toString());
 
-            boolean isBase = zone.getZoneType() == ZoneType.BASE;
-            finalStatus = isBase ? "IDLE" : "IN_MISSION";
+            finalStatus = zoneIsBase ? "IDLE" : "IN_MISSION";
             newPayload.put("status", finalStatus);
 
-            String logMsg = isBase
+            String logMsg = zoneIsBase
                     ? String.format("Birlik %s, %s üssüne döndü ve hazır duruma geçti. (Son mesafe: %d m)",
                             t.getSourceId(), zone.getName(), Math.round(dist))
                     : String.format("Birlik %s, %s operasyon bölgesine başarıyla intikal etti ve göreve başladı. (Son mesafe: %d m)",
@@ -214,11 +211,11 @@ public class SimulationEngine {
 
             systemLogRepository.save(SystemLog.builder()
                     .assetId(t.getSourceId())
-                    .eventType(isBase ? "RTB_COMPLETE" : "ARRIVAL")
+                    .eventType(zoneIsBase ? "RTB_COMPLETE" : "ARRIVAL")
                     .message(logMsg)
                     .build());
 
-            log.info("{}: {} reached {} → {}", isBase ? "RTB" : "ARRIVED",
+            log.info("{}: {} reached {} → {}", zoneIsBase ? "RTB" : "ARRIVED",
                     t.getSourceId(), zone.getName(), finalStatus);
         } else {
             finalStatus = "EN_ROUTE";
@@ -234,8 +231,8 @@ public class SimulationEngine {
             newPayload.put("distance_remaining_m", Math.max(0L, Math.round(dist - step)));
         }
 
-        // ── Stochastic threat ──
-        String threat = generateThreatLevel(finalStatus);
+        boolean threatContextBase = zoneIsBase;
+        String threat = generateThreatLevelForTick(finalStatus, threatContextBase);
         newPayload.put("threatLevel", threat);
 
         int battery = t.getBatteryLevel() != null ? t.getBatteryLevel() : 80;
@@ -294,7 +291,7 @@ public class SimulationEngine {
         newPayload.put("deployment_zone", zone.getName());
         newPayload.put("deployment_zone_id", zone.getId().toString());
 
-        String threat = isBase ? "NORMAL" : generateThreatLevel(status);
+        String threat = generateThreatLevelForTick(status, isBase);
         newPayload.put("threatLevel", threat);
 
         double lat = t.getLocation() != null ? t.getLocation().getY() : zone.getLatitude();

@@ -1,10 +1,12 @@
 package com.sinaps.c4isr_backend.service;
 
 import com.sinaps.c4isr_backend.model.AppUser;
+import com.sinaps.c4isr_backend.model.Asset;
 import com.sinaps.c4isr_backend.model.Role;
 import com.sinaps.c4isr_backend.model.Task;
 import com.sinaps.c4isr_backend.model.TacticalZone;
 import com.sinaps.c4isr_backend.model.ZoneType;
+import com.sinaps.c4isr_backend.repository.AssetRepository;
 import com.sinaps.c4isr_backend.repository.TaskRepository;
 import com.sinaps.c4isr_backend.repository.TacticalZoneRepository;
 import com.sinaps.c4isr_backend.repository.TelemetryRepository;
@@ -18,6 +20,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +36,7 @@ public class TaskService {
     private final TaskRepository taskRepository;
     private final TacticalZoneRepository zoneRepository;
     private final TelemetryRepository telemetryRepository;
+    private final AssetRepository assetRepository;
     private final AppUserRepository appUserRepository;
 
     public List<Task> getAllTasks(String assetId) {
@@ -74,16 +78,51 @@ public class TaskService {
         }
 
         Telemetry latest = latestOpt.get();
-        Map<String, Object> payload = latest.getPayload();
-        if (payload == null) {
-            payload = new HashMap<>();
-        }
+
+        Optional<Asset> assetOpt = assetRepository.findById(assetId)
+                .or(() -> assetRepository.findByName(assetId));
+        assetOpt.ifPresent(asset -> {
+            asset.setAssignedZoneId(zoneIdStr);
+            asset.setDestinationLat(zone.getLatitude());
+            asset.setDestinationLng(zone.getLongitude());
+            assetRepository.save(asset);
+        });
+
+        Map<String, Object> prev = latest.getPayload() != null
+                ? new HashMap<>(latest.getPayload())
+                : new HashMap<>();
+        Object simFlag = prev.get("is_simulated");
+        boolean isSimulated = Boolean.TRUE.equals(simFlag)
+                || "true".equalsIgnoreCase(String.valueOf(simFlag));
+
+        Map<String, Object> payload = new HashMap<>(prev);
         payload.put("status", "EN_ROUTE");
         payload.put("deployment_zone", zone.getName());
         payload.put("deployment_zone_id", zoneIdStr);
+        payload.put("is_simulated", isSimulated);
         payload.remove("arrived_at");
-        latest.setPayload(payload);
-        telemetryRepository.save(latest);
+        payload.put("threatLevel", "NORMAL");
+
+        long distRemainingM = 0L;
+        if (latest.getLocation() != null) {
+            double curLat = latest.getLocation().getY();
+            double curLon = latest.getLocation().getX();
+            distRemainingM = Math.round(SimulationEngine.haversine(curLat, curLon,
+                    zone.getLatitude(), zone.getLongitude()));
+        }
+        payload.put("distance_remaining_m", Math.max(0L, distRemainingM));
+
+        Telemetry deployRow = Telemetry.builder()
+                .sourceId(latest.getSourceId())
+                .sourceType(latest.getSourceType())
+                .timestamp(LocalDateTime.now())
+                .location(latest.getLocation())
+                .altitude(latest.getAltitude())
+                .speed(0.0)
+                .batteryLevel(latest.getBatteryLevel() != null ? latest.getBatteryLevel() : 100)
+                .payload(payload)
+                .build();
+        telemetryRepository.save(deployRow);
 
         boolean isRtb = zone.getZoneType() == ZoneType.BASE;
         String title = isRtb

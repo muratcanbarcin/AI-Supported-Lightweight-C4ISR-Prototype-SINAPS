@@ -17,11 +17,16 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.reactive.function.client.WebClient;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -37,7 +42,6 @@ public class AdminController {
     private final TaskRepository taskRepository;
     private final TacticalZoneRepository tacticalZoneRepository;
     private final MqttListenerService mqttListenerService;
-    private final WebClient.Builder webClientBuilder;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${ai.service.url:http://localhost:8000}")
@@ -170,25 +174,45 @@ public class AdminController {
     }
 
     private boolean isAiServiceReachable() {
-        try {
-            String normalizedBase = aiServiceUrl.endsWith("/")
-                    ? aiServiceUrl.substring(0, aiServiceUrl.length() - 1)
-                    : aiServiceUrl;
-
-            Integer statusCode = webClientBuilder.build()
-                    .get()
-                    .uri(normalizedBase + "/health")
-                    .retrieve()
-                    .toBodilessEntity()
-                    .map(entity -> entity.getStatusCode().value())
-                    .timeout(Duration.ofSeconds(2))
-                    .onErrorReturn(503)
-                    .block();
-
-            return statusCode != null && statusCode >= 200 && statusCode < 300;
-        } catch (Exception ex) {
-            return false;
+        String normalizedBase = normalizeAiBaseUrl(aiServiceUrl);
+        Set<String> bases = new LinkedHashSet<>();
+        bases.add(normalizedBase);
+        if (normalizedBase.contains("localhost")) {
+            bases.add(normalizedBase.replace("localhost", "127.0.0.1"));
         }
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(2))
+                .build();
+        String[] paths = {"/health", "/"};
+        for (String base : bases) {
+            for (String path : paths) {
+                try {
+                    HttpRequest req = HttpRequest.newBuilder(URI.create(base + path))
+                            .timeout(Duration.ofSeconds(2))
+                            .GET()
+                            .build();
+                    HttpResponse<Void> resp = client.send(req, HttpResponse.BodyHandlers.discarding());
+                    int sc = resp.statusCode();
+                    if (sc >= 200 && sc < 400) {
+                        return true;
+                    }
+                } catch (Exception ex) {
+                    log.trace("AI health probe failed {} {}: {}", base, path, ex.getMessage());
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String normalizeAiBaseUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return "http://127.0.0.1:8000";
+        }
+        String t = url.trim();
+        if (t.endsWith("/")) {
+            t = t.substring(0, t.length() - 1);
+        }
+        return t;
     }
 
     private String getDockerEngineStatus() {
