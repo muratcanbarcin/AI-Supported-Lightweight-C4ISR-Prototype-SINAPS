@@ -26,6 +26,8 @@
     - Turkish military assistant persona for chat (Llama)
 ============================================================================
 """
+from __future__ import annotations
+
 import os
 import re
 import json
