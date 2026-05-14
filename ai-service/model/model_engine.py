@@ -924,10 +924,18 @@ Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactica
         return threat, decision if decision else "No decision provided", reasoning if reasoning else "No reasoning provided"
 
     def _clean_llm_response(self, response: str) -> str:
-        """Clean LLM response by removing markdown formatting and extracting JSON."""
+        """Clean LLM response by removing markdown formatting and extracting JSON.
+
+        Also normalises common LLM JSON quirks that crash strict ``json.loads``:
+          1. Trailing commas before ``}`` / ``]`` (Gemma frequently produces these
+             after the last field, e.g. ``"reasoning": "...",\\n}``).
+          2. Single-quoted Python-style strings → double-quoted JSON strings
+             (only applied if no double quotes are present).
+          3. Stray ``//`` line comments before the closing brace.
+        """
         text = response.strip()
 
-        # Remove markdown code blocks
+        # Strip markdown code fences first.
         code_block_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
         matches = re.findall(code_block_pattern, text)
         if matches:
@@ -935,9 +943,49 @@ Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactica
 
         balanced = self._extract_balanced_json_object(text)
         if balanced:
-            return balanced.strip()
+            text = balanced.strip()
 
-        return text.strip()
+        return self._normalize_llm_json(text)
+
+    @staticmethod
+    def _normalize_llm_json(text: str) -> str:
+        """Best-effort cleanup of typical LLM JSON output artifacts."""
+        if not text:
+            return text
+
+        cleaned = text
+
+        # Drop // line comments (Gemma sometimes appends explanatory text).
+        cleaned = re.sub(r"(?m)//[^\n]*", "", cleaned)
+
+        # Drop trailing commas before } or ] — biggest culprit for Gemma JSON
+        # parse failures. Walk the string respecting quoted segments.
+        out = []
+        in_string = False
+        esc = False
+        for i, ch in enumerate(cleaned):
+            if in_string:
+                out.append(ch)
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+                out.append(ch)
+                continue
+            if ch == ",":
+                # Look ahead for the next non-whitespace character; skip if } or ]
+                j = i + 1
+                while j < len(cleaned) and cleaned[j] in " \t\r\n":
+                    j += 1
+                if j < len(cleaned) and cleaned[j] in "}]":
+                    continue  # drop this trailing comma
+            out.append(ch)
+        return "".join(out).strip()
 
     def _map_threat_level(self, threat_str: str) -> ThreatLevel:
         """Map string threat level to ThreatLevel enum."""
