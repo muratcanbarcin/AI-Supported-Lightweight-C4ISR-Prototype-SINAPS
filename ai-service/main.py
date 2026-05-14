@@ -318,10 +318,13 @@ def _fetch_mention_context(mention_ids: list[str]) -> str:
     try:
         with db_manager.get_cursor(dict_cursor=True) as cur:
             for asset_id in mention_ids:
+                # NOTE: ``assets`` only carries inventory data (id, name, type,
+                # assigned_zone_id, is_simulated, destination_*). Live position,
+                # battery and status all live on the latest telemetry row.
+                # ``alignment`` is not persisted — it is derived in the DTO layer.
                 cur.execute("""
                     SELECT
-                        a.id, a.name, a.type, a.alignment,
-                        a.last_latitude, a.last_longitude, a.last_altitude,
+                        a.id, a.name, a.type, a.assigned_zone_id,
                         t.speed, t.battery_level, t.payload,
                         t.timestamp AS telemetry_time,
                         ST_Y(t.location::geometry) AS live_lat,
@@ -347,9 +350,9 @@ def _fetch_mention_context(mention_ids: list[str]) -> str:
                     )
                     continue
 
-                lat = row.get('live_lat') or row.get('last_latitude') or 0
-                lon = row.get('live_lon') or row.get('last_longitude') or 0
-                alt = row.get('live_alt') or row.get('last_altitude') or 0
+                lat = row.get('live_lat') or 0
+                lon = row.get('live_lon') or 0
+                alt = row.get('live_alt') or 0
 
                 payload = row.get('payload') or {}
                 if not isinstance(payload, dict):

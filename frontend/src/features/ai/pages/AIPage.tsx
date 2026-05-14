@@ -305,7 +305,7 @@ export function AIPage() {
                         <h2 className="text-xl font-bold text-white uppercase tracking-[0.2em] font-sans italic">YAPAY ZEKA ASİSTANI</h2>
                         <div className="flex items-center gap-2">
                             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                            <span className="text-xs text-slate-400 font-mono tracking-wider">ÇEVRİMİÇİ — LLAMA-3.1 + RAG AKTİF</span>
+                            <span className="text-xs text-slate-400 font-mono tracking-wider">ÇEVRİMİÇİ — SINAPS AI + RAG AKTİF</span>
                         </div>
                     </div>
                 </div>

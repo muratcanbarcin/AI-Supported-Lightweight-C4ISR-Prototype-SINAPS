@@ -130,9 +130,9 @@ public class SimulationEngine {
     // ════════════════════════════════════════════════════════════════
 
     // ── Tick interval is configurable via `simulation.tick-interval-ms`
-    //    application property. Default: 120 000 ms (2 minutes) to reduce
+    //    application property. Default: 60 000 ms (1 minutes) to reduce
     //    telemetry write volume. Override for faster local testing.
-    @Scheduled(fixedRateString = "${simulation.tick-interval-ms:60000}")
+    @Scheduled(fixedRateString = "${simulation.tick-interval-ms:15000}")
     public void tick() {
         logisticsTickCounter++;
         List<Telemetry> allLatest = telemetryService.getLatestTelemetry();
