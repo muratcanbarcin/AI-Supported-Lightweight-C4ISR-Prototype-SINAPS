@@ -11,6 +11,11 @@ import com.sinaps.c4isr_backend.repository.AppUserRepository;
 import com.sinaps.c4isr_backend.repository.AssetRepository;
 import com.sinaps.c4isr_backend.repository.TacticalZoneRepository;
 import com.sinaps.c4isr_backend.repository.TaskRepository;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +35,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+@Tag(
+    name = "Admin",
+    description = "KARARGAH_ADMIN rolüne özel yönetim endpointleri: kullanıcı yönetimi, sistem ve servis sağlık durumu. " +
+                  "Tümü JWT gerektirir."
+)
+@SecurityRequirement(name = "Bearer Authentication")
 @RestController
 @RequestMapping("/api/v1/admin")
 @RequiredArgsConstructor
@@ -47,6 +58,12 @@ public class AdminController {
     @Value("${ai.service.url:http://localhost:8000}")
     private String aiServiceUrl;
 
+    @Operation(summary = "Tüm kullanıcıları listele",
+               description = "Sistemdeki tüm kullanıcıları (id, kullanıcı adı, rol, atanmış zone) döner.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Kullanıcı listesi"),
+        @ApiResponse(responseCode = "403", description = "KARARGAH_ADMIN rolü gerekli")
+    })
     @GetMapping("/users")
     public List<AdminUserResponse> getAllUsers() {
         return appUserRepository.findAll()
@@ -60,6 +77,12 @@ public class AdminController {
                 .toList();
     }
 
+    @Operation(summary = "Yeni kullanıcı oluştur",
+               description = "username, password ve role zorunlu. HAREKAT_SUBAYI rolü için `assignedZoneId` (TacticalZone UUID) zorunludur. Parola BCrypt ile hash'lenerek saklanır.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Kullanıcı oluşturuldu"),
+        @ApiResponse(responseCode = "400", description = "Eksik/geçersiz alan veya kullanıcı adı çakışması")
+    })
     @PostMapping("/users")
     public ResponseEntity<?> createUser(@RequestBody AdminCreateUserRequest request) {
         if (request.getUsername() == null || request.getPassword() == null || request.getRole() == null) {
@@ -117,6 +140,11 @@ public class AdminController {
         }
     }
 
+    @Operation(summary = "Kullanıcı sil", description = "Verilen UUID'ye sahip kullanıcıyı kalıcı olarak siler.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "Silindi"),
+        @ApiResponse(responseCode = "404", description = "Kullanıcı bulunamadı")
+    })
     @DeleteMapping("/users/{id}")
     public ResponseEntity<Void> deleteUser(@PathVariable UUID id) {
         if (!appUserRepository.existsById(id)) {
@@ -126,6 +154,8 @@ public class AdminController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Sistem durumu",
+               description = "Toplam kullanıcı, asset, aktif görev ve zone sayısı gibi özet metrikleri döner.")
     @GetMapping("/system-status")
     public AdminSystemStatusResponse getSystemStatus() {
         long activeTasks = taskRepository.countByStatusIn(List.of("IN_PROGRESS", "EN_ROUTE"));
@@ -138,6 +168,9 @@ public class AdminController {
                 .build();
     }
 
+    @Operation(summary = "Servislerin sağlık durumu",
+               description = "Backend, PostgreSQL, AI servisi (FastAPI), MQTT broker ve Docker engine için ONLINE/OFFLINE durumlarını döner. " +
+                             "Admin dashboard'ında yan panel için kullanılır.")
     @GetMapping("/service-status")
     public AdminServiceStatusResponse getServiceStatus() {
         String dbStatus = isDatabaseReachable() ? "ONLINE" : "OFFLINE";

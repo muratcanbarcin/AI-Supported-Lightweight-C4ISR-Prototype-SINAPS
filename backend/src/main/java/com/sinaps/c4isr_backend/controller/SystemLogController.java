@@ -2,6 +2,9 @@ package com.sinaps.c4isr_backend.controller;
 
 import com.sinaps.c4isr_backend.model.SystemLog;
 import com.sinaps.c4isr_backend.repository.SystemLogRepository;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,6 +22,10 @@ import java.util.List;
  * - GET /api/v1/system-logs/{assetId}  → Fetch logs for a specific asset
  * ============================================================================
  */
+@Tag(
+    name = "System Logs",
+    description = "Sistem olay logları (intikal, varış, RTB, acil durdurma vb.). Asset bazlı veya zaman bazlı sorgular."
+)
 @RestController
 @RequestMapping("/api/v1/system-logs")
 public class SystemLogController {
@@ -34,6 +41,7 @@ public class SystemLogController {
      *
      * GET /api/v1/system-logs
      */
+    @Operation(summary = "Tüm system logları (en yeniden eskiye)")
     @GetMapping
     public ResponseEntity<List<SystemLog>> getAllLogs() {
         List<SystemLog> logs = systemLogRepository.findAllByOrderByCreatedAtDesc();
@@ -45,6 +53,7 @@ public class SystemLogController {
      *
      * GET /api/v1/system-logs/{assetId}
      */
+    @Operation(summary = "Asset bazlı loglar")
     @GetMapping("/{assetId}")
     public ResponseEntity<List<SystemLog>> getLogsForAsset(@PathVariable String assetId) {
         List<SystemLog> logs = systemLogRepository.findByAssetIdOrderByCreatedAtDesc(assetId);
@@ -55,8 +64,11 @@ public class SystemLogController {
      * Fetch recent system logs across all assets.
      * GET /api/v1/system-logs/recent?limit=20
      */
+    @Operation(summary = "Son N log (max 50)")
     @GetMapping("/recent")
-    public ResponseEntity<List<SystemLog>> getRecentLogs(@RequestParam(defaultValue = "20") int limit) {
+    public ResponseEntity<List<SystemLog>> getRecentLogs(
+            @Parameter(description = "Döndürülecek satır sayısı (1-50)")
+            @RequestParam(defaultValue = "20") int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 50));
         List<SystemLog> logs = systemLogRepository.findTop50ByOrderByCreatedAtDesc();
         if (logs.size() > safeLimit) {
@@ -76,6 +88,8 @@ public class SystemLogController {
      *   "message": "Emergency stop initiated"
      * }
      */
+    @Operation(summary = "Manuel log kaydı oluştur",
+               description = "Genellikle servisler tarafından üretilir; bu endpoint manuel kayıt veya test için.")
     @PostMapping
     public ResponseEntity<SystemLog> createLog(@RequestBody SystemLog log) {
         SystemLog saved = systemLogRepository.save(log);

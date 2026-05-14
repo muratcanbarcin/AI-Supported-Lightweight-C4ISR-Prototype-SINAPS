@@ -3,6 +3,8 @@ package com.sinaps.c4isr_backend.controller;
 import com.sinaps.c4isr_backend.model.ChatMessage;
 import com.sinaps.c4isr_backend.model.ChatSession;
 import com.sinaps.c4isr_backend.service.ChatService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +27,10 @@ import java.util.Map;
  *
  * ============================================================================
  */
+@Tag(
+    name = "Chat Sessions",
+    description = "Kalıcı çoklu sohbet oturumu yönetimi. Kullanıcı mesajı + AI cevabı DB'de saklanır; oturum başlığı ilk mesaja göre otomatik oluşur."
+)
 @RestController
 @RequestMapping("/api/v1/chats")
 public class ChatSessionController {
@@ -43,6 +49,7 @@ public class ChatSessionController {
      * POST /api/v1/chats
      * Create a new empty chat session.
      */
+    @Operation(summary = "Yeni boş chat oturumu oluştur")
     @PostMapping
     public ResponseEntity<ChatSession> createSession() {
         ChatSession session = chatService.createSession();
@@ -53,6 +60,7 @@ public class ChatSessionController {
      * GET /api/v1/chats
      * List all sessions, most recently updated first.
      */
+    @Operation(summary = "Tüm chat oturumlarını listele (en son güncellenen ilk)")
     @GetMapping
     public ResponseEntity<List<ChatSession>> getAllSessions() {
         List<ChatSession> sessions = chatService.getAllSessions();
@@ -63,6 +71,7 @@ public class ChatSessionController {
      * DELETE /api/v1/chats/{sessionId}
      * Delete a session and all its messages.
      */
+    @Operation(summary = "Oturumu ve tüm mesajlarını sil")
     @DeleteMapping("/{sessionId}")
     public ResponseEntity<Void> deleteSession(@PathVariable Long sessionId) {
         chatService.deleteSession(sessionId);
@@ -75,6 +84,7 @@ public class ChatSessionController {
      * GET /api/v1/chats/{sessionId}/messages
      * Fetch all messages in a session, sorted chronologically.
      */
+    @Operation(summary = "Oturumun tüm mesajlarını kronolojik döner")
     @GetMapping("/{sessionId}/messages")
     public ResponseEntity<List<ChatMessage>> getMessages(@PathVariable Long sessionId) {
         List<ChatMessage> messages = chatService.getMessages(sessionId);
@@ -93,6 +103,11 @@ public class ChatSessionController {
      *
      * Request body: { "content": "İHA bataryası ne zaman kritik olur?" }
      */
+    @Operation(
+        summary = "Mesaj gönder (user → AI → kaydet)",
+        description = "Tam pipeline: kullanıcı mesajını kaydet → Python AI servisine ilet → AI yanıtını kaydet → " +
+                      "ilk mesajda oturum başlığını otomatik oluştur → AI mesajını döndür. Body: `{ \"content\": \"...\" }`"
+    )
     @PostMapping("/{sessionId}/messages")
     public ResponseEntity<?> sendMessage(
             @PathVariable Long sessionId,

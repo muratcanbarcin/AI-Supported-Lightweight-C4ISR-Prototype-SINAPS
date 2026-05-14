@@ -15,6 +15,7 @@ public class MqttListenerService implements MqttCallback {
 
     // Dependency injection for TelemetryService
     private final TelemetryService telemetryService;
+    private final HardwareTelemetryService hardwareTelemetryService;
 
     // Paho MQTT Client
     private MqttClient client;
@@ -31,8 +32,14 @@ public class MqttListenerService implements MqttCallback {
     // UAV Simulator topic (drone/events)
     private static final String TOPIC_DRONE_EVENTS = "drone/events";
 
-    public MqttListenerService(TelemetryService telemetryService) {
+    // Physical hardware drone prototype (IZMIR-HW-DRONE-01) MQTT topic.
+    // Wildcard so multiple HW drones can publish under hardware/drone/<id>/telemetry.
+    private static final String TOPIC_HARDWARE_DRONE = "hardware/drone/+/telemetry";
+
+    public MqttListenerService(TelemetryService telemetryService,
+                               HardwareTelemetryService hardwareTelemetryService) {
         this.telemetryService = telemetryService;
+        this.hardwareTelemetryService = hardwareTelemetryService;
     }
 
     /**
@@ -72,6 +79,9 @@ public class MqttListenerService implements MqttCallback {
 
             client.subscribe("watch/events"); // Correct topic for Soldier/Watch simulator
             log.info("Subscribed to topic: watch/events");
+
+            client.subscribe(TOPIC_HARDWARE_DRONE);
+            log.info("Subscribed to topic: {}", TOPIC_HARDWARE_DRONE);
 
             log.info("MQTT Connection Successful! Listening for telemetry data...");
 
@@ -121,7 +131,10 @@ public class MqttListenerService implements MqttCallback {
 
         try {
             // Route message based on topic
-            if (topic.equals(TOPIC_DRONE_EVENTS) || topic.equals("vehicle/events") || topic.equals("soldier/events")
+            if (topic.matches("hardware/drone/.+/telemetry")) {
+                log.info("Routing from {} to Hardware Drone processor...", topic);
+                hardwareTelemetryService.processDroneTelemetry(payload);
+            } else if (topic.equals(TOPIC_DRONE_EVENTS) || topic.equals("vehicle/events") || topic.equals("soldier/events")
                     || topic.equals("watch/events")) {
                 // Simulator messages -> processSimulatorMessage
                 if (!topic.equals(TOPIC_DRONE_EVENTS)) {

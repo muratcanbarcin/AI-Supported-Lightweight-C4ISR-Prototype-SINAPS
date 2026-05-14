@@ -1,6 +1,10 @@
 package com.sinaps.c4isr_backend.controller;
 
 import com.sinaps.c4isr_backend.client.AIServiceClient;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +31,11 @@ import java.util.Map;
  *
  * ============================================================================
  */
+@Tag(
+    name = "AI Chat",
+    description = "Python AI mikroservisindeki RAG destekli Gemma-2-9b sohbet endpoint'ine proxy. " +
+                  "Doktrin/angajman kurallarına dayalı askeri asistan."
+)
 @RestController
 @RequestMapping("/api/v1/ai")
 public class AiChatController {
@@ -57,6 +66,16 @@ public class AiChatController {
      *   "processing_time_ms": 1523.45
      * }
      */
+    @Operation(
+        summary = "AI'ya sohbet sorusu gönder",
+        description = "Body: `{ \"query\": \"...\" }`. AI servisi pgvector üzerinde RAG araması yapar, Gemma 2 ile yanıt üretir. " +
+                      "Yanıtta `response`, `cited_rule`, `rag_hits`, `processing_time_ms` döner."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "AI yanıtı"),
+        @ApiResponse(responseCode = "400", description = "Boş query"),
+        @ApiResponse(responseCode = "500", description = "AI servisi erişilemez")
+    })
     @PostMapping("/chat")
     public ResponseEntity<Map<String, Object>> chat(@RequestBody Map<String, String> request) {
         String query = request.get("query");

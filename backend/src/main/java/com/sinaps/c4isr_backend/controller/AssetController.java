@@ -7,6 +7,11 @@ import com.sinaps.c4isr_backend.model.Telemetry;
 import com.sinaps.c4isr_backend.repository.SystemLogRepository;
 import com.sinaps.c4isr_backend.repository.TelemetryRepository;
 import com.sinaps.c4isr_backend.service.AssetService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +39,10 @@ import java.util.Optional;
  * - POST /api/v1/assets/{id}/emergency-stop → Initiate emergency stop
  * ============================================================================
  */
+@Tag(
+    name = "Assets",
+    description = "Asset (DRONE, SOLDIER, VEHICLE, SHIP, SENSOR, ELECTRONIC_WARFARE) yönetimi ve acil durdurma (emergency stop) kontrolü."
+)
 @RestController
 @RequestMapping("/api/v1/assets")
 @RequiredArgsConstructor
@@ -46,11 +55,19 @@ public class AssetController {
     private final TelemetryRepository telemetryRepository;
     private final SystemLogRepository systemLogRepository;
 
+    @Operation(summary = "Tüm assetleri listele")
     @GetMapping
     public List<Asset> getAllAssets() {
         return assetService.getAllAssets();
     }
 
+    @Operation(summary = "Yeni asset kaydı (KARARGAH_ADMIN)",
+               description = "Yeni asset kaydeder. ID, isim, tip ve assignedZoneId alanlarını içerir.")
+    @SecurityRequirement(name = "Bearer Authentication")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Asset oluşturuldu"),
+        @ApiResponse(responseCode = "400", description = "Doğrulama hatası (örn. ID çakışması)")
+    })
     @PostMapping
     @PreAuthorize("hasRole('KARARGAH_ADMIN')")
     public ResponseEntity<?> createAsset(@RequestBody AssetRegistrationRequest request) {
@@ -62,6 +79,8 @@ public class AssetController {
         }
     }
 
+    @Operation(summary = "Asset sil (KARARGAH_ADMIN)")
+    @SecurityRequirement(name = "Bearer Authentication")
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('KARARGAH_ADMIN')")
     public ResponseEntity<?> deleteAsset(@PathVariable String id) {
@@ -86,6 +105,14 @@ public class AssetController {
      * @param id The asset ID (e.g., "DRONE-001")
      * @return JSON with success status and details
      */
+    @Operation(
+        summary = "Acil durdurma",
+        description = "Verilen asset için: " +
+                      "(1) son telemetriyi STOPPED durumuna geçirir, " +
+                      "(2) `emergency_stop=true` bayrağını payload'a ekler, " +
+                      "(3) `EMERGENCY_STOP` system log kaydı oluşturur."
+    )
+    @ApiResponses(@ApiResponse(responseCode = "200", description = "Acil durdurma uygulandı"))
     @PostMapping("/{id}/emergency-stop")
     public ResponseEntity<Map<String, Object>> emergencyStop(@PathVariable String id) {
         log.warn("🚨 EMERGENCY STOP initiated for asset: {}", id);

@@ -3,6 +3,8 @@ package com.sinaps.c4isr_backend.controller;
 import com.sinaps.c4isr_backend.model.TacticalAnalysis;
 import com.sinaps.c4isr_backend.repository.TacticalAnalysisRepository;
 import com.sinaps.c4isr_backend.service.AlertService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,6 +28,11 @@ import java.util.stream.Collectors;
  * - /assets/:id - Asset profile with analysis history
  * ============================================================================
  */
+@Tag(
+    name = "Alerts & Tactical Analysis",
+    description = "Uyarı (alert) ve taktik analiz sorguları. Uyarılar AI analizi ve telemetri anomalilerinden üretilir; " +
+                  "taktik analizler asset bazlı AI değerlendirmeleridir."
+)
 @RestController
 @RequestMapping("/api/v1")
 public class AlertAnalysisController {
@@ -47,6 +54,7 @@ public class AlertAnalysisController {
      * Get all alerts (most recent first).
      * Endpoint: GET /api/v1/alerts
      */
+    @Operation(summary = "Tüm uyarıları listele")
     @GetMapping("/alerts")
     public ResponseEntity<List<Map<String, Object>>> getAllAlerts() {
         List<AlertService.Alert> alerts = alertService.getAllAlerts();
@@ -57,6 +65,7 @@ public class AlertAnalysisController {
      * Get unacknowledged alerts.
      * Endpoint: GET /api/v1/alerts/unacknowledged
      */
+    @Operation(summary = "Acknowledge edilmemiş uyarılar")
     @GetMapping("/alerts/unacknowledged")
     public ResponseEntity<List<Map<String, Object>>> getUnacknowledgedAlerts() {
         List<AlertService.Alert> alerts = alertService.getUnacknowledgedAlerts();
@@ -67,6 +76,7 @@ public class AlertAnalysisController {
      * Get alerts for a specific asset.
      * Endpoint: GET /api/v1/alerts/asset/{sourceId}
      */
+    @Operation(summary = "Belirli bir asset için uyarılar")
     @GetMapping("/alerts/asset/{sourceId}")
     public ResponseEntity<List<Map<String, Object>>> getAlertsForAsset(@PathVariable String sourceId) {
         List<AlertService.Alert> alerts = alertService.getAlertsForAsset(sourceId);
@@ -77,6 +87,7 @@ public class AlertAnalysisController {
      * Get alert statistics.
      * Endpoint: GET /api/v1/alerts/stats
      */
+    @Operation(summary = "Uyarı istatistikleri (toplam, ack/unack vb.)")
     @GetMapping("/alerts/stats")
     public ResponseEntity<Map<String, Object>> getAlertStats() {
         return ResponseEntity.ok(alertService.getAlertStats());
@@ -86,6 +97,7 @@ public class AlertAnalysisController {
      * Acknowledge an alert.
      * Endpoint: POST /api/v1/alerts/{id}/acknowledge
      */
+    @Operation(summary = "Uyarıyı acknowledge et", description = "Uyarıyı görüldü/onaylandı olarak işaretler.")
     @PostMapping("/alerts/{id}/acknowledge")
     public ResponseEntity<Map<String, Object>> acknowledgeAlert(@PathVariable Long id) {
         boolean success = alertService.acknowledgeAlert(id);
@@ -102,6 +114,7 @@ public class AlertAnalysisController {
      * Delete an alert.
      * Endpoint: DELETE /api/v1/alerts/{id}
      */
+    @Operation(summary = "Uyarıyı sil")
     @DeleteMapping("/alerts/{id}")
     public ResponseEntity<Map<String, Object>> deleteAlert(@PathVariable Long id) {
         boolean success = alertService.deleteAlert(id);
@@ -119,6 +132,7 @@ public class AlertAnalysisController {
      * Get all tactical analyses (most recent first).
      * Endpoint: GET /api/v1/analysis
      */
+    @Operation(summary = "Tüm taktik analizler (en yeniden eskiye)")
     @GetMapping("/analysis")
     public ResponseEntity<List<Map<String, Object>>> getAllAnalyses() {
         List<TacticalAnalysis> analyses = analysisRepository.findAllByOrderByAnalyzedAtDesc();
@@ -129,6 +143,7 @@ public class AlertAnalysisController {
      * Get latest analysis for each asset.
      * Endpoint: GET /api/v1/analysis/latest
      */
+    @Operation(summary = "Son 50 taktik analiz", description = "Dashboard listesi için yaklaşık 50 satırla sınırlı son analizler.")
     @GetMapping("/analysis/latest")
     public ResponseEntity<List<Map<String, Object>>> getLatestAnalyses() {
         // Get latest 50 analyses
@@ -140,6 +155,7 @@ public class AlertAnalysisController {
      * Get analysis by ID.
      * Endpoint: GET /api/v1/analysis/{id}
      */
+    @Operation(summary = "Taktik analizi ID ile getir")
     @GetMapping("/analysis/{id}")
     public ResponseEntity<Map<String, Object>> getAnalysisById(@PathVariable Long id) {
         return analysisRepository.findById(id)
@@ -151,6 +167,7 @@ public class AlertAnalysisController {
      * Get analyses for a specific asset.
      * Endpoint: GET /api/v1/analysis/asset/{sourceId}
      */
+    @Operation(summary = "Belirli asset için taktik analizler")
     @GetMapping("/analysis/asset/{sourceId}")
     public ResponseEntity<List<Map<String, Object>>> getAnalysesForAsset(@PathVariable String sourceId) {
         List<TacticalAnalysis> analyses = analysisRepository.findByTelemetrySourceIdOrderByAnalyzedAtDesc(sourceId);
@@ -161,6 +178,7 @@ public class AlertAnalysisController {
      * Get analyses by threat level.
      * Endpoint: GET /api/v1/analysis/threat/{level}
      */
+    @Operation(summary = "Tehdit seviyesine göre filtrele", description = "level: NORMAL | SUSPICIOUS | CRITICAL")
     @GetMapping("/analysis/threat/{level}")
     public ResponseEntity<List<Map<String, Object>>> getAnalysesByThreatLevel(@PathVariable String level) {
         List<TacticalAnalysis> analyses = analysisRepository.findByThreatLevelOrderByAnalyzedAtDesc(level.toUpperCase());
@@ -171,6 +189,7 @@ public class AlertAnalysisController {
      * Get analysis statistics.
      * Endpoint: GET /api/v1/analysis/stats
      */
+    @Operation(summary = "Taktik analiz istatistikleri")
     @GetMapping("/analysis/stats")
     public ResponseEntity<Map<String, Object>> getAnalysisStats() {
         Map<String, Object> stats = new HashMap<>();
@@ -189,6 +208,8 @@ public class AlertAnalysisController {
      * Get AI service health status.
      * Endpoint: GET /api/v1/ai/status
      */
+    @Operation(summary = "AI servis sağlık durumu (özet)",
+               description = "Python AI mikroservisinin URL'i ve durumu. Detaylı health-check için Admin → service-status'a bakın.")
     @GetMapping("/ai/status")
     public ResponseEntity<Map<String, Object>> getAIServiceStatus() {
         Map<String, Object> status = new HashMap<>();

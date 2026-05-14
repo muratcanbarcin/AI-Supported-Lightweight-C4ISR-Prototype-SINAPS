@@ -1,0 +1,20 @@
+{
+  "domain": "drone",
+  "type": "telemetry",
+  "id": "IZMIR-HW-DRONE-01",
+  "time": "2026-05-14T14:15:00.000Z",
+  "payload": {
+    "position": { "lat": 38.5120, "lon": 27.0155, "alt_m": 450.0 },
+    "battery":  { "soc_pct": 82.5 },
+    "is_simulated": false,
+    "status": "IN_MISSION",
+    "edge_analysis": {
+      "detections": [
+        { "class": "MILITARY_VEHICLE", "alignment": "HOSTILE",  "confidence": 0.89, "estimated_distance_m": 718.4 },
+        { "class": "SOLDIER",          "alignment": "FRIENDLY", "confidence": 0.95, "estimated_distance_m": 150.2 },
+        { "class": "TRUCK",            "alignment": "UNKNOWN",  "confidence": 0.87, "estimated_distance_m": 710.1 },
+        { "class": "CIVILIAN_VEHICLE", "alignment": "NEUTRAL",  "confidence": 0.88, "estimated_distance_m": 328.1 }
+      ]
+    }
+  }
+}

@@ -35,6 +35,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         // Public: telemetry (read by dashboard, map, health-check)
                         .requestMatchers("/api/v1/telemetry/**").permitAll()
+                        // Public: hardware ingest endpoints (watch / drone prototypes)
+                        .requestMatchers("/api/v1/hardware/**").permitAll()
                         // Public: alerts & alarms
                         .requestMatchers("/api/v1/alerts/**").permitAll()
                         .requestMatchers("/api/v1/alarms/**").permitAll()

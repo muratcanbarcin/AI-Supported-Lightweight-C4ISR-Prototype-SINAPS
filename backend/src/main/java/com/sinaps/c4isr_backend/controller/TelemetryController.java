@@ -2,14 +2,22 @@ package com.sinaps.c4isr_backend.controller;
 
 import com.sinaps.c4isr_backend.model.Telemetry;
 import com.sinaps.c4isr_backend.service.TelemetryService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@RestController // Bu sınıfın bir REST API olduğunu belirtir
-@RequestMapping("/api/v1/telemetry") // Class Diagram'a uygun ana adres yapısı
-// Note: CORS is now handled globally by GlobalCorsConfig.java
+@Tag(
+    name = "Telemetry",
+    description = "Tüm assetlerden (simüle + donanım) toplanan telemetri için genel sorgu/ingest endpointleri. " +
+                  "Frontend haritası `/latest` adresini periyodik olarak çağırır."
+)
+@RestController
+@RequestMapping("/api/v1/telemetry")
 public class TelemetryController {
 
     private final TelemetryService telemetryService;
@@ -25,6 +33,12 @@ public class TelemetryController {
      * ettirecek.
      * Adres: http://localhost:8080/api/v1/telemetry/latest
      */
+    @Operation(
+        summary = "En güncel telemetri (her asset için)",
+        description = "Her benzersiz kaynak (sourceId) için en son telemetri kaydını döner. Harita ikonlarını sürekli güncellemek için kullanılır. " +
+                      "Kullanıcı rolü zone-kısıtlıysa sadece atanmış zone'daki assetler döner; KARARGAH_ADMIN ve anonim erişimde tamamı görünür."
+    )
+    @ApiResponses(@ApiResponse(responseCode = "200", description = "Telemetri listesi"))
     @GetMapping("/latest")
     public ResponseEntity<List<com.sinaps.c4isr_backend.dto.TelemetryResponseDTO>> getLatestTelemetry() {
         // Servisten en son verileri iste
@@ -44,6 +58,12 @@ public class TelemetryController {
      * CSV dosyası kullanmak istemeyenler için tüm veritabanını JSON olarak sunar.
      * Adres: http://localhost:8080/api/v1/telemetry/history
      */
+    @Operation(
+        summary = "Tüm telemetri geçmişi",
+        description = "Veritabanındaki tüm telemetri kayıtlarını döner. AI eğitimi (training) ve dışa aktarım için kullanılır. " +
+                      "DİKKAT: Büyük veride yavaş olabilir; ileride sayfalama eklenebilir."
+    )
+    @ApiResponses(@ApiResponse(responseCode = "200", description = "Tüm geçmiş telemetri"))
     @GetMapping("/history")
     public ResponseEntity<List<com.sinaps.c4isr_backend.dto.TelemetryResponseDTO>> getTelemetryHistory() {
         // Tüm geçmiş veriyi çek (Dikkat: Büyük veride sayfalama gerekebilir)
@@ -73,6 +93,15 @@ public class TelemetryController {
      *   }
      * }
      */
+    @Operation(
+        summary = "Generic simulator telemetri ingest",
+        description = "UAV/Vehicle/Soldier simülatörlerinden gelen tek bir telemetri JSON'unu işler. " +
+                      "Donanım prototipleri için bunun yerine `/api/v1/hardware/...` endpointlerini kullanın."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Telemetri kaydedildi"),
+        @ApiResponse(responseCode = "400", description = "JSON parse veya saklama hatası")
+    })
     @PostMapping
     public ResponseEntity<String> ingestTelemetry(@RequestBody String jsonPayload) {
         try {
@@ -88,6 +117,14 @@ public class TelemetryController {
      * Batch telemetry ingestion - accepts array of telemetry messages.
      * Adres: POST http://localhost:8080/api/v1/telemetry/batch
      */
+    @Operation(
+        summary = "Batch telemetri ingest",
+        description = "JSON array içinde birden fazla telemetri kaydını tek istekle gönderir. Replay/import senaryoları için kullanılır."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Toplu işlem tamamlandı"),
+        @ApiResponse(responseCode = "400", description = "JSON parse hatası")
+    })
     @PostMapping("/batch")
     public ResponseEntity<String> ingestBatchTelemetry(@RequestBody String jsonArrayPayload) {
         try {
