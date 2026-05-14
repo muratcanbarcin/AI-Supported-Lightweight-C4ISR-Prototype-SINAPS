@@ -496,6 +496,55 @@ export async function postEmergencyStop(assetId: string): Promise<{ success: boo
 }
 
 // =============================================================================
+// PROFILE API
+// =============================================================================
+
+export interface ProfileCommander {
+  username: string;
+  role: 'KARARGAH_ADMIN' | 'ORDU_KOMUTANI' | 'HAREKAT_SUBAYI';
+  rank: string;
+  roleLabel: string;
+  fullName: string;
+  firstName: string;
+  lastName: string;
+  unitName: string;
+  assignedZoneId: string | null;
+  serviceTag: string;
+}
+
+export interface ProfileResponsibleUnit {
+  id: string;
+  name: string;
+  type: string;
+  status: 'ONLINE' | 'WARNING' | 'OFFLINE';
+  batteryLevel: number | null;
+}
+
+export interface ProfileActiveOperation {
+  id: number;
+  name: string;
+  region: string | null;
+  status: string;
+  taskType: string | null;
+  createdAt: string | null;
+}
+
+export interface ProfileResponse {
+  commander: ProfileCommander;
+  responsibleUnits: ProfileResponsibleUnit[];
+  activeOperations: ProfileActiveOperation[];
+}
+
+/**
+ * Fetch the logged-in user's aggregated profile.
+ * GET /api/v1/auth/me
+ */
+export async function fetchProfile(): Promise<ProfileResponse> {
+  const response = await api.get<ProfileResponse>('/auth/me');
+  return response.data;
+}
+
+// =============================================================================
 // DEFAULT EXPORT
 // =============================================================================
 
