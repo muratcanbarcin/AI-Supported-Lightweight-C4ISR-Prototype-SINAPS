@@ -58,7 +58,26 @@ class Settings(BaseSettings):
     
     # HuggingFace Token (required for Gemma model access)
     HF_TOKEN: str = os.getenv("HF_TOKEN", "")
-    
+
+    # ─────────────────────────────────────────────────────────────────
+    # Groq Chat Engine — primary chat backend (replaces local Llama)
+    # ─────────────────────────────────────────────────────────────────
+    # When GROQ_API_KEY is set and GROQ_ENABLED=true, /chat goes through Groq.
+    # On Groq failure (network error / 5xx / 429), the engine lazy-loads the
+    # local Llama-3.1-8B as a fallback. This keeps the GPU free of Llama
+    # while everything is healthy, leaving full VRAM headroom for Gemma.
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    GROQ_BASE_URL: str = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+    GROQ_ENABLED: bool = os.getenv("GROQ_ENABLED", "true").lower() in ("1", "true", "yes")
+    GROQ_TIMEOUT_S: float = float(os.getenv("GROQ_TIMEOUT_S", "30"))
+    GROQ_TEMPERATURE: float = float(os.getenv("GROQ_TEMPERATURE", "0.3"))
+    GROQ_MAX_TOKENS: int = int(os.getenv("GROQ_MAX_TOKENS", "1024"))
+
+    # When true (default), local Llama is NOT loaded at startup. It will be
+    # loaded on-demand only if Groq fails and a chat request comes in.
+    CHAT_LOCAL_FALLBACK_LAZY: bool = os.getenv("CHAT_LOCAL_FALLBACK_LAZY", "true").lower() in ("1", "true", "yes")
+
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -33,6 +33,7 @@ import re
 import json
 import time
 import gc
+import httpx
 import torch
 from typing import List, Optional, Dict, Any, Tuple, Union
 from datetime import datetime
@@ -213,7 +214,7 @@ class ModelEngine:
         self._gemma_model = None
         self._gemma_tokenizer = None
 
-        # ── Engine 2: Llama (Chat) ──
+        # ── Engine 2: Llama (Chat — local fallback) ──
         self._llama_model = None
         self._llama_tokenizer = None
 
@@ -223,6 +224,11 @@ class ModelEngine:
         self._current_adapter: Optional[str] = None
         self._training_jobs: Dict[str, Dict] = {}
         self._device = DEVICE
+
+        # ── Chat backend strategy (resolved during initialize()) ──
+        self._groq_enabled = False
+        self._lazy_fallback = True
+        self._groq_client: Optional[httpx.Client] = None
 
     # ========================================================================
     #                           VRAM MONITORING
@@ -254,35 +260,49 @@ class ModelEngine:
 
     def initialize(self) -> None:
         """
-        Initialize BOTH engines from LOCAL directories (air-gapped mode).
+        Initialize the analysis engine and configure the chat backend.
 
         Load order:
-            1. Gemma-2-9b-it  → Analysis engine (+ optional LoRA adapter)
-            2. Llama-3.1-8B   → Chat engine (base only, no LoRA)
+            1. Gemma-2-9b-it (+ LoRA adapter) → ANALYSIS engine (always local)
+            2. Chat backend:
+                a. If GROQ_API_KEY is set & GROQ_ENABLED → primary chat is Groq
+                   (llama-3.3-70b-versatile via REST). Local Llama is *not*
+                   loaded at startup — it stays cold as a lazy fallback.
+                b. Otherwise → load local Llama-3.1-8B as the chat engine.
 
-        Both use 4-bit NF4 quantization with device_map="auto" to share
-        the GPU intelligently and prevent OOM on RTX 3080 16GB.
+        This keeps full VRAM headroom for Gemma when Groq is healthy.
         """
         if self._initialized:
             return
 
         start_time = time.time()
 
-        # ── Verify CUDA availability ─────────────────────────────────
+        # ── Verify CUDA availability (required for Gemma) ────────────
         if not torch.cuda.is_available():
             raise RuntimeError(
-                "CUDA not available! Dual-engine architecture requires an NVIDIA GPU."
+                "CUDA not available! Analysis engine (Gemma) requires an NVIDIA GPU."
             )
 
         gpu_name = torch.cuda.get_device_name(0)
         gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
         logger.info(f"GPU Detected: {gpu_name} ({gpu_memory:.1f}GB VRAM)")
         print(f"🚀 GPU: {gpu_name} with {gpu_memory:.1f}GB VRAM")
+
+        # Resolve chat backend strategy
+        groq_enabled = bool(settings.GROQ_ENABLED and settings.GROQ_API_KEY)
+        lazy_fallback = bool(settings.CHAT_LOCAL_FALLBACK_LAZY)
+
         print("=" * 70)
-        print("   DUAL-ENGINE ARCHITECTURE — Loading 2 Models to Single GPU")
-        print("   Engine 1: Gemma-2-9b-it  (Analysis + LoRA)")
-        print("   Engine 2: Llama-3.1-8B   (Chat)")
-        print("   Quantization: 4-bit NF4 for both engines")
+        print("   ENGINE ARCHITECTURE")
+        print("   🔬 Analysis : Gemma-2-9b-it (+ LoRA) — LOCAL GPU, 4-bit NF4")
+        if groq_enabled:
+            print(f"   💬 Chat     : Groq → {settings.GROQ_MODEL} (PRIMARY)")
+            if lazy_fallback:
+                print("                Local Llama-3.1-8B = LAZY FALLBACK (cold)")
+            else:
+                print("                Local Llama-3.1-8B = HOT STANDBY (loaded)")
+        else:
+            print("   💬 Chat     : Local Llama-3.1-8B-Instruct (no Groq key)")
         print("=" * 70)
 
         # Clear GPU cache before loading
@@ -294,9 +314,21 @@ class ModelEngine:
         self._load_gemma_engine()
         self._log_vram_usage("POST-GEMMA")
 
-        # ── Load Engine 2: Llama (Chat) ──────────────────────────────
-        self._load_llama_engine()
-        self._log_vram_usage("POST-LLAMA (Both Models Loaded)")
+        # ── Chat backend: Groq primary, local Llama as fallback ──────
+        self._groq_enabled = groq_enabled
+        self._lazy_fallback = lazy_fallback
+        if not groq_enabled or not lazy_fallback:
+            # No Groq → must load local. Or hot-standby requested.
+            self._load_llama_engine()
+            self._log_vram_usage("POST-LLAMA")
+        else:
+            logger.info(
+                "Local Llama load SKIPPED (Groq primary, lazy fallback enabled)",
+                groq_model=settings.GROQ_MODEL,
+            )
+            print(
+                f"   ⏭  Local Llama load skipped — Groq ({settings.GROQ_MODEL}) is primary."
+            )
 
         # ── Final Status ─────────────────────────────────────────────
         self._initialized = True
@@ -307,20 +339,27 @@ class ModelEngine:
             else "BASE MODEL (No Adapter)"
         )
 
+        chat_engine_label = (
+            f"Groq · {settings.GROQ_MODEL}" if groq_enabled
+            else "Local · Llama-3.1-8B-Instruct"
+        )
+
         logger.info(
-            "🎯 DUAL-ENGINE initialized successfully",
-            mode="OFFLINE",
-            engine1="Gemma-2-9b-it (Analysis)",
-            engine1_adapter=adapter_status,
-            engine2="Llama-3.1-8B-Instruct (Chat)",
-            quantization="4-bit NF4 (both)",
+            "🎯 Model engines initialized successfully",
+            mode="HYBRID" if groq_enabled else "OFFLINE",
+            analysis_engine="Gemma-2-9b-it",
+            analysis_adapter=adapter_status,
+            chat_engine=chat_engine_label,
+            chat_fallback="Local Llama-3.1-8B (lazy)" if (groq_enabled and lazy_fallback) else "n/a",
             device="CUDA",
             load_time_seconds=f"{total_time:.2f}"
         )
         print("\n" + "=" * 70)
-        print("✅ DUAL-ENGINE READY")
-        print(f"   🔬 Engine 1 (Analysis): Gemma-2-9b-it [{adapter_status}]")
-        print(f"   💬 Engine 2 (Chat):     Llama-3.1-8B-Instruct")
+        print("✅ ENGINES READY")
+        print(f"   🔬 Analysis : Gemma-2-9b-it [{adapter_status}]")
+        print(f"   💬 Chat     : {chat_engine_label}")
+        if groq_enabled and lazy_fallback:
+            print("   🆘 Fallback : Local Llama-3.1-8B (will load on Groq failure)")
         print(f"   ⏱️  Total startup: {total_time:.2f}s")
         print("=" * 70 + "\n")
 
@@ -586,16 +625,18 @@ class ModelEngine:
         max_new_tokens: int = 1024
     ) -> str:
         """
-        Generate conversational response using Llama-3.1-8B-Instruct (Engine 2).
+        Generate a Turkish military assistant chat response.
 
-        Turkish military assistant persona. Short, authoritative answers.
-        Uses Llama-3.1 chat template with system/user/assistant roles.
+        Routing:
+            1. If Groq is enabled (GROQ_API_KEY set) → call Groq REST API
+               with the configured model (default: llama-3.3-70b-versatile).
+            2. On any Groq failure (network / 5xx / 429 / timeout), fall back
+               to the local Llama-3.1-8B-Instruct (lazy-loaded if cold).
 
         Args:
             query:           Commander's question (free text)
             rag_context:     Pre-formatted doctrine context string (may be empty)
-            history:         List of {"role": "user"|"assistant", "content": "..."}
-                             from previous turns (most recent last).  Max 6 kept.
+            history:         Recent {"role":..., "content":...} turns (≤6 used)
             mention_context: Real-time data for @mentioned assets (may be empty)
             max_new_tokens:  Maximum tokens to generate (default 1024)
 
@@ -607,23 +648,79 @@ class ModelEngine:
 
         start_time = time.time()
 
-        logger.info("[Llama] Generating chat response", query=query[:80])
+        # ── Compose the OpenAI-style message list (provider-agnostic) ────
+        messages = self._compose_chat_messages(
+            query=query,
+            rag_context=rag_context,
+            history=history,
+            mention_context=mention_context,
+        )
 
-        # ── Build Llama-3.1 prompt with system + history + user roles ─────
-        doctrine_block = rag_context if rag_context else "(Doktrin bilgisi bulunamadı — kendi askeri zekanı kullan.)"
+        # ── Primary: Groq ────────────────────────────────────────────────
+        if self._groq_enabled:
+            try:
+                logger.info(
+                    "[Groq] Generating chat response",
+                    model=settings.GROQ_MODEL,
+                    query=query[:80],
+                )
+                response_text = self._call_groq_chat(
+                    messages=messages,
+                    max_tokens=max_new_tokens,
+                )
+                response_text = self._post_process_chat(response_text)
+                inference_time = time.time() - start_time
+                logger.info(
+                    "[Groq] Chat response generated",
+                    model=settings.GROQ_MODEL,
+                    response_length=len(response_text),
+                    inference_time_s=f"{inference_time:.2f}",
+                )
+                return response_text
+            except Exception as e:
+                logger.warning(
+                    "[Groq] Call failed — falling back to local Llama",
+                    error=str(e)[:200],
+                )
 
-        # Build user message with optional mention data
+        # ── Fallback: local Llama-3.1-8B-Instruct ────────────────────────
+        self._ensure_llama_loaded()
+        response_text = self._run_local_llama_chat(
+            messages=messages,
+            max_new_tokens=max_new_tokens,
+            query=query,
+            start_time=start_time,
+        )
+        return response_text
+
+    # ────────────────────────────────────────────────────────────────────
+    # Chat helpers (shared by Groq + local Llama)
+    # ────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _compose_chat_messages(
+        query: str,
+        rag_context: str,
+        history: list[dict] | None,
+        mention_context: str,
+    ) -> list[dict]:
+        """Build an OpenAI/Llama-3 style ``messages`` list from chat inputs."""
+        doctrine_block = (
+            rag_context if rag_context
+            else "(Doktrin bilgisi bulunamadı — kendi askeri zekanı kullan.)"
+        )
+
         parts = [f"[DOKTRIN]: {doctrine_block}"]
         if mention_context:
-            parts.append(f"\n\n[SAHADAN CANLI VERİ - MENTION EDİLEN BİRİMLER]:\n{mention_context}")
+            parts.append(
+                f"\n\n[SAHADAN CANLI VERİ - MENTION EDİLEN BİRİMLER]:\n{mention_context}"
+            )
         parts.append(f"\n\n[SORU]: {query}")
         user_message = "".join(parts)
 
-        messages = [
+        messages: list[dict] = [
             {"role": "system", "content": LLAMA_CHAT_SYSTEM_PROMPT},
         ]
-
-        # Inject conversation history (cap at last 6 messages to avoid OOM)
         if history:
             recent = history[-6:]
             for turn in recent:
@@ -631,32 +728,106 @@ class ModelEngine:
                 content = turn.get("content", "")
                 if role in ("user", "assistant") and content:
                     messages.append({"role": role, "content": content})
-            logger.info("[Llama] History injected", turns=len(recent))
-
-        # Current user message (with doctrine context)
         messages.append({"role": "user", "content": user_message})
+        return messages
 
-        # Apply Llama-3.1 chat template
+    def _post_process_chat(self, text: str) -> str:
+        """Common chat output cleanup (JSON artifacts + degenerate repetition)."""
+        raw = text or ""
+        cleaned = self._strip_json_artifacts(raw)
+        cleaned = self._clean_repetitive_output(cleaned)
+        if not cleaned or len(cleaned) < 10:
+            return raw.strip()
+        return cleaned.strip()
+
+    # ────────────────────────────────────────────────────────────────────
+    # Groq HTTP client
+    # ────────────────────────────────────────────────────────────────────
+
+    def _get_groq_client(self) -> httpx.Client:
+        """Return a lazily-constructed httpx client bound to the Groq endpoint."""
+        if self._groq_client is None:
+            self._groq_client = httpx.Client(
+                base_url=settings.GROQ_BASE_URL.rstrip("/"),
+                timeout=settings.GROQ_TIMEOUT_S,
+                headers={
+                    "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+            )
+        return self._groq_client
+
+    def _call_groq_chat(self, messages: list[dict], max_tokens: int) -> str:
+        """POST to Groq's OpenAI-compatible /chat/completions endpoint."""
+        payload = {
+            "model": settings.GROQ_MODEL,
+            "messages": messages,
+            "temperature": settings.GROQ_TEMPERATURE,
+            "max_tokens": min(max_tokens, settings.GROQ_MAX_TOKENS),
+            "top_p": 0.9,
+            "stream": False,
+        }
+        client = self._get_groq_client()
+        resp = client.post("/chat/completions", json=payload)
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"Groq HTTP {resp.status_code}: {resp.text[:300]}"
+            )
+        data = resp.json()
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as ex:
+            raise RuntimeError(f"Groq response malformed: {ex} :: {str(data)[:300]}")
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("Groq returned empty content")
+        return content.strip()
+
+    # ────────────────────────────────────────────────────────────────────
+    # Local Llama fallback path
+    # ────────────────────────────────────────────────────────────────────
+
+    def _ensure_llama_loaded(self) -> None:
+        """Lazy-load the local Llama-3.1-8B chat engine if not yet loaded."""
+        if self._llama_model is not None and self._llama_tokenizer is not None:
+            return
+        logger.warning(
+            "Lazy-loading local Llama-3.1-8B-Instruct fallback "
+            "(this consumes ~6GB VRAM)"
+        )
+        print("\n⚠️  Lazy-loading local Llama-3.1-8B fallback (~6GB VRAM)...")
+        self._load_llama_engine()
+        self._log_vram_usage("POST-LLAMA (Lazy Fallback)")
+
+    def _run_local_llama_chat(
+        self,
+        messages: list[dict],
+        max_new_tokens: int,
+        query: str,
+        start_time: float,
+    ) -> str:
+        """Run the OpenAI-style ``messages`` list through the local Llama model."""
+        logger.info("[Llama-local] Generating chat response", query=query[:80])
+
         prompt = self._llama_tokenizer.apply_chat_template(
             messages,
             tokenize=False,
-            add_generation_prompt=True
+            add_generation_prompt=True,
         )
 
-        # Tokenize — max_length applies to PROMPT ONLY (not generation output).
-        # Llama-3.1 supports 128K context, but we cap at 4096 for RTX 3080 VRAM safety.
         inputs = self._llama_tokenizer(
             prompt,
             return_tensors="pt",
             truncation=True,
-            max_length=4096
+            max_length=4096,
         ).to("cuda")
 
-        prompt_len = inputs['input_ids'].shape[1]
-        logger.info("[Llama] Prompt tokenized", prompt_tokens=prompt_len, max_new_tokens=max_new_tokens)
+        prompt_len = inputs["input_ids"].shape[1]
+        logger.info(
+            "[Llama-local] Prompt tokenized",
+            prompt_tokens=prompt_len,
+            max_new_tokens=max_new_tokens,
+        )
 
-        # Generate — max_new_tokens guarantees 1024 tokens exclusively for output,
-        # regardless of how long the prompt/history is.
         with torch.no_grad():
             outputs = self._llama_model.generate(
                 **inputs,
@@ -665,40 +836,28 @@ class ModelEngine:
                 temperature=0.3,
                 top_p=0.9,
                 repetition_penalty=1.1,
-                pad_token_id=self._llama_tokenizer.pad_token_id
+                pad_token_id=self._llama_tokenizer.pad_token_id,
             )
 
-        # Decode (skip input tokens)
         response_text = self._llama_tokenizer.decode(
-            outputs[0][inputs['input_ids'].shape[1]:],
-            skip_special_tokens=True
+            outputs[0][inputs["input_ids"].shape[1]:],
+            skip_special_tokens=True,
         ).strip()
 
-        # ── Post-processing ──────────────────────────────────────────
         raw_output = response_text
-        logger.info("[Llama] Raw chat output", raw_text=raw_output[:300])
-
-        # Strip any JSON artifacts the model might produce
-        response_text = self._strip_json_artifacts(response_text)
-        # Detect & truncate degenerate repetition
-        response_text = self._clean_repetitive_output(response_text)
-
-        # Safety: if post-processing emptied it, use raw output
-        if not response_text or len(response_text) < 10:
-            response_text = raw_output
+        logger.info("[Llama-local] Raw chat output", raw_text=raw_output[:300])
+        response_text = self._post_process_chat(response_text)
 
         inference_time = time.time() - start_time
         logger.info(
-            "[Llama] Chat response generated",
+            "[Llama-local] Chat response generated",
             query=query[:80],
             response_length=len(response_text),
             inference_time_s=f"{inference_time:.2f}",
         )
 
-        # Cleanup inference tensors
         del inputs, outputs
         torch.cuda.empty_cache()
-
         return response_text
 
     # ========================================================================
@@ -1254,28 +1413,52 @@ Based on the ENGAGEMENT RULES above and the TELEMETRY DATA, provide your tactica
         return self._training_jobs.get(job_id)
 
     def get_model_info(self) -> Dict[str, Any]:
-        """Get current dual-engine model information and status."""
+        """Get current engine information and chat backend routing status."""
         vram = "N/A"
         if torch.cuda.is_available():
             vram = f"{torch.cuda.memory_allocated() / 1024**3:.2f}"
 
+        local_llama_loaded = (
+            self._llama_model is not None and self._llama_tokenizer is not None
+        )
+
+        if self._groq_enabled:
+            chat_primary = {
+                "provider": "groq",
+                "model": settings.GROQ_MODEL,
+                "base_url": settings.GROQ_BASE_URL,
+                "endpoint": "POST /chat",
+            }
+            chat_fallback = {
+                "provider": "local",
+                "model": "Meta-Llama-3.1-8B-Instruct",
+                "loaded": local_llama_loaded,
+                "mode": "lazy" if self._lazy_fallback else "hot",
+            }
+        else:
+            chat_primary = {
+                "provider": "local",
+                "model": "Meta-Llama-3.1-8B-Instruct",
+                "loaded": local_llama_loaded,
+                "endpoint": "POST /chat",
+            }
+            chat_fallback = None
+
         return {
-            "architecture": "dual-engine",
-            "engine1": {
+            "architecture": "hybrid" if self._groq_enabled else "dual-engine-local",
+            "analysis": {
                 "model": "Gemma-2-9b-it",
                 "role": "Analysis (POST /analyze)",
                 "adapter": self._current_adapter,
                 "lora_active": self._lora_applied,
+                "quantization": "4-bit NF4",
             },
-            "engine2": {
-                "model": "Meta-Llama-3.1-8B-Instruct",
-                "role": "Chat (POST /chat)",
-                "adapter": None,
-                "lora_active": False,
+            "chat": {
+                "primary": chat_primary,
+                "fallback": chat_fallback,
             },
             "initialized": self._initialized,
             "device": self._device,
-            "quantization": "4-bit NF4 (both engines)",
             "vram_allocated_gb": vram,
         }
 
