@@ -32,6 +32,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from contextlib import asynccontextmanager
@@ -499,16 +500,21 @@ async def chat_with_ai(request: ChatRequest):
     if mention_ids:
         mention_ctx = _fetch_mention_context(mention_ids)
 
-    # ── Step 4: Generate response via Llama-3.1-8B-Instruct ──────────
+    # ── Step 4: Generate response (Groq primary, local Llama fallback) ──
+    # NOTE: Run in a worker thread so the FastAPI event loop is NOT blocked
+    # while Gemma is busy on the GPU. Without this offload, a long Gemma
+    # /analyze (15-20s GPU sync) would force every concurrent /chat request
+    # to queue behind it, masquerading as "Groq is slow".
     try:
-        response_text = model_engine.generate_chat(
-            query=query,
-            rag_context=rag_context_str,
-            history=history_dicts,
-            mention_context=mention_ctx,
+        response_text = await asyncio.to_thread(
+            model_engine.generate_chat,
+            query,
+            rag_context_str,
+            history_dicts,
+            mention_ctx,
         )
     except Exception as e:
-        logger.error(f"Llama chat generation failed: {e}")
+        logger.error(f"Chat generation failed: {e}")
         response_text = (
             "AI modeli şu anda yanıt veremiyor. "
             "Lütfen daha sonra tekrar deneyin veya sistem yöneticisine başvurun."
@@ -582,10 +588,13 @@ async def analyze_telemetry(request: AnalysisRequest):
             logger.warning(f"RAG retrieval failed (continuing without context): {e}")
 
     # ── Step 3: AI decision — Gemma with RAG context ─────────────────
+    # Run on a worker thread; Gemma inference is GPU-sync (~15-20s) and would
+    # otherwise block the event loop and stall every other request.
     try:
-        decision, threat_level, confidence, reasoning = model_engine.generate_analysis(
-            telemetry_data=telemetry,
-            retrieved_context=[c.model_dump() for c in context_items],
+        decision, threat_level, confidence, reasoning = await asyncio.to_thread(
+            model_engine.generate_analysis,
+            telemetry,
+            [c.model_dump() for c in context_items],
         )
     except Exception as e:
         logger.error(f"Gemma analysis generation failed: {e}")

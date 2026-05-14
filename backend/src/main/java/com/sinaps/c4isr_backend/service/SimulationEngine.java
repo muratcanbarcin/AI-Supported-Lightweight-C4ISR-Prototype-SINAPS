@@ -129,7 +129,10 @@ public class SimulationEngine {
     //  SCHEDULED TICK — every 3 seconds
     // ════════════════════════════════════════════════════════════════
 
-    @Scheduled(fixedRate = 3000)
+    // ── Tick interval is configurable via `simulation.tick-interval-ms`
+    //    application property. Default: 120 000 ms (2 minutes) to reduce
+    //    telemetry write volume. Override for faster local testing.
+    @Scheduled(fixedRateString = "${simulation.tick-interval-ms:60000}")
     public void tick() {
         logisticsTickCounter++;
         List<Telemetry> allLatest = telemetryService.getLatestTelemetry();
