@@ -24,7 +24,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/tasks")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class TaskController {
 
     private static final Logger log = LoggerFactory.getLogger(TaskController.class);
@@ -45,11 +44,7 @@ public class TaskController {
                description = "Status boşsa PENDING atanır.")
     @PostMapping
     public ResponseEntity<Task> createTask(@RequestBody Task task) {
-        if (task.getStatus() == null || task.getStatus().isBlank()) {
-            task.setStatus("PENDING");
-        }
-        Task saved = taskService.createTask(task);
-        return ResponseEntity.ok(saved);
+        return ResponseEntity.ok(taskService.createTask(task));
     }
 
     /**

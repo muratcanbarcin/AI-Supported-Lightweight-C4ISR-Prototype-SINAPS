@@ -18,8 +18,7 @@ import org.springframework.context.annotation.Configuration;
                         name = "SINAPS Dev Team"
                 ),
                 license = @License(
-                        name = "MIT License",
-                        url = "https://opensource.org/licenses/MIT"
+                        name = "SINAPS Non-Commercial License"
                 )
         )
 )

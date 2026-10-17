@@ -25,7 +25,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/zones")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class TacticalZoneController {
 
     private static final Logger log = LoggerFactory.getLogger(TacticalZoneController.class);

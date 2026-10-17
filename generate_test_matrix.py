@@ -145,7 +145,7 @@ auth_tests = [
     {"section": "1. KULLANICI GİRİŞİ (LOGIN)", "id": "AUTH-001", "module": "Auth", "submodule": "Login",
      "scenario": "Geçerli kullanıcı adı ve şifre ile giriş",
      "preconditions": "- Veritabanında kayıtlı kullanıcı mevcut\n- Backend çalışıyor",
-     "steps": "1. POST /api/v1/auth/login\n2. Body: {\"username\": \"admin\", \"password\": \"admin123\"}\n3. Response'u kontrol et",
+     "steps": "1. POST /api/v1/auth/login\n2. Body: {\"username\": \"admin\", \"password\": \"<SEED_DEFAULT_PASSWORD>\"}\n3. Response'u kontrol et",
      "expected": "200 OK\nJWT token, username ve role döner", "priority": "KRİTİK"},
 
     {"id": "AUTH-002", "module": "Auth", "submodule": "Login",

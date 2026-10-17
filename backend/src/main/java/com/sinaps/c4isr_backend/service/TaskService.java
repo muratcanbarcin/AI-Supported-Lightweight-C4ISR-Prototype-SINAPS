@@ -63,6 +63,9 @@ public class TaskService {
 
     @Transactional
     public Task createTask(Task task) {
+        if (task.getStatus() == null || task.getStatus().isBlank()) {
+            task.setStatus("PENDING");
+        }
         return taskRepository.save(task);
     }
 

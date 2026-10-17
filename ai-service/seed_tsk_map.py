@@ -34,10 +34,9 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 # ── DB connection ────────────────────────────────────────────────────────
-DB_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://admin:password@localhost:5433/c4isr_db",
-)
+DB_URL = os.getenv("DATABASE_URL", "").strip()
+if not DB_URL:
+    sys.exit("DATABASE_URL is required. Copy .env.example and export it before running this script.")
 
 # ════════════════════════════════════════════════════════════════════════
 #  ASSET DEFINITIONS

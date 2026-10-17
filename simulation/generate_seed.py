@@ -15,6 +15,7 @@ Usage:
 ===============================================================================
 """
 
+import os
 import random
 import json
 from datetime import datetime
@@ -86,12 +87,10 @@ AI_ANALYSIS_TEMPLATES = [
     ("LOW", "Cevre kosullari normal, gorev devam edebilir", False),
 ]
 
-# User seed data - Turkish military personnel
-# All default passwords: "sinaps123" (plain text for prototype)
+# User seed data. Passwords are read from SEED_DEFAULT_PASSWORD at generation time.
 USER_SEED_DATA = [
     {
         "username": "admin",
-        "password": "sinaps123",
         "full_name": "Semih Utku",
         "rank": "Yüzbaşı",
         "role": "ROLE_ADMIN",
@@ -99,7 +98,6 @@ USER_SEED_DATA = [
     },
     {
         "username": "komutan01",
-        "password": "sinaps123",
         "full_name": "Kaan Yıldırım",
         "rank": "Binbaşı",
         "role": "ROLE_COMMANDER",
@@ -107,7 +105,6 @@ USER_SEED_DATA = [
     },
     {
         "username": "komutan02",
-        "password": "sinaps123",
         "full_name": "Arda Çelik",
         "rank": "Yüzbaşı",
         "role": "ROLE_COMMANDER",
@@ -115,7 +112,6 @@ USER_SEED_DATA = [
     },
     {
         "username": "operator01",
-        "password": "sinaps123",
         "full_name": "Emre Demir",
         "rank": "Üsteğmen",
         "role": "ROLE_USER",
@@ -123,7 +119,6 @@ USER_SEED_DATA = [
     },
     {
         "username": "operator02",
-        "password": "sinaps123",
         "full_name": "Burak Aksoy",
         "rank": "Teğmen",
         "role": "ROLE_USER",
@@ -131,7 +126,6 @@ USER_SEED_DATA = [
     },
     {
         "username": "operator03",
-        "password": "sinaps123",
         "full_name": "Murat Can Barçın",
         "rank": "Asteğmen",
         "role": "ROLE_USER",
@@ -139,7 +133,6 @@ USER_SEED_DATA = [
     },
     {
         "username": "operator04",
-        "password": "sinaps123",
         "full_name": "Yusuf Kara",
         "rank": "Astsubay",
         "role": "ROLE_USER",
@@ -147,7 +140,6 @@ USER_SEED_DATA = [
     },
     {
         "username": "operator05",
-        "password": "sinaps123",
         "full_name": "Ali Özkan",
         "rank": "Çavuş",
         "role": "ROLE_USER",
@@ -680,10 +672,14 @@ def generate_users_sql() -> str:
 -- ============================================================================
 
 """
+    seed_password = os.environ.get("SEED_DEFAULT_PASSWORD", "").strip()
+    if not seed_password:
+        raise SystemExit("SEED_DEFAULT_PASSWORD is required. See the repository .env.example.")
+
     for user in USER_SEED_DATA:
         active_val = "TRUE" if user["active"] else "FALSE"
         sql += f"""INSERT INTO users (username, password, full_name, rank, role, active, created_at)
-VALUES ('{escape_sql_string(user["username"])}', '{escape_sql_string(user["password"])}', '{escape_sql_string(user["full_name"])}', '{escape_sql_string(user["rank"])}', '{user["role"]}', {active_val}, CURRENT_TIMESTAMP);
+VALUES ('{escape_sql_string(user["username"])}', '{escape_sql_string(seed_password)}', '{escape_sql_string(user["full_name"])}', '{escape_sql_string(user["rank"])}', '{user["role"]}', {active_val}, CURRENT_TIMESTAMP);
 """
     return sql
 

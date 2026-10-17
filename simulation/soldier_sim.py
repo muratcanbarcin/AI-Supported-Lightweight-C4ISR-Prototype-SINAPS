@@ -12,7 +12,7 @@
 ================================================================================
 """
 
-import json, time, math, argparse, random, datetime, pathlib
+import json, os, time, math, argparse, random, datetime, pathlib
 import paho.mqtt.client as mqtt
 
 try:
@@ -323,8 +323,8 @@ def parse_args():
     ap.add_argument("--config", "-c", default="sim-producers/soldier_sim.yaml")
     ap.add_argument("--host", default="localhost")
     ap.add_argument("--port", type=int, default=1883)
-    ap.add_argument("--user", default="admin")
-    ap.add_argument("--password", default="password")
+    ap.add_argument("--user", default=os.environ.get("MQTT_USER", ""))
+    ap.add_argument("--password", default=os.environ.get("MQTT_PASSWORD", ""))
     ap.add_argument("--tls", action="store_true")
     ap.add_argument("--cafile", default="mqtt/conf/certs/server.crt")
     ap.add_argument("--id", default="soldier1")

@@ -39,7 +39,11 @@ class DatabaseManager:
             return
         
         db_url = settings.DATABASE_URL_DOCKER if use_docker_network else settings.DATABASE_URL
-        
+        if not db_url:
+            raise RuntimeError(
+                "DATABASE_URL is not set. Copy ai-service/.env.example to ai-service/.env."
+            )
+
         try:
             self._pool = pool.ThreadedConnectionPool(
                 minconn=1,

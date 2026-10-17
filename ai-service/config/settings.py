@@ -16,18 +16,10 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
     
-    # Database Configuration
-    # Default uses localhost for local dev; use 'c4isr-db' for Docker network
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL", 
-        "postgresql://admin:password@localhost:5433/c4isr_db"
-    )
-    
-    # For Docker internal network
-    DATABASE_URL_DOCKER: str = os.getenv(
-        "DATABASE_URL_DOCKER",
-        "postgresql://admin:password@c4isr-db:5432/c4isr_db"
-    )
+    # Database Configuration. Set DATABASE_URL in ai-service/.env.
+    # There is no embedded credential fallback.
+    DATABASE_URL: str = ""
+    DATABASE_URL_DOCKER: str = ""
     
     # Database Pool Settings
     DB_POOL_SIZE: int = 5

@@ -2,10 +2,6 @@ package com.sinaps.c4isr_backend.controller;
 
 import com.sinaps.c4isr_backend.dto.AssetRegistrationRequest;
 import com.sinaps.c4isr_backend.model.Asset;
-import com.sinaps.c4isr_backend.model.SystemLog;
-import com.sinaps.c4isr_backend.model.Telemetry;
-import com.sinaps.c4isr_backend.repository.SystemLogRepository;
-import com.sinaps.c4isr_backend.repository.TelemetryRepository;
 import com.sinaps.c4isr_backend.service.AssetService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -13,16 +9,12 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * ============================================================================
@@ -46,14 +38,9 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/v1/assets")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 public class AssetController {
 
-    private static final Logger log = LoggerFactory.getLogger(AssetController.class);
-
     private final AssetService assetService;
-    private final TelemetryRepository telemetryRepository;
-    private final SystemLogRepository systemLogRepository;
 
     @Operation(summary = "Tüm assetleri listele")
     @GetMapping
@@ -115,43 +102,6 @@ public class AssetController {
     @ApiResponses(@ApiResponse(responseCode = "200", description = "Acil durdurma uygulandı"))
     @PostMapping("/{id}/emergency-stop")
     public ResponseEntity<Map<String, Object>> emergencyStop(@PathVariable String id) {
-        log.warn("🚨 EMERGENCY STOP initiated for asset: {}", id);
-
-        Map<String, Object> response = new HashMap<>();
-
-        // 1. Find latest telemetry for the asset
-        Optional<Telemetry> latestOpt = telemetryRepository.findTopBySourceIdOrderByTimestampDesc(id);
-
-        if (latestOpt.isPresent()) {
-            // 2. Update payload with STOPPED status
-            Telemetry latest = latestOpt.get();
-            Map<String, Object> payload = latest.getPayload();
-            if (payload == null) {
-                payload = new HashMap<>();
-            }
-            payload.put("status", "STOPPED");
-            payload.put("emergency_stop", true);
-            latest.setPayload(payload);
-            telemetryRepository.save(latest);
-
-            log.info("Asset {} telemetry updated to STOPPED.", id);
-        } else {
-            log.warn("No telemetry found for asset {}. Logging stop anyway.", id);
-        }
-
-        // 3. Create a system log entry
-        SystemLog logEntry = SystemLog.builder()
-                .assetId(id)
-                .eventType("EMERGENCY_STOP")
-                .message("Emergency stop initiated")
-                .build();
-        systemLogRepository.save(logEntry);
-
-        response.put("success", true);
-        response.put("assetId", id);
-        response.put("status", "STOPPED");
-        response.put("message", "Emergency stop initiated for asset: " + id);
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(assetService.emergencyStop(id));
     }
 }

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.PrecisionModel;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -21,7 +22,8 @@ import java.util.*;
  *
  * RULES:
  * - Always checks if tables are empty before seeding (no duplicates).
- * - All passwords are BCrypt-encoded "Sinaps123@".
+ * - Demo user passwords are BCrypt hashes of SEED_DEFAULT_PASSWORD.
+ *   The plaintext value is never stored in source control.
  * - Every asset gets an initial IDLE telemetry record to prevent map crashes.
  */
 @Slf4j
@@ -37,7 +39,9 @@ public class DatabaseSeeder implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
 
     private static final GeometryFactory GF = new GeometryFactory(new PrecisionModel(), 4326);
-    private static final String DEFAULT_PASSWORD = "Sinaps123@";
+
+    @Value("${sinaps.seed.default-password:}")
+    private String defaultPassword;
 
     // Accumulated telemetry records for batch save
     private final List<Telemetry> telemetryBatch = new ArrayList<>();
@@ -233,8 +237,13 @@ public class DatabaseSeeder implements CommandLineRunner {
             return;
         }
 
+        if (defaultPassword == null || defaultPassword.isBlank()) {
+            throw new IllegalStateException(
+                    "SEED_DEFAULT_PASSWORD is not set. Refusing to seed users with an embedded password.");
+        }
+
         log.info("👤  Seeding RBAC Users...");
-        String encodedPassword = passwordEncoder.encode(DEFAULT_PASSWORD);
+        String encodedPassword = passwordEncoder.encode(defaultPassword);
 
         List<AppUser> users = new ArrayList<>();
 

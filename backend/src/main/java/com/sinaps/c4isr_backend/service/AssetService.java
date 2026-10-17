@@ -4,9 +4,11 @@ import com.sinaps.c4isr_backend.dto.AssetRegistrationRequest;
 import com.sinaps.c4isr_backend.model.AppUser;
 import com.sinaps.c4isr_backend.model.Asset;
 import com.sinaps.c4isr_backend.model.Role;
+import com.sinaps.c4isr_backend.model.SystemLog;
 import com.sinaps.c4isr_backend.model.Telemetry;
 import com.sinaps.c4isr_backend.repository.AppUserRepository;
 import com.sinaps.c4isr_backend.repository.AssetRepository;
+import com.sinaps.c4isr_backend.repository.SystemLogRepository;
 import com.sinaps.c4isr_backend.repository.TaskRepository;
 import com.sinaps.c4isr_backend.repository.TelemetryRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +37,7 @@ public class AssetService {
     private final TelemetryRepository telemetryRepository;
     private final TaskRepository taskRepository;
     private final AppUserRepository appUserRepository;
+    private final SystemLogRepository systemLogRepository;
 
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
@@ -124,6 +128,42 @@ public class AssetService {
         telemetryRepository.deleteByAssetId(asset.getName());
         taskRepository.deleteByAssetId(asset.getName());
         assetRepository.deleteById(asset.getId());
+    }
+
+    public Map<String, Object> emergencyStop(String id) {
+        log.warn("🚨 EMERGENCY STOP initiated for asset: {}", id);
+
+        Optional<Telemetry> latestOpt = telemetryRepository.findTopBySourceIdOrderByTimestampDesc(id);
+
+        if (latestOpt.isPresent()) {
+            Telemetry latest = latestOpt.get();
+            Map<String, Object> payload = latest.getPayload();
+            if (payload == null) {
+                payload = new HashMap<>();
+            }
+            payload.put("status", "STOPPED");
+            payload.put("emergency_stop", true);
+            latest.setPayload(payload);
+            telemetryRepository.save(latest);
+
+            log.info("Asset {} telemetry updated to STOPPED.", id);
+        } else {
+            log.warn("No telemetry found for asset {}. Logging stop anyway.", id);
+        }
+
+        SystemLog logEntry = SystemLog.builder()
+                .assetId(id)
+                .eventType("EMERGENCY_STOP")
+                .message("Emergency stop initiated")
+                .build();
+        systemLogRepository.save(logEntry);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("assetId", id);
+        response.put("status", "STOPPED");
+        response.put("message", "Emergency stop initiated for asset: " + id);
+        return response;
     }
 
     private String normalizeNullable(String value) {

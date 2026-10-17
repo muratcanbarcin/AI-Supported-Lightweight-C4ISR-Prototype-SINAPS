@@ -651,25 +651,28 @@ INSERT INTO ai_analyses (asset_id, threat_level, recommendation, is_alert)
 VALUES ('EJDER-01', 'HIGH', 'Anormal biyometrik degerler, personel saglik kontrolu gerekli', TRUE);
 
 -- ============================================================================
--- INSERT USERS (Authentication & Profile)
+-- INSERT USERS (legacy prototype table, not app_users)
+-- Passwords were removed before publication. Regenerate with
+-- SEED_DEFAULT_PASSWORD set; do not commit the result.
+-- The running system seeds app_users from the backend seeder.
 -- ============================================================================
 
 INSERT INTO users (username, password, full_name, rank, role, active, created_at)
-VALUES ('admin', 'sinaps123', 'Semih Utku', 'Yüzbaşı', 'ROLE_ADMIN', TRUE, CURRENT_TIMESTAMP);
+VALUES ('admin', 'REDACTED', 'Semih Utku', 'Yüzbaşı', 'ROLE_ADMIN', TRUE, CURRENT_TIMESTAMP);
 INSERT INTO users (username, password, full_name, rank, role, active, created_at)
-VALUES ('komutan01', 'sinaps123', 'Kaan Yıldırım', 'Binbaşı', 'ROLE_COMMANDER', TRUE, CURRENT_TIMESTAMP);
+VALUES ('komutan01', 'REDACTED', 'Kaan Yıldırım', 'Binbaşı', 'ROLE_COMMANDER', TRUE, CURRENT_TIMESTAMP);
 INSERT INTO users (username, password, full_name, rank, role, active, created_at)
-VALUES ('komutan02', 'sinaps123', 'Arda Çelik', 'Yüzbaşı', 'ROLE_COMMANDER', TRUE, CURRENT_TIMESTAMP);
+VALUES ('komutan02', 'REDACTED', 'Arda Çelik', 'Yüzbaşı', 'ROLE_COMMANDER', TRUE, CURRENT_TIMESTAMP);
 INSERT INTO users (username, password, full_name, rank, role, active, created_at)
-VALUES ('operator01', 'sinaps123', 'Emre Demir', 'Üsteğmen', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
+VALUES ('operator01', 'REDACTED', 'Emre Demir', 'Üsteğmen', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
 INSERT INTO users (username, password, full_name, rank, role, active, created_at)
-VALUES ('operator02', 'sinaps123', 'Burak Aksoy', 'Teğmen', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
+VALUES ('operator02', 'REDACTED', 'Burak Aksoy', 'Teğmen', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
 INSERT INTO users (username, password, full_name, rank, role, active, created_at)
-VALUES ('operator03', 'sinaps123', 'Murat Can Barçın', 'Asteğmen', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
+VALUES ('operator03', 'REDACTED', 'Murat Can Barçın', 'Asteğmen', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
 INSERT INTO users (username, password, full_name, rank, role, active, created_at)
-VALUES ('operator04', 'sinaps123', 'Yusuf Kara', 'Astsubay', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
+VALUES ('operator04', 'REDACTED', 'Yusuf Kara', 'Astsubay', 'ROLE_USER', TRUE, CURRENT_TIMESTAMP);
 INSERT INTO users (username, password, full_name, rank, role, active, created_at)
-VALUES ('operator05', 'sinaps123', 'Ali Özkan', 'Çavuş', 'ROLE_USER', FALSE, CURRENT_TIMESTAMP);
+VALUES ('operator05', 'REDACTED', 'Ali Özkan', 'Çavuş', 'ROLE_USER', FALSE, CURRENT_TIMESTAMP);
 
 -- ============================================================================
 -- SUMMARY
